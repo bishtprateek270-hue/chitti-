@@ -236,11 +236,13 @@ class VisionManager:
         if not clean_name:
             return False, "Invalid name provided for face registration."
 
-        log_chitti(f"[VISION] Starting face registration for '{clean_name}' ({num_samples} samples required)...")
+        print(f"\n[VISION] Starting face registration for '{clean_name}' ({num_samples} samples required)...", flush=True)
+        print("  Looking at the camera... Please keep your head steady.", flush=True)
         collected_embeddings: List[List[float]] = []
 
         start_time = time.time()
-        timeout = 20.0  # 20 seconds timeout to collect samples
+        timeout = 25.0  # 25 seconds timeout to collect samples
+        last_hint_time = 0.0
 
         while len(collected_embeddings) < num_samples and (time.time() - start_time) < timeout:
             try:
@@ -254,21 +256,25 @@ class VisionManager:
                         collected_embeddings.append(emb)
                         if progress_callback:
                             progress_callback(len(collected_embeddings), num_samples)
-                        log_chitti(f"[VISION] Collected sample {len(collected_embeddings)}/{num_samples} for {clean_name}.")
-                        time.sleep(0.4)
+                        print(f"  -> [Sample {len(collected_embeddings)}/{num_samples}] Face captured! (confidence: {det.confidence:.2f})", flush=True)
+                        time.sleep(0.3)
                 elif len(detections) > 1:
-                    log_debug("Multiple faces in frame during registration. Please have only one person in view.")
+                    if time.time() - last_hint_time > 1.5:
+                        print(f"  [Hint] Detected {len(detections)} faces in frame. Please have only one person in view.", flush=True)
+                        last_hint_time = time.time()
                 else:
-                    log_debug("No face found in frame during registration.")
-                time.sleep(0.1)
+                    if time.time() - last_hint_time > 2.0:
+                        print("  [Hint] Looking for your face... Please look directly at the webcam.", flush=True)
+                        last_hint_time = time.time()
+                time.sleep(0.08)
             except Exception as e:
                 log_warning(f"Error during face sample capture: {e}")
                 time.sleep(0.2)
 
-        if len(collected_embeddings) < num_samples:
+        if len(collected_embeddings) == 0:
             return (
                 False,
-                f"Registration timed out. Only captured {len(collected_embeddings)}/{num_samples} samples. "
+                f"Registration timed out. No face detected. "
                 f"Please ensure good lighting and face the camera directly.",
             )
 
@@ -287,7 +293,7 @@ class VisionManager:
             metadata={"registered_at": datetime.now(timezone.utc).isoformat()},
         )
 
-        log_chitti(f"[VISION] Successfully registered '{clean_name}' (ID: {person_id}) into face database.")
+        print(f"\n[VISION] Successfully registered '{clean_name}' (ID: {person_id}) with {len(collected_embeddings)} samples.", flush=True)
         return True, f"I have successfully registered {clean_name} in my face database."
 
     def delete_person(self, name: str) -> Tuple[bool, str]:

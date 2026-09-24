@@ -22,7 +22,7 @@ class FaceDetector:
     def __init__(
         self,
         model_path: Optional[str] = None,
-        score_threshold: float = 0.6,
+        score_threshold: float = 0.45,
         nms_threshold: float = 0.3,
         top_k: int = 5000,
     ):
