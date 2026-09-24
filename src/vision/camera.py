@@ -46,10 +46,8 @@ class Camera:
         if cv2 is None:
             return []
         available = []
-        backend = cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY
-
         for idx in range(max_devices_to_test):
-            cap = cv2.VideoCapture(idx, backend)
+            cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
             if cap.isOpened():
                 ret, _ = cap.read()
                 if ret:
@@ -67,9 +65,7 @@ class Camera:
                 return True
 
             log_debug(f"Opening camera index {self.device_index}...")
-            # Use DirectShow on Windows for instant initialization without DSHOW delays
-            backend = cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY
-            self._cap = cv2.VideoCapture(self.device_index, backend)
+            self._cap = cv2.VideoCapture(self.device_index, cv2.CAP_ANY)
 
             if not self._cap.isOpened():
                 self._cap = None
