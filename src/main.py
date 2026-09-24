@@ -1,6 +1,6 @@
 """
 Chitti - Personal Multimodal AI Desktop Companion Robot
-PHASE 1: Voice AI Brain + PHASE 2: Long-Term Persistent Memory
+PHASE 1: Voice AI Brain  +  PHASE 2: Long-Term Memory  +  PHASE 3: Computer Vision
 """
 
 import sys
@@ -25,6 +25,7 @@ from src.audio.microphone import MicrophoneManager, AudioCaptureError
 from src.audio.stt import get_stt, STTError
 from src.audio.tts import get_tts, TTSError
 from src.memory.manager import MemoryManager
+from src.vision.vision_manager import VisionManager
 
 
 BANNER = r"""
@@ -32,14 +33,14 @@ BANNER = r"""
 |                                                                  |
 |                          C H I T T I                             |
 |             Personal AI Desktop Companion Robot                  |
-|          Phase 1: Voice Brain  +  Phase 2: Long-Term Memory      |
+|    Phase 1: Voice  +  Phase 2: Memory  +  Phase 3: Vision        |
 |                                                                  |
 +------------------------------------------------------------------+
 """
 
 
 class ChittiController:
-    """Main application controller for Chitti (Phase 1 & Phase 2)."""
+    """Main application controller for Chitti (Phase 1, Phase 2, and Phase 3)."""
 
     def __init__(self):
         self.config = get_config()
@@ -50,11 +51,12 @@ class ChittiController:
         self.tts = None
         self.llm = None
         self.memory = None
+        self.vision = None
 
     def initialize(self):
-        """Initializes all Phase 1 and Phase 2 hardware/software subsystems."""
+        """Initializes all hardware and AI subsystems."""
         print(BANNER)
-        log_chitti("Starting Chitti Voice AI Brain & Memory System...")
+        log_chitti("Starting Chitti Voice Brain, Memory & Vision Systems...")
 
         # 1. Initialize Audio/Microphone
         log_chitti("Checking audio devices...")
@@ -105,7 +107,20 @@ class ChittiController:
         else:
             log_chitti("Long-term memory is disabled in configuration.")
 
-        # 5. Initialize LLM (Ollama)
+        # 5. Initialize Computer Vision (Phase 3)
+        if self.config.vision.enabled:
+            log_chitti("Initializing computer vision system...")
+            try:
+                self.vision = VisionManager()
+                registered_faces_count = self.vision.face_db.count()
+                log_chitti(f"Vision system ready ({registered_faces_count} registered faces in database).")
+            except Exception as e:
+                log_warning(f"Vision initialization notice: {e}. Running in non-vision mode.")
+                self.vision = None
+        else:
+            log_chitti("Computer vision is disabled in configuration.")
+
+        # 6. Initialize LLM (Ollama)
         log_chitti(f"Connecting to AI brain at {self.config.llm.base_url} (model: {self.config.llm.model})...")
         self.llm = get_llm(self.config.llm)
         if self.llm.check_connection():
@@ -122,7 +137,7 @@ class ChittiController:
                 f"Ensure Ollama is started with `ollama serve` or the desktop app."
             )
 
-        log_chitti("System initialization complete. Ready for conversation!\n")
+        log_chitti("System initialization complete. Ready for interaction!\n")
 
     def speak(self, text: str):
         """Speaks the response using TTS if available."""
@@ -133,7 +148,7 @@ class ChittiController:
                 log_warning(f"Speech playback failed: {e}")
 
     def process_user_input(self, user_text: str):
-        """Processes user input through Memory/LLM, records history, and speaks output."""
+        """Processes user input through Vision/Memory/LLM, records history, and speaks output."""
         if not user_text or not user_text.strip():
             log_chitti("I didn't catch that. Could you repeat?")
             self.speak("I didn't catch that. Could you repeat?")
@@ -141,13 +156,28 @@ class ChittiController:
 
         print(f"\nYou: {user_text}")
 
-        # Check for Explicit Memory Command (e.g. "Remember that...", "Forget that...", "Forget everything")
+        # 1. Check for Face Management Commands (e.g. "Who is registered?", "Remove Prateek from face recognition")
+        if self.vision is not None:
+            try:
+                face_cmd_result = self.vision.handle_face_commands(user_text)
+                if face_cmd_result is not None:
+                    action_tag, response_text = face_cmd_result
+                    self.history.add_user_message(user_text)
+                    self.history.add_assistant_message(response_text)
+
+                    log_state("CHITTI")
+                    print(response_text)
+                    self.speak(response_text)
+                    return
+            except Exception as e:
+                log_warning(f"Face command processing failed: {e}")
+
+        # 2. Check for Explicit Memory Command (e.g. "Remember that...", "Forget that...")
         if self.memory is not None:
             try:
                 mem_result = self.memory.handle_interaction(user_text)
                 if mem_result is not None:
                     action_tag, response_text = mem_result
-                    # Add to session history
                     self.history.add_user_message(user_text)
                     self.history.add_assistant_message(response_text)
 
@@ -161,20 +191,46 @@ class ChittiController:
         # Add to short-term session history
         self.history.add_user_message(user_text)
 
-        # Retrieve relevant long-term memories for LLM context
+        # 3. Vision Perception Trigger (if user asks what Chitti sees or who is there)
+        vision_context = None
+        recognized_names_seen = []
+
+        if self.vision is not None and self.vision.is_vision_query(user_text):
+            try:
+                log_state("VISION", "Analyzing camera feed...")
+                vision_result = self.vision.analyze_frame()
+                log_chitti(f"[VISION] {vision_result.summary_text}")
+                vision_context = self.vision.format_vision_context_for_llm(vision_result)
+                recognized_names_seen = vision_result.known_people_names
+            except Exception as e:
+                log_warning(f"Vision analysis failed: {e}")
+                vision_context = "\n[VISION NOTICE: Camera is currently unavailable.]"
+
+        self.history.set_vision_context(vision_context)
+
+        # 4. Retrieve relevant long-term memories
         relevant_memories = []
         if self.memory is not None:
             try:
+                # Query memories for the user's prompt
                 relevant_memories = self.memory.recall(user_text, top_k=self.config.memory.top_k)
+
+                # If a recognized person was detected in vision, also fetch memories about them
+                for person_name in recognized_names_seen:
+                    person_mems = self.memory.recall(person_name, top_k=2)
+                    for pm in person_mems:
+                        if pm.id not in [m.id for m in relevant_memories]:
+                            relevant_memories.append(pm)
+
                 if relevant_memories:
                     log_chitti(f"[MEMORY] Retrieved {len(relevant_memories)} relevant memories for context.")
             except Exception as e:
-                log_warning(f"Memory retrieval failed ({e}). Proceeding without memory context.")
+                log_warning(f"Memory retrieval failed: {e}")
                 relevant_memories = []
 
         self.history.set_relevant_memories(relevant_memories)
 
-        # Generate LLM response
+        # 5. Generate LLM response
         log_state("THINKING")
         try:
             messages = self.history.get_messages_for_llm()
@@ -200,6 +256,43 @@ class ChittiController:
         print(response_text)
         self.history.add_assistant_message(response_text)
         self.speak(response_text)
+
+    def trigger_vision_snapshot(self):
+        """Performs an instant camera snapshot and reports what Chitti sees."""
+        if not self.vision:
+            print("\n[VISION] Camera/Vision system is not available.")
+            return
+
+        print("\n[VISION] Capturing camera frame...")
+        result = self.vision.analyze_frame()
+        print(f"\nVisual Perception Summary:\n{result.summary_text}")
+        if result.faces:
+            print("Detected Faces:")
+            for f in result.faces:
+                status = f"Registered ({f.name}, similarity: {f.similarity:.2f})" if f.is_known else "Unknown Person"
+                print(f"  - {status} at bbox {f.bbox}")
+        if result.object_counts:
+            print("Detected Objects:")
+            for obj, cnt in result.object_counts.items():
+                print(f"  - {obj}: {cnt}")
+
+        self.speak(result.summary_text)
+
+    def trigger_face_registration_interactive(self):
+        """Interactively registers a person's face using the camera."""
+        if not self.vision:
+            print("\n[VISION] Camera/Vision system is not available.")
+            return
+
+        name = input("\nEnter the person's name to register: ").strip()
+        if not name:
+            print("Registration cancelled: Name cannot be empty.")
+            return
+
+        print(f"\nPlease look directly at the camera. Collecting face samples for '{name}'...")
+        success, msg = self.vision.register_person(name, num_samples=3)
+        print(f"\n{msg}")
+        self.speak(msg)
 
     def listen_and_transcribe(self) -> str:
         """Captures voice from microphone and transcribes via Whisper STT."""
@@ -240,6 +333,8 @@ class ChittiController:
         print(" Controls:")
         print("   [ENTER]      : Speak to Chitti via Microphone")
         print("   [T] + ENTER  : Type a text message (Keyboard fallback)")
+        print("   [V] + ENTER  : Instant Camera Vision Snapshot")
+        print("   [R] + ENTER  : Register a new Person's Face")
         print("   [M] + ENTER  : View all stored persistent long-term memories")
         print("   [C] + ENTER  : Clear short-term session conversation history")
         print("   [Q] + ENTER  : Quit Chitti")
@@ -247,12 +342,22 @@ class ChittiController:
 
         while True:
             try:
-                user_choice = input("\n[Ready] Press ENTER to talk (or T=type, M=memory, C=clear, Q=quit): ").strip().lower()
+                user_choice = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register face, M=memory, C=clear, Q=quit): ").strip().lower()
 
                 if user_choice in ("q", "quit", "exit"):
                     log_chitti("Shutting down Chitti. Goodbye!")
                     self.speak("Goodbye!")
+                    if self.vision and self.vision.camera:
+                        self.vision.camera.release()
                     break
+
+                if user_choice in ("v", "vision", "see"):
+                    self.trigger_vision_snapshot()
+                    continue
+
+                if user_choice in ("r", "register", "register face"):
+                    self.trigger_face_registration_interactive()
+                    continue
 
                 if user_choice in ("c", "clear"):
                     self.history.clear()
@@ -291,6 +396,8 @@ class ChittiController:
             except KeyboardInterrupt:
                 print("\n")
                 log_chitti("Session interrupted by user. Exiting cleanly...")
+                if self.vision and self.vision.camera:
+                    self.vision.camera.release()
                 break
             except Exception as e:
                 log_error(f"Unhandled error in main loop: {e}")

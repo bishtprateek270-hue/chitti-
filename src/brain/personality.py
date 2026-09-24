@@ -1,6 +1,6 @@
 """
 Chitti Personality and Conversation Session Management.
-Defines the core persona, tone guidelines, short-term session memory, and long-term memory context injection.
+Defines the core persona, tone guidelines, short-term session memory, long-term memory, and visual perception context injection.
 """
 
 from typing import List, Dict, Any, Optional, Union
@@ -14,7 +14,7 @@ Core Personality & Voice Guidelines:
 3. Spoken Delivery: Your words will be read aloud by a Text-to-Speech engine. Phrase your answers so they sound natural when spoken. Avoid markdown formatting like bullet points, asterisks, tables, or excessive symbols unless asked.
 4. Authenticity: Never say "As an AI..." or "As a large language model...". Do not use overly enthusiastic, robotic, or corporate customer-service clichés.
 5. Honesty: If you don't know something, admit it directly without making up facts.
-6. Scope: In this current Phase 2, you operate as a voice-based desktop companion with persistent long-term memory. You remember facts and preferences the user told you across sessions. You do not possess physical vision or hardware actuators yet.
+6. Scope: In this current Phase 3, you operate as a desktop companion with voice interaction, persistent long-term memory, and computer vision. You can see through your camera, detect and recognize registered people, and identify objects in your environment. You do not possess physical robotics hardware or actuators yet.
 
 Be helpful, concise, engaging, and companionable.
 """
@@ -40,7 +40,7 @@ class ConversationHistory:
     """
     Manages short-term conversation history for the current active session.
     All history resides in-memory only and is cleared when the session ends.
-    Long-term memories are retrieved and injected on demand into the LLM context.
+    Long-term memories and vision perception context are injected on demand into the LLM context.
     """
 
     def __init__(self, system_prompt: str = CHITTI_SYSTEM_PROMPT, max_messages: int = 20):
@@ -48,6 +48,7 @@ class ConversationHistory:
         self.max_messages = max_messages
         self._messages: List[Dict[str, str]] = []
         self._relevant_memories: List[Any] = []
+        self._vision_context: Optional[str] = None
 
     def add_user_message(self, content: str) -> None:
         """Appends a user message to the conversation history."""
@@ -65,14 +66,25 @@ class ConversationHistory:
         """Sets the relevant long-term memories to be injected for the upcoming turn."""
         self._relevant_memories = memories or []
 
-    def get_messages_for_llm(self, relevant_memories: Optional[List[Any]] = None) -> List[Dict[str, str]]:
+    def set_vision_context(self, vision_context: Optional[str]) -> None:
+        """Sets the current visual perception context to be injected for the upcoming turn."""
+        self._vision_context = vision_context
+
+    def get_messages_for_llm(
+        self,
+        relevant_memories: Optional[List[Any]] = None,
+        vision_context: Optional[str] = None,
+    ) -> List[Dict[str, str]]:
         """
         Returns the complete messages list including the system prompt and
-        dynamically injected long-term memory context formatted for chat completion APIs.
+        dynamically injected long-term memory context and visual perception context.
         """
         mems = relevant_memories if relevant_memories is not None else self._relevant_memories
         mem_block = format_memory_context(mems)
-        full_system_prompt = self.system_prompt + mem_block
+
+        vis_block = vision_context if vision_context is not None else (self._vision_context or "")
+
+        full_system_prompt = self.system_prompt + mem_block + vis_block
 
         messages = [{"role": "system", "content": full_system_prompt}]
         messages.extend(self._messages)
@@ -82,6 +94,7 @@ class ConversationHistory:
         """Resets the conversation history for the current session."""
         self._messages.clear()
         self._relevant_memories.clear()
+        self._vision_context = None
 
     @property
     def message_count(self) -> int:

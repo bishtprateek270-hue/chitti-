@@ -129,6 +129,53 @@ class MemoryConfig:
 
 
 @dataclass
+class CameraConfig:
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("CAMERA_ENABLED", "true").lower() in ("true", "1", "yes")
+    )
+    device_index: int = field(
+        default_factory=lambda: int(os.getenv("CAMERA_INDEX", "0"))
+    )
+    width: int = field(
+        default_factory=lambda: int(os.getenv("CAMERA_WIDTH", "640"))
+    )
+    height: int = field(
+        default_factory=lambda: int(os.getenv("CAMERA_HEIGHT", "480"))
+    )
+    fps: int = field(
+        default_factory=lambda: int(os.getenv("CAMERA_FPS", "30"))
+    )
+
+
+@dataclass
+class VisionConfig:
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("VISION_ENABLED", "true").lower() in ("true", "1", "yes")
+    )
+    device: str = field(
+        default_factory=lambda: os.getenv("VISION_DEVICE", "auto")
+    )
+    face_detection_model: str = field(
+        default_factory=lambda: os.getenv("FACE_DETECTION_MODEL_PATH", "models/vision/face_detection_yunet_2023mar.onnx")
+    )
+    face_recognition_model: str = field(
+        default_factory=lambda: os.getenv("FACE_RECOGNITION_MODEL_PATH", "models/vision/face_recognition_sface_2021dec.onnx")
+    )
+    face_recognition_threshold: float = field(
+        default_factory=lambda: float(os.getenv("FACE_RECOGNITION_THRESHOLD", "0.60"))
+    )
+    object_detection_model: str = field(
+        default_factory=lambda: os.getenv("OBJECT_DETECTION_MODEL", "models/vision/yolov8n.pt")
+    )
+    object_confidence_threshold: float = field(
+        default_factory=lambda: float(os.getenv("OBJECT_CONFIDENCE_THRESHOLD", "0.35"))
+    )
+    faces_db_path: str = field(
+        default_factory=lambda: os.getenv("FACES_DB_PATH", "data/vision/faces.db")
+    )
+
+
+@dataclass
 class AppConfig:
     log_level: str = field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper()
@@ -138,6 +185,8 @@ class AppConfig:
     tts: TTSConfig = field(default_factory=TTSConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    camera: CameraConfig = field(default_factory=CameraConfig)
+    vision: VisionConfig = field(default_factory=VisionConfig)
 
 
 # Global singleton instance
