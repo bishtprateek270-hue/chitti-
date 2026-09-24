@@ -176,6 +176,28 @@ class VisionConfig:
 
 
 @dataclass
+class LanguageConfig:
+    default_language: str = field(
+        default_factory=lambda: os.getenv("DEFAULT_LANGUAGE", "auto")
+    )
+    default_response_language: str = field(
+        default_factory=lambda: os.getenv("DEFAULT_RESPONSE_LANGUAGE", "auto")
+    )
+    enable_translation: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_TRANSLATION", "true").lower() in ("true", "1", "yes")
+    )
+    enable_hinglish: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_HINGLISH", "true").lower() in ("true", "1", "yes")
+    )
+    confidence_threshold: float = field(
+        default_factory=lambda: float(os.getenv("LANGUAGE_CONFIDENCE_THRESHOLD", "0.70"))
+    )
+    preserve_technical_terms: bool = field(
+        default_factory=lambda: os.getenv("PRESERVE_TECHNICAL_TERMS", "true").lower() in ("true", "1", "yes")
+    )
+
+
+@dataclass
 class AppConfig:
     log_level: str = field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper()
@@ -187,6 +209,7 @@ class AppConfig:
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     vision: VisionConfig = field(default_factory=VisionConfig)
+    language: LanguageConfig = field(default_factory=LanguageConfig)
 
 
 # Global singleton instance

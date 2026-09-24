@@ -26,6 +26,10 @@ from src.audio.stt import get_stt, STTError
 from src.audio.tts import get_tts, TTSError
 from src.memory.manager import MemoryManager
 from src.vision.vision_manager import VisionManager
+from src.language.detector import LanguageDetector
+from src.language.normalizer import LanguageNormalizer
+from src.language.translator import Translator
+from src.language.language_models import IntentCategory
 
 
 BANNER = r"""
@@ -34,13 +38,14 @@ BANNER = r"""
 |                          C H I T T I                             |
 |             Personal AI Desktop Companion Robot                  |
 |    Phase 1: Voice  +  Phase 2: Memory  +  Phase 3: Vision        |
+|    Phase 4: Multilingual Understanding & Translation             |
 |                                                                  |
 +------------------------------------------------------------------+
 """
 
 
 class ChittiController:
-    """Main application controller for Chitti (Phase 1, Phase 2, and Phase 3)."""
+    """Main application controller for Chitti (Phase 1, Phase 2, Phase 3, and Phase 4)."""
 
     def __init__(self):
         self.config = get_config()
@@ -52,11 +57,15 @@ class ChittiController:
         self.llm = None
         self.memory = None
         self.vision = None
+        self.language_detector = LanguageDetector(confidence_threshold=self.config.language.confidence_threshold)
+        self.language_normalizer = LanguageNormalizer(self.language_detector)
+        self.translator = None
+        self.session_response_language = None
 
     def initialize(self):
         """Initializes all hardware and AI subsystems."""
         print(BANNER)
-        log_chitti("Starting Chitti Voice Brain, Memory & Vision Systems...")
+        log_chitti("Starting Chitti Multimodal & Multilingual Systems...")
 
         # 1. Initialize Audio/Microphone
         log_chitti("Checking audio devices...")
@@ -137,6 +146,10 @@ class ChittiController:
                 f"Ensure Ollama is started with `ollama serve` or the desktop app."
             )
 
+        # 7. Initialize Translator (Phase 4)
+        self.translator = Translator(llm=self.llm)
+        log_chitti("Multilingual intelligence system ready (English, Hindi, Hinglish).")
+
         log_chitti("System initialization complete. Ready for interaction!\n")
 
     def speak(self, text: str):
@@ -148,7 +161,7 @@ class ChittiController:
                 log_warning(f"Speech playback failed: {e}")
 
     def process_user_input(self, user_text: str):
-        """Processes user input through Vision/Memory/LLM, records history, and speaks output."""
+        """Processes user input through Multilingual/Vision/Memory/LLM, records history, and speaks output."""
         if not user_text or not user_text.strip():
             log_chitti("I didn't catch that. Could you repeat?")
             self.speak("I didn't catch that. Could you repeat?")
@@ -156,10 +169,53 @@ class ChittiController:
 
         print(f"\nYou: {user_text}")
 
-        # 1. Check for Face Management Commands (e.g. "Who is registered?", "Remove Prateek from face recognition")
+        # 0. Multilingual Understanding & Intent Normalization (Phase 4)
+        parsed_intent = self.language_normalizer.parse_intent(user_text)
+        detected_lang = parsed_intent.detected_language
+        log_debug(
+            f"[LANGUAGE] Detected: {detected_lang}, Intent: {parsed_intent.intent_category}, "
+            f"Normalized: '{parsed_intent.normalized_text}', Negated: {parsed_intent.is_negated}"
+        )
+
+        # 1. Check for Explicit Language Switch Command
+        if parsed_intent.intent_category == IntentCategory.LANGUAGE_SWITCH.value:
+            self.session_response_language = parsed_intent.target_response_language
+            lang_confirmations = {
+                "en": "Understood. I will respond in English from now on.",
+                "hi": "ज़रूर, अब से मैं हिंदी में उत्तर दूँगा।",
+                "hinglish": "Bilkul, ab se main Hinglish mein answer karunga.",
+            }
+            resp = lang_confirmations.get(self.session_response_language, f"Switched response language to {self.session_response_language}.")
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            log_state("CHITTI")
+            print(resp)
+            self.speak(resp)
+            return
+
+        # 2. Check for Dedicated Translation Request
+        if parsed_intent.intent_category == IntentCategory.TRANSLATION.value:
+            target_lang = parsed_intent.parameters.get("target_language", "en")
+            text_to_translate = parsed_intent.parameters.get("text", "")
+            if not text_to_translate:
+                text_to_translate = user_text
+
+            log_state("TRANSLATING", f"Translating to {target_lang}...")
+            trans_res = self.translator.translate(text_to_translate, target_lang, source_language=detected_lang)
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(trans_res.translated_text)
+            log_state("CHITTI")
+            print(trans_res.translated_text)
+            self.speak(trans_res.translated_text)
+            return
+
+        # 3. Check for Face Management Commands (e.g. "Who is registered?", "Remove Prateek from face recognition")
         if self.vision is not None:
             try:
                 face_cmd_result = self.vision.handle_face_commands(user_text)
+                if face_cmd_result is None and parsed_intent.normalized_text != user_text:
+                    face_cmd_result = self.vision.handle_face_commands(parsed_intent.normalized_text)
+
                 if face_cmd_result is not None:
                     action_tag, response_text = face_cmd_result
                     self.history.add_user_message(user_text)
@@ -172,10 +228,13 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Face command processing failed: {e}")
 
-        # 2. Check for Explicit Memory Command (e.g. "Remember that...", "Forget that...")
+        # 4. Check for Explicit Memory Command (multilingual: "yaad rakhna ki...", "remember that...", "forget...")
         if self.memory is not None:
             try:
                 mem_result = self.memory.handle_interaction(user_text)
+                if mem_result is None and parsed_intent.normalized_text != user_text:
+                    mem_result = self.memory.handle_interaction(parsed_intent.normalized_text)
+
                 if mem_result is not None:
                     action_tag, response_text = mem_result
                     self.history.add_user_message(user_text)
@@ -191,11 +250,17 @@ class ChittiController:
         # Add to short-term session history
         self.history.add_user_message(user_text)
 
-        # 3. Vision Perception Trigger (if user asks what Chitti sees or who is there)
+        # 5. Multilingual Vision Perception Trigger
         vision_context = None
         recognized_names_seen = []
 
-        if self.vision is not None and self.vision.is_vision_query(user_text):
+        is_vis = (
+            parsed_intent.intent_category == IntentCategory.VISION_QUERY.value
+            or (self.vision is not None and self.vision.is_vision_query(user_text))
+            or (self.vision is not None and self.vision.is_vision_query(parsed_intent.normalized_text))
+        )
+
+        if self.vision is not None and is_vis:
             try:
                 log_state("VISION", "Analyzing camera feed...")
                 vision_result = self.vision.analyze_frame()
@@ -208,12 +273,17 @@ class ChittiController:
 
         self.history.set_vision_context(vision_context)
 
-        # 4. Retrieve relevant long-term memories
+        # 6. Retrieve relevant long-term memories (cross-lingual semantic search)
         relevant_memories = []
         if self.memory is not None:
             try:
-                # Query memories for the user's prompt
+                # Query memories using both raw text and normalized English text
                 relevant_memories = self.memory.recall(user_text, top_k=self.config.memory.top_k)
+                if parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                    norm_mems = self.memory.recall(parsed_intent.normalized_text, top_k=self.config.memory.top_k)
+                    for nm in norm_mems:
+                        if nm.id not in [m.id for m in relevant_memories]:
+                            relevant_memories.append(nm)
 
                 # If a recognized person was detected in vision, also fetch memories about them
                 for person_name in recognized_names_seen:
@@ -230,7 +300,27 @@ class ChittiController:
 
         self.history.set_relevant_memories(relevant_memories)
 
-        # 5. Generate LLM response
+        # 7. Configure Response Language Guidance for LLM
+        active_lang = self.session_response_language
+        if not active_lang:
+            # Mirror user language
+            active_lang = detected_lang
+
+        lang_name_map = {
+            "en": "English",
+            "hi": "Hindi (Devanagari script)",
+            "hinglish": "natural, conversational Hinglish (Roman Hindi)",
+        }
+        lang_target_name = lang_name_map.get(active_lang, "English")
+
+        lang_guidance = (
+            f"\n\n[RESPONSE LANGUAGE DIRECTIVE: The user's query is in {lang_target_name}. "
+            f"Respond naturally in {lang_target_name}. Keep programming code, technical terms (e.g. Python, GPU, RAM, Docker, VS Code), "
+            f"file paths, and proper names in English/Roman text. Never translate technical terms awkwardly.]"
+        )
+        self.history.set_language_instruction(lang_guidance)
+
+        # 8. Generate LLM response
         log_state("THINKING")
         try:
             messages = self.history.get_messages_for_llm()

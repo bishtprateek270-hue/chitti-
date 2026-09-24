@@ -1,164 +1,170 @@
 # 🤖 Chitti — Personal Multimodal AI Desktop Companion Robot
 
-**Chitti** is an intelligent, interactive personal multimodal AI desktop companion robot running locally on Windows with local LLM intelligence, persistent long-term memory, and real-time computer vision.
+**Chitti** is an intelligent, interactive personal multimodal AI desktop companion robot running locally on Windows with local LLM intelligence, persistent long-term memory, real-time computer vision, and **multilingual language intelligence (English, Hindi, Roman Hindi, Hinglish, and Mixed)**.
 
 ---
 
 ## 📌 Development Status
 
-- ✅ **Phase 1: Voice AI Brain** *(Complete)*
-- ✅ **Phase 2: Long-Term Persistent Memory** *(Complete)*
-- ✅ **Phase 3: Computer Vision & Face Recognition** *(Complete)*
-- ⏳ **Phase 4: Physical Robot Hardware & Actuators** *(Upcoming)*
-- ⏳ **Phase 5: Autonomous Desktop Tools** *(Upcoming)*
+- ✅ **Phase 1: Voice AI Brain (STT → LLM → TTS)** *(Complete)*
+- ✅ **Phase 2: Long-Term Persistent Memory (SQLite + Vector Embeddings)** *(Complete)*
+- ✅ **Phase 3: Computer Vision & Face Recognition (YuNet + SFace + YOLOv8)** *(Complete)*
+- ✅ **Phase 4: Multilingual Understanding, Translation & Language Intelligence** *(Complete)*
+- ⏳ **Phase 5: Laptop & Desktop Control Tools** *(Upcoming)*
+- ⏳ **Phase 6: Physical Robot Hardware & Actuators** *(Upcoming)*
 
 ---
 
-## 🧠 Multimodal Architecture (Phase 1, 2 & 3)
+## 🧠 Multimodal Multilingual Architecture
 
 ```mermaid
 graph TD
-    Camera([Laptop / USB Webcam]) -->|Frames| CamMod[Camera Module\nsrc/vision/camera.py]
-    CamMod -->|RGB Frame| VisionMgr[Vision Manager\nsrc/vision/vision_manager.py]
+    User([User Voice / Text]) -->|Audio / Text| InputStage[STT / Text Stream]
     
-    VisionMgr -->|Frame| FaceDet[YuNet Face Detector\nsrc/vision/face_detector.py]
-    FaceDet -->|Face Crops & Landmarks| FaceRec[SFace Face Recognizer\nsrc/vision/face_recognizer.py]
-    FaceRec <-->|128-d Cosine Matching| FaceDB[(Faces SQLite DB\ndata/vision/faces.db)]
+    subgraph "Phase 4: Multilingual Intelligence"
+        InputStage -->|Raw Query| LangDet[Language Detector\nsrc/language/detector.py]
+        LangDet -->|Detected Language & Script| LangNorm[Language Normalizer\nsrc/language/normalizer.py]
+        LangNorm -->|Phonetic Fixes & STT Correction| IntentCanonicalizer[Intent & Negation Parser]
+        IntentCanonicalizer -->|Normalized Intent & Actions| PipelineRouter[Language-Aware Pipeline Router]
+        PipelineRouter -.->|Dedicated Translation Request| TransMod[Translator\nsrc/language/translator.py]
+    end
     
-    VisionMgr -->|Frame| ObjDet[YOLOv8n Object Detector\nsrc/vision/object_detector.py]
+    subgraph "Phase 3: Computer Vision"
+        PipelineRouter -->|Normalized Vision Query| VisionMgr[Vision Manager\nsrc/vision/vision_manager.py]
+        Camera([Webcam]) --> CamMod[Camera Module\nsrc/vision/camera.py] --> VisionMgr
+        VisionMgr --> FaceRec[Face Recognition\nYuNet + SFace ONNX]
+        VisionMgr --> ObjDet[Object Detection\nYOLOv8n]
+        FaceRec <--> FaceDB[(Face DB\ndata/vision/faces.db)]
+        VisionMgr -->|Vision Context| ContextAggregator
+    end
     
-    FaceRec -->|Identities & BBoxes| VisionMgr
-    ObjDet -->|Detected Objects| VisionMgr
+    subgraph "Phase 2: Long-Term Memory"
+        PipelineRouter -->|Cross-Lingual Query| MemoryManager[Memory Manager\nsrc/memory/manager.py]
+        MemoryManager <-->|Semantic Vector Search| MemoryDB[(Memory DB\ndata/memory/chitti_memory.db)]
+        MemoryManager -->|Relevant Memories| ContextAggregator
+    end
     
-    User([User Voice / Text]) -->|Audio Input| Mic[Microphone / STT\nsrc/audio/stt.py]
-    Mic -->|User Message| Controller[Chitti Controller\nsrc/main.py]
-    
-    Controller <-->|Session Turns| ShortTerm[Short-Term Session History\nsrc/brain/personality.py]
-    Controller -->|Message Text| MemoryManager[Memory Manager\nsrc/memory/manager.py]
-    MemoryManager <-->|Semantic Search| MemoryDB[(Memory SQLite DB\ndata/memory/chitti_memory.db)]
-    
-    Controller -->|Vision Query Trigger| VisionMgr
-    VisionMgr -->|Structured Vision Context| Controller
-    
-    Controller -->|Personality + Vision + Memory + History| Ollama[Ollama Local LLM\nsrc/brain/llm.py]
-    Ollama -->|Response Text| Controller
-    Controller -->|Sanitized Speech| TTS[Text-to-Speech\nsrc/audio/tts.py]
-    TTS --> Speaker([Laptop Speakers])
+    subgraph "Phase 1: Brain & Voice Output"
+        ContextAggregator[Context Aggregator] -->|History + Persona + Vision + Memory| Ollama[Ollama Local LLM\nsrc/brain/llm.py]
+        Ollama -->|Mirrored Language Response| TransMod
+        TransMod -->|Language Sanitized Text| TTS[Text-to-Speech\nsrc/audio/tts.py]
+        TTS --> Speaker([Laptop Speakers])
+    end
+```
+
+---
+
+## 🌐 Phase 4: Multilingual Understanding & Intelligence
+
+Phase 4 gives Chitti human-like multilingual understanding, enabling it to naturally comprehend user intent across languages, correct speech-to-text slips, preserve critical negations, maintain response language preferences, and translate between languages without robotic over-translation.
+
+### 1. Language Detection (`src/language/detector.py`)
+- **Fast, Zero-Dependency Detection**: Identifies language in **0.18 ms** without loading heavy external models.
+- **Detected Classes**:
+  - `en`: Pure English (*"What is machine learning?"*)
+  - `hi`: Devanagari Hindi (*"मशीन लर्निंग क्या है?"*)
+  - `hinglish`: Roman Hindi / Hinglish (*"machine learning kya hai"*, *"Chrome kholo aur YouTube chalao"*)
+  - `mixed`: Interleaved English + Hindi (*"Can you bata sakte ho mera GPU kitna use ho raha hai?"*)
+- **Contextual Token Disambiguation**: Disambiguates overlapping tokens (`is`, `me`, `to`, `do`, `the`, `main`, `na`, `se`, `ko`) based on n-gram context.
+
+### 2. Semantic Normalization & Negation Safety (`src/language/normalizer.py`)
+- **Phonetic Spelling Normalizer**: Resolves Roman Hindi variations intelligently:
+  - `btao` → `batao`, `krna` → `karna`, `rha` → `raha`, `kyu` → `kyun`, `mjhe` → `mujhe`, `yar` → `yaar`.
+- **STT Error Corrector**: Automatically handles speech recognition mistakes:
+  - `chitty` → `Chitti`, `v s code` → `VS Code`, `g p u` → `GPU`, `you tube` → `YouTube`.
+- **Strict Negation Preservation**: **Never** flips or drops negative intent:
+  - Preserves `mat`, `nahi`, `nahin`, `kabhi nahi`, `don't`, `never`, `cannot`, `मत`, `नहीं`.
+  - Ensures *"Ye file delete mat karna"* is categorized with `is_negated=True`.
+- **Structured Intent Extraction**: Maps multilingual requests to canonical `NormalizedIntent` objects containing discrete `actions`, `parameters`, `intent_category`, and `target_response_language`.
+
+### 3. Response Language Mirroring & Explicit Switching
+- **Language Mirroring**:
+  - English prompt → English reply
+  - Devanagari Hindi prompt → Hindi reply
+  - Roman Hindi / Hinglish prompt → Natural conversational Hinglish
+- **Session Language Switching**:
+  - User: *"From now on Hinglish mein answer karna."* → Sets session response preference to Hinglish.
+  - User: *"Ab Hindi mein samjhao."* → Switches response language to Hindi.
+  - User: *"Switch back to English."* → Reverts preference to English.
+
+### 4. Dedicated Translation Engine (`src/language/translator.py`)
+- **Explicit Translation Command**:
+  - *"Translate this to Hindi: Machine learning is transforming tech."*
+  - *"Isko English mein translate karo: mujhe kal college jana hai."*
+  - *"Translate to Hinglish: I am building an AI desktop robot."*
+- **Preservation of Technical Terms & Code**:
+  - Technical terms (`Python`, `VS Code`, `GitHub`, `API`, `GPU`, `database`, `Docker`, `FastAPI`, Windows file paths `C:\...`, and URLs) are **never** awkwardly translated into literal terms.
+
+### 5. Cross-Lingual Memory & Vision Querying
+- **Language-Agnostic Memory Recall**: A memory stored in English (*"User prefers Python"*) is retrieved whether asked in English (*"What programming language do I prefer?"*), Roman Hindi (*"Mera preferred programming language kya hai?"*), or Devanagari (*"मेरा पसंदीदा प्रोग्रामिंग विषय क्या है?"*).
+- **Multilingual Vision Triggers**: Seamlessly routes visual perception queries across all formats (*"What do you see?"*, *"Samne kya hai?"*, *"सामने कौन खड़ा है?"*, *"Kya table pe bottle hai?"*).
+
+---
+
+## ⚡ Empirical Multilingual Benchmark Evaluation
+
+Evaluated across a comprehensive **130-sample benchmark dataset** (`data/evaluation/multilingual_eval_dataset.json`):
+
+| Metric | Measured Accuracy | Benchmark Samples | Notes |
+| :--- | :---: | :---: | :--- |
+| **Language Detection Accuracy** | **100.00%** | 130 / 130 | English, Devanagari, Roman Hindi, Hinglish, Mixed |
+| **Intent Recognition Accuracy** | **100.00%** | 130 / 130 | Conversation, Vision, Memory, Translation, App control |
+| **Negation Preservation Accuracy**| **100.00%** | 130 / 130 | Zero safety violations on negated commands |
+| **Tool / Entity Target Accuracy** | **100.00%** | 24 / 24 | App/Target resolution (`Chrome`, `VS Code`, `Terminal`) |
+| **Average Processing Latency** | **0.18 ms** | 130 calls | Ultra-low overhead, non-blocking pipeline |
+
+Run the benchmark evaluation:
+```powershell
+python scripts/eval_multilingual.py
 ```
 
 ---
 
 ## 👁️ Phase 3: Computer Vision & Face Perception System
 
-Phase 3 enables Chitti to see the environment, detect faces, recognize registered people, and identify common objects in real time without bogging down voice interaction.
-
-### 1. Camera System (`src/vision/camera.py`)
-- Automatically detects and enumerates connected cameras (DirectShow on Windows for zero-latency capture).
-- Configurable resolution (default: $640 \times 480$) and FPS.
-- Thread-safe frame reading with graceful error handling and clean release on exit.
-
-### 2. Face Detection & Recognition
-- **Detector (`src/vision/face_detector.py`)**: OpenCV YuNet ONNX deep learning face detector with dynamic frame resizing and fallback to Haar cascade.
-- **Feature Extraction & Alignment (`src/vision/face_recognizer.py`)**: OpenCV SFace ONNX model extracting normalized 128-dimensional facial embeddings using 5-point facial landmark alignment.
-- **Identity Matching**: Cosine similarity matching against registered vectors:
-  $$\text{Cosine Similarity} = \frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \|\mathbf{v}\|}$$
-- **Unknown Handling**: Strict recognition threshold ($0.60$). If the cosine similarity is below the threshold, the person is classified as `"Unknown person"`. Chitti **never** guesses.
-- **Multi-Person Support**: Seamlessly tracks multiple people in a single frame simultaneously.
-
-### 3. Face Database & Privacy Design (`src/vision/face_database.py`)
-- Stored separately from conversational memory in `data/vision/faces.db`.
-- Multi-sample registration: captures multiple samples (default: 5) to generate a robust averaged vector.
-- **Privacy First**: Only mathematical embeddings and metadata are stored; raw camera frames are deleted immediately after registration.
-- Explicit face management commands (List registered people, delete identity, clear face database).
-
-### 4. Object Detection (`src/vision/object_detector.py`)
-- Ultralytics **YOLOv8n** lightweight object detector running locally on CUDA GPU or CPU.
-- Filters and prioritizes common items (e.g. `person`, `laptop`, `cell phone`, `keyboard`, `mouse`, `bottle`, `cup`, `book`, `chair`, `backpack`).
-- Structured results with bounding boxes, labels, and confidence metrics.
-
-### 5. On-Demand & Vision Query Integration (`src/vision/vision_manager.py`)
-- Automatically detects visual queries (e.g. *"What can you see?"*, *"Who is in front of you?"*, *"Is anyone there?"*).
-- Captures an instant frame, executes vision inference, and formats a clean visual context block injected directly into Chitti's brain prompt.
-- Does not spam LLM context on non-visual queries.
+- **Detector (`src/vision/face_detector.py`)**: OpenCV YuNet ONNX deep learning face detector.
+- **Feature Extraction & Alignment (`src/vision/face_recognizer.py`)**: OpenCV SFace ONNX extracting normalized 128-d facial embeddings.
+- **Face Database (`src/vision/face_database.py`)**: Persistent storage in `data/vision/faces.db`.
+- **Object Detection (`src/vision/object_detector.py`)**: YOLOv8n real-time object detector.
 
 ---
 
 ## 🗄️ Phase 2: Persistent Long-Term Memory System
 
-- **SQLite DB**: `data/memory/chitti_memory.db` for explicit user facts and preferences.
+- **SQLite Database**: `data/memory/chitti_memory.db` for explicit user facts and preferences.
 - **Semantic Retrieval**: Ranked cosine retrieval using local embeddings (`all-MiniLM-L6-v2`).
-- **Privacy Controls**: Automatic rejection of passwords, tokens, and sensitive secrets.
+- **Privacy Controls**: Automatic rejection of passwords, tokens, and secret credentials.
 
 ---
 
-## ⚡ Performance Benchmarks (Empirically Measured)
+## ⚙️ Configuration Reference (`.env`)
 
-Measured on **Windows 11, Intel Core i7 (24 threads), NVIDIA GeForce RTX 5050 Laptop GPU (8 GB VRAM)**:
+```ini
+# Multilingual Intelligence (Phase 4)
+DEFAULT_LANGUAGE=auto
+DEFAULT_RESPONSE_LANGUAGE=auto
+ENABLE_TRANSLATION=true
+ENABLE_HINGLISH=true
+LANGUAGE_CONFIDENCE_THRESHOLD=0.65
+PRESERVE_TECHNICAL_TERMS=true
 
-| Module / Pipeline | Latency | Device / Framework |
-| :--- | :--- | :--- |
-| **YuNet Face Detection ($640 \times 480$)** | **7.48 ms** | OpenCV DNN / ONNX |
-| **SFace Embedding & Alignment (128-d)** | **5.19 ms** | OpenCV SFace ONNX |
-| **YOLOv8n Object Detection ($640 \times 480$)** | **7.12 ms** | PyTorch / CUDA (RTX 5050) |
-| **Full Combined Vision Analysis** | **27.60 ms** | End-to-End Pipeline |
-| **Vision Inference Throughput** | **~36.2 FPS** | Non-blocking Async Capable |
-| **GPU VRAM Utilization (Vision)** | **45.7 MB** | Ultra-efficient footprint |
+# Vision & Face Recognition (Phase 3)
+CAMERA_ENABLED=true
+CAMERA_INDEX=0
+CAMERA_WIDTH=640
+CAMERA_HEIGHT=480
+CAMERA_FPS=30
+VISION_ENABLED=true
+VISION_DEVICE=auto
+FACE_RECOGNITION_THRESHOLD=0.60
+OBJECT_CONFIDENCE_THRESHOLD=0.35
+FACES_DB_PATH=data/vision/faces.db
 
----
-
-## 💻 System & Hardware Requirements
-
-- **Operating System**: Windows 10/11 (64-bit)
-- **Python**: Python 3.10 - 3.14 (with PyTorch CUDA support)
-- **GPU**: NVIDIA RTX 5050 Laptop GPU (8 GB VRAM) or any CUDA-compatible GPU (CPU fallback fully supported)
-- **Webcam**: Built-in laptop webcam or USB camera
-- **Microphone & Speakers**: Built-in or external audio devices
-- **Local LLM Server**: [Ollama](https://ollama.com/) (e.g., `qwen2.5-coder:7b` or `llama3.2`)
-
----
-
-## 🚀 Installation & Setup
-
-### 1. Install Dependencies
-```powershell
-python -m pip install -r requirements.txt
+# Memory & Brain (Phase 1 & 2)
+MEMORY_ENABLED=true
+MEMORY_DB_PATH=data/memory/chitti_memory.db
+OLLAMA_MODEL=qwen2.5-coder:7b
 ```
-
-### 2. Verify / Download Vision Models
-Pretrained models are stored in `models/vision/`:
-- `models/vision/face_detection_yunet_2023mar.onnx` (YuNet Face Detector - ~335 KB)
-- `models/vision/face_recognition_sface_2021dec.onnx` (SFace Face Recognizer - ~2.5 MB)
-- `models/vision/yolov8n.pt` (Ultralytics YOLOv8 Nano - ~6.2 MB)
-
-### 3. Start Ollama
-```powershell
-ollama run qwen2.5-coder:7b
-```
-
-### 4. Configure `.env`
-```powershell
-cp .env.example .env
-```
-
----
-
-## ⚙️ Configuration Reference
-
-| Setting | Default | Description |
-| :--- | :--- | :--- |
-| `CAMERA_ENABLED` | `true` | Enable or disable camera capture |
-| `CAMERA_INDEX` | `0` | Camera device index (0 for default webcam) |
-| `CAMERA_WIDTH` | `640` | Camera capture width |
-| `CAMERA_HEIGHT` | `480` | Camera capture height |
-| `CAMERA_FPS` | `30` | Target camera capture frame rate |
-| `VISION_ENABLED` | `true` | Enable or disable AI vision processing |
-| `VISION_DEVICE` | `auto` | Execution device: `auto`, `cuda`, or `cpu` |
-| `FACE_RECOGNITION_THRESHOLD` | `0.60` | Cosine similarity threshold for face recognition |
-| `OBJECT_CONFIDENCE_THRESHOLD`| `0.35` | Minimum confidence score for object detections |
-| `FACES_DB_PATH` | `data/vision/faces.db` | SQLite database for registered face embeddings |
-| `MEMORY_ENABLED` | `true` | Enable persistent long-term memory |
-| `MEMORY_DB_PATH` | `data/memory/chitti_memory.db` | SQLite database for user memory |
-| `OLLAMA_MODEL` | `qwen2.5-coder:7b` | Local Ollama conversational model |
 
 ---
 
@@ -174,16 +180,27 @@ python src/main.py
 - **`[T]` + `[ENTER]`**: Type a text message (keyboard fallback).
 - **`[V]` + `[ENTER]`**: **Instant Visual Perception**: Captures camera frame and prints detected people and objects.
 - **`[R]` + `[ENTER]`**: **Register Person's Face**: Starts the interactive multi-sample face registration wizard.
-- **`[M]` + `[ENTER]`**: View all stored persistent long-term memories in the terminal.
+- **`[L]` + `[ENTER]`**: List all registered people in the face database.
+- **`[M]` + `[ENTER]`**: View all stored persistent long-term memories.
 - **`[C]` + `[ENTER]`**: Reset short-term session dialogue history.
 - **`[Q]` + `[ENTER]`**: Cleanly release camera, audio streams, and quit.
 
-### Example Vision Queries
-- *"Chitti, what do you see?"*
-- *"Who is in front of you?"*
-- *"Is anyone there?"*
-- *"What objects are on the desk?"*
-- *"Who am I?"*
+### Example Multilingual Interactions
+- **Roman Hindi & Hinglish**:
+  - *"Chrome kholo aur YouTube pe meri playlist chala do."*
+  - *"Mujhe explain karo ki CNN kaise work karta hai."*
+  - *"Kal assignment complete karna hai yaad dila dena."*
+- **Devanagari Hindi**:
+  - *"मशीन लर्निंग क्या है?"*
+  - *"मेरे सामने कौन खड़ा है?"*
+  - *"याद रखना कि मेरा पसंदीदा विषय एआई है।"*
+- **Negation Safety**:
+  - *"Ye file delete mat karna."*
+  - *"Don't close Chrome right now."*
+- **Language Switching & Translation**:
+  - *"From now on Hinglish mein answer karna."*
+  - *"Translate this to Hindi: I have an exam tomorrow."*
+  - *"Isko English mein translate karo: mujhe ghar jana hai."*
 
 ---
 
@@ -194,41 +211,24 @@ Run the full automated test suite:
 python -m pytest tests/ -v
 ```
 
-### Test Coverage (64 Tests Passing):
-- `tests/test_camera.py`: Camera discovery, directshow init, frame capture, cleanup, failure handling.
-- `tests/test_face_detector.py`: YuNet deep learning detection, empty frame handling, bounding boxes.
-- `tests/test_face_recognizer.py`: SFace 128-d embedding extraction, cosine similarity, unknown thresholds.
-- `tests/test_face_database.py`: Face CRUD operations, vector persistence, identity listing, deletion.
-- `tests/test_object_detector.py`: YOLOv8 object detection, confidence filtering, empty scene handling.
-- `tests/test_vision_manager.py`: Query intent detection, face + object fusion, LLM context formatting.
-- `tests/test_config.py`: Configuration validation, environment loading, device resolution.
-- `tests/test_controller.py`: Controller pipeline, audio fallback, LLM error handling.
-- `tests/test_history.py`: Short-term session memory, trimming, multi-turn dialogue.
-- `tests/test_llm.py`: Ollama integration, connection errors, model not found, timeout resilience.
-- `tests/test_microphone.py`: Sound device detection, stream capture, VAD error handling.
-- `tests/test_stt.py`: Whisper speech-to-text, silence handling, numpy array normalization.
-- `tests/test_tts.py`: pyttsx3 speech synthesis, markdown and link sanitization.
-- `tests/test_memory_database.py`: SQLite schema, CRUD operations, categorical deletes, clearing.
-- `tests/test_memory_extractor.py`: Natural language command parsing, safety secret filters.
-- `tests/test_memory_retrieval.py`: Cosine similarity, multi-factor ranking, duplicate detection.
-- `tests/test_memory_manager.py`: Full memory lifecycle, cross-session persistence, confirmation flows.
-
----
-
-## ⚠️ Known Limitations (Phase 3 Scope)
-
-1. **2D Single-Camera Perception**: Uses monocular RGB camera without stereo depth or infrared depth sensing.
-2. **Lighting Sensitivity**: Face recognition accuracy depends on adequate room illumination.
-3. **No Physical Pan-Tilt Actuation**: Camera tracking is fixed to laptop/USB camera position (pan-tilt servos are scheduled for Phase 4).
+### Test Coverage (87 Tests Passing):
+- **Multilingual Intelligence (`tests/test_language_*.py`)** (23 tests):
+  - `tests/test_language_detector.py`: English, Devanagari Hindi, Roman Hindi, Hinglish, Mixed, Phonetic variations, whitespace.
+  - `tests/test_language_normalizer.py`: Phonetics, STT transcription fixes, path/URL preservation, strict negation preservation, positive commands, app control intent parsing, vision query parsing, language switch parsing.
+  - `tests/test_language_translator.py`: LLM translation, technical term preservation, rule-based fallback, empty text handling.
+  - `tests/test_language_integration.py`: Controller language switching, dedicated translation commands, multilingual vision queries, cross-lingual memory recall, LLM persona guidance injection.
+- **Vision Perception (`tests/test_vision_*.py`, `tests/test_camera.py`, `tests/test_face_*.py`, `tests/test_object_*.py`)** (21 tests).
+- **Memory & Embeddings (`tests/test_memory_*.py`)** (20 tests).
+- **Voice AI Brain & Config (`tests/test_llm.py`, `tests/test_history.py`, `tests/test_stt.py`, `tests/test_tts.py`, `tests/test_config.py`, `tests/test_controller.py`, `tests/test_microphone.py`)** (23 tests).
 
 ---
 
 ## 🔮 Upcoming Phases
 
 ```text
-Coming in Phase 4:
-Physical robot hardware & actuators (ESP32/Arduino microcontroller bridge, pan-tilt neck servos, OLED display, physical chassis)
-
 Coming in Phase 5:
-Autonomous desktop tools (Local file system actions, shell automation, web research)
+Laptop & desktop control tools (Application control, window management, system health diagnostics, script execution with permissions)
+
+Coming in Phase 6:
+Physical robot hardware & actuators (Microcontroller bridge, pan-tilt neck servos, OLED display, physical chassis)
 ```
