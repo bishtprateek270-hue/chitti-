@@ -6,7 +6,7 @@ Provides thread-safe webcam access, frame capture, device discovery, and clean r
 import sys
 import threading
 import time
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 import numpy as np
 
 try:

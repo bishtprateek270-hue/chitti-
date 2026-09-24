@@ -4,7 +4,7 @@ Uses OpenCV YuNet deep learning face detector with fallback to Haar Cascade.
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 import numpy as np
 
 try:

@@ -4,7 +4,7 @@ Extracts 128-dimensional facial feature embeddings using OpenCV SFace with face 
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 import numpy as np
 
 try:
