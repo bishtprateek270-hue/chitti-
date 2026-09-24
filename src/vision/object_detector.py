@@ -11,6 +11,11 @@ from src.vision.models import DetectedObject
 from src.utils.logging import log_debug, log_warning, log_chitti
 
 
+import os
+os.environ["YOLO_OFFLINE"] = "1"
+os.environ["YOLO_VERBOSE"] = "False"
+
+
 class ObjectDetector:
     """Detects common household and office objects using a local YOLO model."""
 
@@ -35,7 +40,7 @@ class ObjectDetector:
         self.confidence_threshold = confidence_threshold
         self.device = self._resolve_device(device)
         self._model = None
-        self._load_model()
+        # Model is loaded on-demand during first detection call to keep startup instant
 
     def _resolve_device(self, requested_device: str) -> str:
         req = requested_device.strip().lower()
@@ -53,12 +58,12 @@ class ObjectDetector:
 
     def _load_model(self):
         """Loads the YOLO model into memory."""
+        if self._model is not None:
+            return
         try:
             from ultralytics import YOLO
-            log_debug(f"Loading YOLO object detector ({self.model_path}) on {self.device.upper()}...")
-            # If local file exists, load directly; otherwise load yolov8n.pt
             target = str(self.model_path) if self.model_path.exists() else "yolov8n.pt"
-            self._model = YOLO(target)
+            self._model = YOLO(target, task="detect")
             log_debug("YOLO object detector loaded successfully.")
         except Exception as e:
             log_warning(f"Failed to load YOLO object detector: {e}")
@@ -72,7 +77,13 @@ class ObjectDetector:
         """
         Runs object detection on a BGR frame and returns structured DetectedObject items.
         """
-        if frame is None or frame.size == 0 or self._model is None:
+        if frame is None or frame.size == 0:
+            return []
+
+        if self._model is None:
+            self._load_model()
+
+        if self._model is None:
             return []
 
         try:

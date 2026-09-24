@@ -91,9 +91,18 @@ class Camera:
     def capture_frame(self) -> np.ndarray:
         """Captures a single BGR frame from the camera."""
         with self._lock:
-            if not self._is_opened or self._cap is None or not self._cap.isOpened():
-                self.open()
+            # 1. Try reading from existing active stream
+            if self._is_opened and self._cap is not None and self._cap.isOpened():
+                try:
+                    ret, frame = self._cap.read()
+                    if ret and frame is not None and frame.size > 0:
+                        return frame
+                except Exception:
+                    pass
 
+            # 2. Fresh open if stream was idle or not initialized
+            self.release()
+            self.open()
             ret, frame = self._cap.read()
             if not ret or frame is None:
                 raise CameraError("Failed to read frame from camera stream.")

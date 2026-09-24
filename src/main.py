@@ -260,39 +260,55 @@ class ChittiController:
     def trigger_vision_snapshot(self):
         """Performs an instant camera snapshot and reports what Chitti sees."""
         if not self.vision:
-            print("\n[VISION] Camera/Vision system is not available.")
+            print("\n[VISION] Camera/Vision system is not available.", flush=True)
             return
 
-        print("\n[VISION] Capturing camera frame...")
+        print("\n[VISION] Capturing camera frame & analyzing visual scene...", flush=True)
         result = self.vision.analyze_frame()
-        print(f"\nVisual Perception Summary:\n{result.summary_text}")
+        print(f"\nVisual Perception Summary:\n{result.summary_text}", flush=True)
         if result.faces:
-            print("Detected Faces:")
+            print("Detected Faces:", flush=True)
             for f in result.faces:
                 status = f"Registered ({f.name}, similarity: {f.similarity:.2f})" if f.is_known else "Unknown Person"
-                print(f"  - {status} at bbox {f.bbox}")
+                print(f"  - {status} at bbox {f.bbox}", flush=True)
         if result.object_counts:
-            print("Detected Objects:")
+            print("Detected Objects:", flush=True)
             for obj, cnt in result.object_counts.items():
-                print(f"  - {obj}: {cnt}")
+                print(f"  - {obj}: {cnt}", flush=True)
 
         self.speak(result.summary_text)
 
     def trigger_face_registration_interactive(self):
         """Interactively registers a person's face using the camera."""
         if not self.vision:
-            print("\n[VISION] Camera/Vision system is not available.")
+            print("\n[VISION] Camera/Vision system is not available.", flush=True)
             return
 
         name = input("\nEnter the person's name to register: ").strip()
         if not name:
-            print("Registration cancelled: Name cannot be empty.")
+            print("Registration cancelled: Name cannot be empty.", flush=True)
             return
 
-        print(f"\nPlease look directly at the camera. Collecting face samples for '{name}'...")
+        print(f"\nPlease look directly at the camera. Collecting face samples for '{name}'...", flush=True)
         success, msg = self.vision.register_person(name, num_samples=3)
-        print(f"\n{msg}")
+        print(f"\n{msg}", flush=True)
         self.speak(msg)
+
+    def trigger_list_registered_faces(self):
+        """Lists all registered face identities in the database."""
+        if not self.vision:
+            print("\n[VISION] Face database is not available.", flush=True)
+            return
+        names = self.vision.list_registered_people()
+        print("\n==========================================", flush=True)
+        print(" REGISTERED PEOPLE IN FACE DATABASE", flush=True)
+        print("==========================================", flush=True)
+        if names:
+            for i, n in enumerate(names, 1):
+                print(f"  {i}. {n}", flush=True)
+        else:
+            print("  No registered faces found in database.", flush=True)
+        print("==========================================\n", flush=True)
 
     def listen_and_transcribe(self) -> str:
         """Captures voice from microphone and transcribes via Whisper STT."""
@@ -335,6 +351,7 @@ class ChittiController:
         print("   [T] + ENTER  : Type a text message (Keyboard fallback)")
         print("   [V] + ENTER  : Instant Camera Vision Snapshot")
         print("   [R] + ENTER  : Register a new Person's Face")
+        print("   [L] + ENTER  : List all Registered People in Face Database")
         print("   [M] + ENTER  : View all stored persistent long-term memories")
         print("   [C] + ENTER  : Clear short-term session conversation history")
         print("   [Q] + ENTER  : Quit Chitti")
@@ -342,7 +359,7 @@ class ChittiController:
 
         while True:
             try:
-                user_choice = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register face, M=memory, C=clear, Q=quit): ").strip().lower()
+                user_choice = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register, L=list faces, M=memory, C=clear, Q=quit): ").strip().lower()
 
                 if user_choice in ("q", "quit", "exit"):
                     log_chitti("Shutting down Chitti. Goodbye!")
@@ -357,6 +374,10 @@ class ChittiController:
 
                 if user_choice in ("r", "register", "register face"):
                     self.trigger_face_registration_interactive()
+                    continue
+
+                if user_choice in ("l", "list", "faces", "people"):
+                    self.trigger_list_registered_faces()
                     continue
 
                 if user_choice in ("c", "clear"):
