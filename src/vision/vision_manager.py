@@ -244,10 +244,19 @@ class VisionManager:
         timeout = 25.0  # 25 seconds timeout to collect samples
         last_hint_time = 0.0
 
+        win_name = "Chitti Face Registration"
+        has_display = True
+        try:
+            cv2.namedWindow(win_name, cv2.WINDOW_AUTOSIZE)
+        except Exception:
+            has_display = False
+
         while len(collected_embeddings) < num_samples and (time.time() - start_time) < timeout:
             try:
                 frame = self.camera.capture_frame()
                 detections = self.face_detector.detect_faces(frame)
+
+                display_frame = frame.copy() if has_display else None
 
                 if len(detections) == 1:
                     det = detections[0]
@@ -258,18 +267,49 @@ class VisionManager:
                             progress_callback(len(collected_embeddings), num_samples)
                         print(f"  -> [Sample {len(collected_embeddings)}/{num_samples}] Face captured! (confidence: {det.confidence:.2f})", flush=True)
                         time.sleep(0.3)
+
+                    if display_frame is not None:
+                        x, y, w, h = det.bbox
+                        cv2.rectangle(display_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        cv2.putText(
+                            display_frame,
+                            f"Capturing: {clean_name} ({len(collected_embeddings)}/{num_samples})",
+                            (x, max(20, y - 10)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            (0, 255, 0),
+                            2,
+                        )
                 elif len(detections) > 1:
                     if time.time() - last_hint_time > 1.5:
                         print(f"  [Hint] Detected {len(detections)} faces in frame. Please have only one person in view.", flush=True)
                         last_hint_time = time.time()
+                    if display_frame is not None:
+                        for d in detections:
+                            x, y, w, h = d.bbox
+                            cv2.rectangle(display_frame, (x, y), (x + w, y + h), (0, 165, 255), 2)
                 else:
                     if time.time() - last_hint_time > 2.0:
                         print("  [Hint] Looking for your face... Please look directly at the webcam.", flush=True)
                         last_hint_time = time.time()
-                time.sleep(0.08)
+
+                if has_display and display_frame is not None:
+                    cv2.imshow(win_name, display_frame)
+                    key = cv2.waitKey(20) & 0xFF
+                    if key in (27, ord('q'), ord('Q')):
+                        print("\n[VISION] Face registration cancelled by user.", flush=True)
+                        break
+                else:
+                    time.sleep(0.05)
             except Exception as e:
                 log_warning(f"Error during face sample capture: {e}")
                 time.sleep(0.2)
+
+        if has_display:
+            try:
+                cv2.destroyWindow(win_name)
+            except Exception:
+                pass
 
         if len(collected_embeddings) == 0:
             return (
