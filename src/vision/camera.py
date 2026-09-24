@@ -37,7 +37,7 @@ class Camera:
         self.height = height
         self.fps = fps
         self._cap: Optional[Any] = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._is_opened = False
 
     @staticmethod
