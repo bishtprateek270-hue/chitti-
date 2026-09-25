@@ -32,6 +32,7 @@ from src.language.detector import LanguageDetector
 from src.language.normalizer import LanguageNormalizer
 from src.language.translator import Translator
 from src.language.language_models import IntentCategory
+from src.agent.manager import LaptopAgentManager
 
 
 BANNER = r"""
@@ -41,6 +42,7 @@ BANNER = r"""
 |             Personal AI Desktop Companion Robot                  |
 |    Phase 1: Voice  +  Phase 2: Memory  +  Phase 3: Vision        |
 |    Phase 4: Multilingual  +  Phase 4A: Brain Reliability         |
+|    Phase 5: Controlled Laptop Agent Foundation                   |
 |                                                                  |
 +------------------------------------------------------------------+
 """
@@ -59,6 +61,7 @@ class ChittiController:
         self.llm = None
         self.memory = None
         self.vision = None
+        self.agent = None
         self.language_detector = LanguageDetector(confidence_threshold=self.config.language.confidence_threshold)
         self.language_normalizer = LanguageNormalizer(self.language_detector)
         self.translator = None
@@ -154,6 +157,21 @@ class ChittiController:
         self.translator = Translator(llm=self.llm)
         log_chitti("Multilingual intelligence system ready (English, Hindi, Hinglish).")
 
+        # 8. Initialize Controlled Laptop Agent (Phase 5)
+        if self.config.agent.enabled:
+            log_chitti("Initializing controlled laptop agent subsystem...")
+            try:
+                self.agent = LaptopAgentManager(
+                    workspace_dir=self.config.agent.workspace_dir,
+                    screenshots_dir=self.config.agent.screenshots_dir,
+                )
+                log_chitti("Laptop agent subsystem ready (Apps, Folders, Files, System Info, Volume).")
+            except Exception as e:
+                log_error(f"Laptop agent initialization failed: {e}")
+                self.agent = None
+        else:
+            log_chitti("Laptop agent subsystem is disabled in configuration.")
+
         log_chitti("System initialization complete. Ready for interaction!\n")
 
     def speak(self, text: str):
@@ -218,6 +236,25 @@ class ChittiController:
             print(trans_res.translated_text)
             self.speak(trans_res.translated_text)
             return
+
+        # 2.5. Check for Controlled Laptop Agent Actions (Phase 5)
+        if self.agent is not None:
+            try:
+                agent_result = self.agent.handle_command(user_text, lang=active_lang)
+                if agent_result is None and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                    agent_result = self.agent.handle_command(parsed_intent.normalized_text, lang=active_lang)
+
+                if agent_result is not None:
+                    success, resp_msg, act_res = agent_result
+                    self.history.add_user_message(user_text)
+                    self.history.add_assistant_message(resp_msg)
+
+                    log_state("CHITTI")
+                    print(resp_msg)
+                    self.speak(resp_msg)
+                    return
+            except Exception as e:
+                log_warning(f"Laptop agent command execution notice: {e}")
 
         # 3. Check for Face Management Commands (e.g. "Who is registered?", "Remove Prateek from face recognition")
         if self.vision is not None:

@@ -198,6 +198,22 @@ class LanguageConfig:
 
 
 @dataclass
+class AgentConfig:
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("AGENT_ENABLED", "true").lower() in ("true", "1", "yes")
+    )
+    screenshots_dir: str = field(
+        default_factory=lambda: os.getenv("SCREENSHOTS_DIR", "data/screenshots")
+    )
+    workspace_dir: str = field(
+        default_factory=lambda: os.getenv("AGENT_WORKSPACE_DIR", "data/workspace")
+    )
+    require_destructive_confirmation: bool = field(
+        default_factory=lambda: os.getenv("REQUIRE_DESTRUCTIVE_CONFIRMATION", "true").lower() in ("true", "1", "yes")
+    )
+
+
+@dataclass
 class AppConfig:
     log_level: str = field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper()
@@ -210,6 +226,7 @@ class AppConfig:
     camera: CameraConfig = field(default_factory=CameraConfig)
     vision: VisionConfig = field(default_factory=VisionConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
+    agent: AgentConfig = field(default_factory=AgentConfig)
 
 
 # Global singleton instance
