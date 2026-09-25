@@ -208,8 +208,17 @@ class AgentConfig:
     workspace_dir: str = field(
         default_factory=lambda: os.getenv("AGENT_WORKSPACE_DIR", "data/workspace")
     )
+    project_registry_path: str = field(
+        default_factory=lambda: os.getenv("PROJECT_REGISTRY_PATH", "data/projects.json")
+    )
     require_destructive_confirmation: bool = field(
         default_factory=lambda: os.getenv("REQUIRE_DESTRUCTIVE_CONFIRMATION", "true").lower() in ("true", "1", "yes")
+    )
+    max_loop_steps: int = field(
+        default_factory=lambda: int(os.getenv("AGENT_MAX_LOOP_STEPS", "15"))
+    )
+    action_delay_seconds: float = field(
+        default_factory=lambda: float(os.getenv("AGENT_ACTION_DELAY", "0.2"))
     )
 
 

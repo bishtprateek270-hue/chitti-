@@ -81,3 +81,8 @@ def log_warning(message: str):
 def log_debug(message: str):
     """Logs a debug message."""
     logger.debug(message)
+
+
+# Aliases for convenience
+log_info = log_chitti
+log_warn = log_warning

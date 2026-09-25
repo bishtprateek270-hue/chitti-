@@ -1,44 +1,85 @@
 """
 Chitti Laptop Agent Manager Module.
-Coordinates command parsing, safety validation, risk assessment, confirmation handling,
-and deterministic tool execution for Windows laptop operations.
+Coordinates command parsing, multi-step planning, safety validation, risk assessment, confirmation handling,
+and full computer-use tool execution for Windows laptop operations.
 """
 
 import re
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
-from src.agent.actions import ActionType, RiskLevel, StructuredAction, ActionResult
-from src.agent.parser import ActionParser
-from src.agent.validator import ActionValidator
+from src.agent.actions import ActionResult, ActionType, RiskLevel, StructuredAction
+from src.agent.computer import (
+    AppController,
+    BrowserController,
+    ComputerController,
+    FilesystemController,
+    ScreenAnalyzer,
+    TerminalController,
+)
 from src.agent.executor import ActionExecutor
+from src.agent.parser import ActionParser
+from src.agent.planner import AgentPlanner, ComputerAgentLoop
+from src.agent.projects import ProjectRegistry
+from src.agent.task_state import TaskState, TaskStatus
+from src.agent.validator import ActionValidator
 from src.config import get_config
-from src.utils.logging import log_chitti, log_warning, log_error, log_debug
+from src.utils.logging import log_chitti, log_debug, log_error, log_info, log_warning
 
 
 class LaptopAgentManager:
-    """Coordinates safe laptop agent commands and tool execution."""
+    """Coordinates safe laptop agent commands, computer control tools, and multi-step task execution."""
 
-    def __init__(self, workspace_dir: Optional[str] = None, screenshots_dir: Optional[str] = None):
+    def __init__(
+        self,
+        workspace_dir: Optional[str] = None,
+        screenshots_dir: Optional[str] = None,
+        project_registry_path: Optional[str] = None,
+    ):
         cfg = get_config()
         self.workspace_dir = workspace_dir or cfg.agent.workspace_dir
         self.screenshots_dir = screenshots_dir or cfg.agent.screenshots_dir
+        self.project_registry_path = project_registry_path or cfg.agent.project_registry_path
+
+        # Core Computer Controllers
+        self.computer = ComputerController(screenshots_dir=self.screenshots_dir)
+        self.filesystem = FilesystemController(default_workspace=self.workspace_dir)
+        self.terminal = TerminalController(default_cwd=self.workspace_dir)
+        self.browser = BrowserController()
+        self.apps = AppController()
+        self.screen_analyzer = ScreenAnalyzer(self.computer)
+        self.projects = ProjectRegistry(registry_file=self.project_registry_path)
+
+        # Single-step & Multi-step Planners
         self.parser = ActionParser()
         self.validator = ActionValidator()
         self.executor = ActionExecutor()
+        self.planner = AgentPlanner(project_registry=self.projects)
+        self.loop = ComputerAgentLoop(
+            computer=self.computer,
+            filesystem=self.filesystem,
+            terminal=self.terminal,
+            browser=self.browser,
+            apps=self.apps,
+            screen_analyzer=self.screen_analyzer,
+            projects=self.projects,
+        )
+
+        # State tracking
         self.pending_destructive_action: Optional[StructuredAction] = None
+        self.active_task_state: Optional[TaskState] = None
 
     def handle_command(self, user_text: str, lang: str = "en") -> Optional[Tuple[bool, str, Optional[ActionResult]]]:
         """
-        Parses and evaluates if the user's message is a laptop action command.
+        Parses and evaluates if the user's message is a single-step or multi-step laptop action command.
         Returns:
-            - (True, confirmation_or_result_message, action_result) if handled as an action.
-            - (False, error_or_rejection_message, None) if validation failed.
-            - None if not an agent command (routes to memory/LLM).
+            - (True, response_message, action_result) if handled as an action.
+            - (False, error_message, None) if validation failed.
+            - None if not an agent command (routes to conversation/memory/LLM).
         """
         raw = user_text.strip()
         lower = raw.lower()
 
-        # 1. Handle Pending Destructive Action Confirmation
+        # 1. Handle Pending Confirmation State
         if self.pending_destructive_action is not None:
             action = self.pending_destructive_action
             if re.search(r"\b(?:no|cancel|stop|abort|don'?t|nope|nahi|nahin|mat karo)\b", lower):
@@ -68,7 +109,25 @@ class LaptopAgentManager:
                 )
                 return True, prompt_msg, None
 
-        # 2. Parse command into structured action
+        # 2. Check for Multi-step Task Plan First
+        task_plan = self.planner.plan_task(raw)
+        if task_plan and task_plan.steps:
+            log_chitti(f"[AGENT] Multi-step task plan generated with {len(task_plan.steps)} steps.")
+            self.active_task_state = task_plan
+            success, msg = self.loop.execute_plan(task_plan)
+            if task_plan.status == TaskStatus.WAITING_CONFIRMATION:
+                self.pending_destructive_action = StructuredAction(
+                    action=ActionType.DELETE_FOLDER if "DELETE_DIRECTORY" in (task_plan.current_step.action_type if task_plan.current_step else "") else ActionType.DELETE_FILE,
+                    parameters=task_plan.current_step.parameters if task_plan.current_step else {},
+                    risk_level=RiskLevel.HIGH,
+                    requires_confirmation=True,
+                    raw_input=raw,
+                )
+                return True, msg, None
+
+            return success, msg, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=msg)
+
+        # 3. Check for Single-step Structured Action
         structured_action = self.parser.parse_command(raw)
         if not structured_action:
             return None
@@ -78,7 +137,7 @@ class LaptopAgentManager:
             log_chitti(f"[AGENT] Target: {structured_action.target}")
         log_chitti(f"[AGENT] Risk: {structured_action.risk_level.value}")
 
-        # 3. Validate structured action
+        # 4. Validate Single-step Action
         is_valid, reason, validated_action = self.validator.validate(structured_action)
         if not is_valid or not validated_action:
             log_chitti(f"[AGENT] Validation: FAILED | Reason: {reason}")
@@ -87,7 +146,7 @@ class LaptopAgentManager:
 
         log_chitti(f"[AGENT] Validation: PASSED")
 
-        # 4. Check for Confirmation Requirement
+        # 5. Check for Confirmation Requirement
         if validated_action.requires_confirmation or validated_action.risk_level == RiskLevel.HIGH:
             self.pending_destructive_action = validated_action
             log_chitti(f"[AGENT] Action requires user confirmation before proceeding.")
@@ -100,7 +159,7 @@ class LaptopAgentManager:
             )
             return True, confirm_msg, None
 
-        # 5. Execute Action
+        # 6. Execute Single-step Action
         result = self.executor.execute(validated_action, default_workspace=self.workspace_dir, screenshots_dir=self.screenshots_dir)
         response_msg = self._format_response(result, lang=lang)
         return True, response_msg, result
