@@ -48,7 +48,8 @@ class AppController:
 
         try:
             cmd = [exe_path] + (args or [])
-            subprocess.Popen(cmd, cwd=cwd)
+            is_shell = str(exe_path).lower().endswith((".cmd", ".bat"))
+            subprocess.Popen(cmd, cwd=cwd, shell=is_shell)
             log_info(f"Launched application: {exe_path} with args: {args}")
             return True
         except Exception as e:

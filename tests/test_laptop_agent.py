@@ -17,6 +17,8 @@ from src.agent.manager import LaptopAgentManager
 from src.agent.projects import ProjectRegistry
 from src.agent.task_state import TaskState, TaskStatus, StepStatus, AgentStep
 from src.agent.planner import AgentPlanner, ComputerAgentLoop
+from src.agent.classifier import TaskClassifier, TaskIntent
+from src.agent.tools import ToolEngine
 from src.agent.computer import (
     ComputerController,
     FilesystemController,
@@ -113,6 +115,15 @@ def test_personal_queries_no_laptop_action():
     assert ActionParser.parse_command("Tell me about my college.") is None
 
 
+def test_task_classifier_distinction():
+    assert TaskClassifier.classify("What is deep learning?").intent == TaskIntent.GENERAL_KNOWLEDGE
+    assert TaskClassifier.classify("Explain CNN.").intent == TaskIntent.GENERAL_KNOWLEDGE
+    assert TaskClassifier.classify("What is my name?").intent == TaskIntent.PERSONAL_QUERY
+    assert TaskClassifier.classify("VS Code open kro Aur ek Fibonacci series ka Python code kro").is_computer_task is True
+    assert TaskClassifier.classify("play a Sonu Nigam song").is_computer_task is True
+    assert TaskClassifier.classify("Open Chrome and search for documentation").is_computer_task is True
+
+
 # -------------------------------------------------------------
 # 3. COMPUTER CONTROLLER: MOUSE, KEYBOARD, CLIPBOARD, WINDOWS
 # -------------------------------------------------------------
@@ -129,7 +140,6 @@ def test_computer_controller_screen_and_mouse(tmp_path):
 
 def test_computer_controller_clipboard_and_keyboard(tmp_path):
     controller = ComputerController(screenshots_dir=str(tmp_path))
-    # Test clipboard write & read
     test_text = "Chitti Autonomous Agent Test"
     ok = controller.write_clipboard(test_text)
     if ok:
@@ -255,7 +265,6 @@ def test_browser_controller():
 
 def test_app_controller_lifecycle():
     apps = AppController()
-    # Test running applications list
     running = apps.list_running_applications()
     assert isinstance(running, list)
     assert len(running) > 0
@@ -330,16 +339,26 @@ def test_plan_notepad_and_type(tmp_path):
     assert state.steps[1].parameters["text"] == "Hello Chitti"
 
 
-def test_plan_and_execute_fibonacci_generation(agent_manager, tmp_path):
-    # End-to-end task execution: "Create a Python file in my project and write a program that calculates Fibonacci numbers"
+def test_plan_and_execute_youtube_song(agent_manager):
+    with patch("webbrowser.open", return_value=True) as mock_open:
+        handled, msg, result = agent_manager.handle_command("play a Sonu Nigam song", lang="en")
+        assert handled is True
+        assert "youtube" in msg.lower()
+        mock_open.assert_called()
+
+        handled_hi, msg_hi, _ = agent_manager.handle_command("go to youtube and play a sonu nigam song", lang="hinglish")
+        assert handled_hi is True
+        assert "youtube" in msg_hi.lower()
+
+
+def test_plan_and_execute_vscode_fibonacci_hinglish(agent_manager, tmp_path):
     handled, msg, result = agent_manager.handle_command(
-        "Create a Python file in my project and write a program that calculates Fibonacci numbers",
-        lang="en"
+        "VS Code open kro Aur ek Fibonacci series ka Python code kro",
+        lang="hinglish"
     )
     assert handled is True
-    assert "completed successfully" in msg.lower()
+    assert "vs code" in msg.lower() or "fibonacci" in msg.lower()
 
-    # Verify fibonacci.py exists in workspace
     fib_file = Path(agent_manager.workspace_dir) / "fibonacci.py"
     assert fib_file.exists()
     content = fib_file.read_text(encoding="utf-8")
@@ -347,7 +366,6 @@ def test_plan_and_execute_fibonacci_generation(agent_manager, tmp_path):
 
 
 def test_plan_and_execute_folder_and_file_creation(agent_manager, tmp_path):
-    # End-to-end task execution: "Open the folder ProjectAlpha and create test.txt"
     handled, msg, result = agent_manager.handle_command(
         "Open the folder ProjectAlpha and create test.txt",
         lang="en"
@@ -358,7 +376,6 @@ def test_plan_and_execute_folder_and_file_creation(agent_manager, tmp_path):
 
 
 def test_plan_destructive_action_confirmation_cycle(agent_manager):
-    # Command: "Delete ChittiTest"
     handled, msg, result = agent_manager.handle_command("Delete folder ChittiTest", lang="en")
     assert handled is True
     assert "continue" in msg.lower() or "delete" in msg.lower()

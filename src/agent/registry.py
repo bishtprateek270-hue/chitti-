@@ -102,6 +102,9 @@ class AppDiscovery:
 
         return None
 
+    # Alias for convenience
+    resolve_app = resolve_application
+
 
 class FolderDiscovery:
     """Resolves standard user folder directories and aliases safely."""

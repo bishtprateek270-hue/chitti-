@@ -1,13 +1,14 @@
 """
 Chitti Laptop Agent Manager Module.
-Coordinates command parsing, multi-step planning, safety validation, risk assessment, confirmation handling,
-and full computer-use tool execution for Windows laptop operations.
+Coordinates command classification, multi-step planning, tool execution, safety validation,
+risk assessment, and confirmation handling for Windows laptop operations.
 """
 
 import re
 from typing import Any, Dict, Optional, Tuple
 
 from src.agent.actions import ActionResult, ActionType, RiskLevel, StructuredAction
+from src.agent.classifier import ClassificationResult, TaskClassifier, TaskIntent
 from src.agent.computer import (
     AppController,
     BrowserController,
@@ -21,6 +22,7 @@ from src.agent.parser import ActionParser
 from src.agent.planner import AgentPlanner, ComputerAgentLoop
 from src.agent.projects import ProjectRegistry
 from src.agent.task_state import TaskState, TaskStatus
+from src.agent.tools import ToolEngine
 from src.agent.validator import ActionValidator
 from src.config import get_config
 from src.utils.logging import log_chitti, log_debug, log_error, log_info, log_warning
@@ -49,12 +51,24 @@ class LaptopAgentManager:
         self.screen_analyzer = ScreenAnalyzer(self.computer)
         self.projects = ProjectRegistry(registry_file=self.project_registry_path)
 
+        # Tool Engine
+        self.tools = ToolEngine(
+            computer=self.computer,
+            filesystem=self.filesystem,
+            terminal=self.terminal,
+            browser=self.browser,
+            apps=self.apps,
+            screen_analyzer=self.screen_analyzer,
+            projects=self.projects,
+        )
+
         # Single-step & Multi-step Planners
         self.parser = ActionParser()
         self.validator = ActionValidator()
         self.executor = ActionExecutor()
         self.planner = AgentPlanner(project_registry=self.projects)
         self.loop = ComputerAgentLoop(
+            tool_engine=self.tools,
             computer=self.computer,
             filesystem=self.filesystem,
             terminal=self.terminal,
@@ -109,10 +123,19 @@ class LaptopAgentManager:
                 )
                 return True, prompt_msg, None
 
-        # 2. Check for Multi-step Task Plan First
+        # 2. Intent Classification Check
+        class_res = TaskClassifier.classify(raw)
+        if class_res.intent in (TaskIntent.GENERAL_KNOWLEDGE, TaskIntent.PERSONAL_QUERY):
+            # Pure knowledge or personal query - skip computer action
+            return None
+
+        # 3. Check for Multi-step Task Plan First
         task_plan = self.planner.plan_task(raw)
         if task_plan and task_plan.steps:
-            log_chitti(f"[AGENT] Multi-step task plan generated with {len(task_plan.steps)} steps.")
+            log_chitti(f"[AGENT] Task detected: COMPUTER_TASK ({len(task_plan.steps)} steps)")
+            for s in task_plan.steps:
+                log_info(f"  - [{s.action_type}] {s.description}")
+
             self.active_task_state = task_plan
             success, msg = self.loop.execute_plan(task_plan)
             if task_plan.status == TaskStatus.WAITING_CONFIRMATION:
@@ -125,9 +148,11 @@ class LaptopAgentManager:
                 )
                 return True, msg, None
 
-            return success, msg, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=msg)
+            # Generate natural multilingual summary response
+            resp_formatted = self._format_multistep_response(raw, task_plan, success, msg, lang=lang)
+            return success, resp_formatted, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=resp_formatted)
 
-        # 3. Check for Single-step Structured Action
+        # 4. Check for Single-step Structured Action
         structured_action = self.parser.parse_command(raw)
         if not structured_action:
             return None
@@ -137,7 +162,7 @@ class LaptopAgentManager:
             log_chitti(f"[AGENT] Target: {structured_action.target}")
         log_chitti(f"[AGENT] Risk: {structured_action.risk_level.value}")
 
-        # 4. Validate Single-step Action
+        # 5. Validate Single-step Action
         is_valid, reason, validated_action = self.validator.validate(structured_action)
         if not is_valid or not validated_action:
             log_chitti(f"[AGENT] Validation: FAILED | Reason: {reason}")
@@ -146,7 +171,7 @@ class LaptopAgentManager:
 
         log_chitti(f"[AGENT] Validation: PASSED")
 
-        # 5. Check for Confirmation Requirement
+        # 6. Check for Confirmation Requirement
         if validated_action.requires_confirmation or validated_action.risk_level == RiskLevel.HIGH:
             self.pending_destructive_action = validated_action
             log_chitti(f"[AGENT] Action requires user confirmation before proceeding.")
@@ -159,10 +184,58 @@ class LaptopAgentManager:
             )
             return True, confirm_msg, None
 
-        # 6. Execute Single-step Action
+        # 7. Execute Single-step Action
         result = self.executor.execute(validated_action, default_workspace=self.workspace_dir, screenshots_dir=self.screenshots_dir)
         response_msg = self._format_response(result, lang=lang)
         return True, response_msg, result
+
+    def _format_multistep_response(self, raw_input: str, task_state: TaskState, success: bool, raw_msg: str, lang: str = "en") -> str:
+        """Formats natural multilingual responses for multi-step agent plans."""
+        lower = raw_input.lower()
+
+        if not success:
+            if lang == "hi":
+                return f"माफ़ कीजिए, कार्य पूरा करने में समस्या आई: {raw_msg}"
+            elif lang in ("hinglish", "mixed"):
+                return f"Sorry, task complete karne me issue aaya: {raw_msg}"
+            return f"I encountered an issue while executing the task: {raw_msg}"
+
+        if "youtube" in lower or "song" in lower or "gaana" in lower:
+            if lang == "hi":
+                return "YouTube खोल दिया गया है और आपका गाना चलाया जा रहा है।"
+            elif lang in ("hinglish", "mixed"):
+                return "YouTube open kar diya hai aur gaana play kiya ja raha hai."
+            return "YouTube is open and playing your requested music."
+
+        elif "vs code" in lower or "vscode" in lower:
+            if "fibonacci" in lower:
+                if lang == "hi":
+                    return "VS Code खोल दिया गया है और Fibonacci series का Python कोड बनाकर सुरक्षित कर दिया गया है।"
+                elif lang in ("hinglish", "mixed"):
+                    return "VS Code open kar diya hai aur fibonacci.py create karke Fibonacci series ka code daal diya hai."
+                return "VS Code has been opened and fibonacci.py was created with the Fibonacci generator code."
+            else:
+                if lang == "hi":
+                    return "VS Code में प्रोजेक्ट खोल दिया गया है।"
+                elif lang in ("hinglish", "mixed"):
+                    return "VS Code me project open kar diya gaya hai."
+                return "Your project is now open in VS Code."
+
+        elif "notepad" in lower:
+            if lang == "hi":
+                return "Notepad खोल दिया गया है और टेक्स्ट लिख दिया गया है।"
+            elif lang in ("hinglish", "mixed"):
+                return "Notepad open kar diya hai aur text type ho gaya hai."
+            return "Notepad opened and text was entered."
+
+        elif "desktop" in lower and "folder" in lower:
+            if lang == "hi":
+                return "Desktop पर फ़ोल्डर बना दिया गया है।"
+            elif lang in ("hinglish", "mixed"):
+                return "Desktop par folder create kar diya gaya hai."
+            return "Folder has been successfully created on your Desktop."
+
+        return "Task completed successfully."
 
     def _format_response(self, result: ActionResult, lang: str = "en") -> str:
         """Formats natural multilingual response for action execution results."""

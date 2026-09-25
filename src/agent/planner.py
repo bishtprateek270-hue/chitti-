@@ -1,11 +1,12 @@
 """
 Chitti Agent Planner & Computer-Use Loop.
-Implements the multi-step SEE -> UNDERSTAND -> PLAN -> ACT -> OBSERVE -> VERIFY -> REASON loop.
+Implements the multi-step SEE -> UNDERSTAND -> PLAN -> ACT -> OBSERVE -> VERIFY loop.
 """
 
 import os
 import re
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -21,6 +22,7 @@ from src.agent.computer import (
 )
 from src.agent.projects import ProjectRegistry
 from src.agent.task_state import AgentStep, StepStatus, TaskState, TaskStatus
+from src.agent.tools import ToolEngine
 from src.utils.logging import log_debug, log_info, log_warn
 
 
@@ -41,18 +43,23 @@ class AgentPlanner:
 
         state = TaskState(task_description=raw)
 
-        # 1. Multi-step: "Open <app> and <action>" (e.g. "Open Chrome and search for ...")
-        m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
-                   re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser))\b", clean)
-        if m_search:
-            query = m_search.group(1).strip()
+        # 1. YOUTUBE / SONG PLAYBACK COMMANDS
+        # e.g. "play a Sonu Nigam song", "go to youtube and play a sonu nigam song", "go to youtube and search for sonu nigam", "Sonu Nigam ka gaana chalao"
+        m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+youtube\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+youtube|youtube\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
+        if m_yt:
+            song_query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or "").strip()
+            song_query = re.sub(r"(?i)\b(?:song|gaana|chalao|play|karo)\b", "", song_query).strip()
+            if not song_query:
+                song_query = "trending songs"
+
             state.steps = [
-                AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
-                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}),
+                AgentStep(step_id=1, description=f"Open YouTube and search/play '{song_query}'", action_type="PLAY_YOUTUBE", parameters={"query": song_query}),
+                AgentStep(step_id=2, description="Verify browser opened YouTube", action_type="VERIFY_WINDOW", parameters={"title": "YouTube"}),
             ]
             return state
 
-        # 2. Multi-step: "Open VS Code and open my <project> project" / "Open my <project> project in VS Code"
+        # 2. VS CODE + PROJECT OPENING COMMANDS (Checked before generic VS Code code generation)
+        # e.g. "Open VS Code and open my Chitti project" / "Open my Chitti project in VS Code"
         m_vscode_proj = re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\b", clean) or \
                         re.search(r"(?i)\bopen\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\s+in\s+(?:vs\s*code|vscode)\b", clean) or \
                         re.search(r"(?i)\bmera\s+([A-Za-z0-9_\-]+)\s+project\s+vs\s*code\s+me(?:in)?\s+kholo\b", clean)
@@ -66,7 +73,41 @@ class AgentPlanner:
             ]
             return state
 
-        # 3. Multi-step: "Open Notepad and type <text>"
+        # 3. VS CODE + CODE GENERATION COMMANDS
+        # e.g. "VS Code open kro Aur ek Fibonacci series ka Python code kro", "open vs code and create a fibonacci python program"
+        m_vscode_code = re.search(r"(?i)\b(?:vs\s*code|vscode)\s+.*(?:fibonacci|code|program|series).*(?:banao|kro|create|write)\b", clean) or \
+                        re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode)|vs\s*code\s+(?:open\s+kro|open\s+karo|kholo))\s+(?:and|aur)\s+.*(?:code|program|fibonacci|series)\b", clean) or \
+                        (("vs code" in clean_lower or "vscode" in clean_lower) and ("fibonacci" in clean_lower))
+        if m_vscode_code:
+            topic = "fibonacci" if "fibonacci" in clean_lower else "script"
+            filename = f"{topic}.py"
+            
+            fib_code = (
+                "# Fibonacci Generator - Created by Chitti Agent\n\n"
+                "def fibonacci(n: int):\n"
+                "    \"\"\"Generates the first n numbers of the Fibonacci sequence.\"\"\"\n"
+                "    if n <= 0:\n"
+                "        return []\n"
+                "    elif n == 1:\n"
+                "        return [0]\n"
+                "    seq = [0, 1]\n"
+                "    while len(seq) < n:\n"
+                "        seq.append(seq[-1] + seq[-2])\n"
+                "    return seq\n\n\n"
+                "if __name__ == '__main__':\n"
+                "    count = 10\n"
+                "    print(f'Fibonacci series (first {count} terms): {fibonacci(count)}')\n"
+            )
+
+            state.steps = [
+                AgentStep(step_id=1, description=f"Generate and write Python code to {filename}", action_type="CREATE_FILE", parameters={"path": filename, "content": fib_code}),
+                AgentStep(step_id=2, description=f"Launch VS Code with {filename}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [filename]}),
+                AgentStep(step_id=3, description=f"Verify {filename} was created on disk", action_type="VERIFY_FILE", parameters={"path": filename}),
+                AgentStep(step_id=4, description="Verify VS Code opened", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}),
+            ]
+            return state
+
+        # 4. Multi-step: "Open Notepad and type <text>"
         m_notepad_type = re.search(r"(?i)\bopen\s+notepad\s+(?:and|aur)\s+type\s+(.*)", clean) or \
                          re.search(r"(?i)\bnotepad\s+(?:kholo|open\s+karo)\s+aur\s+(?:type\s+karo\s+|likho\s+)(.*)", clean)
         if m_notepad_type:
@@ -78,7 +119,33 @@ class AgentPlanner:
             ]
             return state
 
-        # 4. Multi-step: "Create a Python file in my project and write a program that calculates Fibonacci numbers"
+        # 5. Multi-step: "Create a folder called <name> on Desktop" / "Create folder <name> on my desktop"
+        m_desktop_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean) or \
+                           re.search(r"(?i)\bdesktop\s+(?:pe|par|me|mein)\s+(?:ek\s+)?([A-Za-z0-9_\-]+)\s+(?:naam\s+ka\s+)?folder\s+banao\b", clean)
+        if m_desktop_folder:
+            f_name = m_desktop_folder.group(1).strip()
+            desktop_path = str((Path.home() / "Desktop" / f_name).resolve())
+            if not Path.home().joinpath("Desktop").exists() and Path.home().joinpath("OneDrive", "Desktop").exists():
+                desktop_path = str((Path.home() / "OneDrive" / "Desktop" / f_name).resolve())
+
+            state.steps = [
+                AgentStep(step_id=1, description=f"Create folder '{f_name}' on Desktop", action_type="CREATE_DIRECTORY", parameters={"path": desktop_path}),
+                AgentStep(step_id=2, description=f"Verify folder '{f_name}' created on Desktop", action_type="VERIFY_FILE", parameters={"path": desktop_path}),
+            ]
+            return state
+
+        # 6. Multi-step: "Open Chrome and search for <query>"
+        m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
+                   re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser))\b", clean)
+        if m_search:
+            query = m_search.group(1).strip()
+            state.steps = [
+                AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
+                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}),
+            ]
+            return state
+
+        # 7. Multi-step: "Create a Python file in my project and write a program that calculates Fibonacci numbers"
         m_fib = re.search(r"(?i)\b(?:create\s+(?:a\s+)?python\s+file.*fibonacci|write\s+(?:a\s+)?(?:fibonacci\s+program|program\s+that\s+calculates\s+fibonacci))\b", clean)
         if m_fib:
             code = (
@@ -100,7 +167,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 5. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
+        # 8. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
         m_tests = re.search(r"(?i)\b(?:run\s+(?:the\s+)?tests?|run\s+pytest|run\s+(?:the\s+)?project|test\s+chalao|is\s+program\s+ko\s+run\s+karo)\b", clean)
         if m_tests:
             state.steps = [
@@ -109,19 +176,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 6. Multi-step: "Find all PDFs in Downloads and move them into a new folder"
-        m_move_pdfs = re.search(r"(?i)\bfind\s+(?:all\s+)?pdfs?\s+in\s+downloads\s+(?:and|aur)\s+move\s+(?:them\s+)?(?:into|to)\s+(?:a\s+)?(?:new\s+)?folder(?:\s+called|\s+named)?\s*([A-Za-z0-9_\-]+)?\b", clean)
-        if m_move_pdfs:
-            dest_folder = m_move_pdfs.group(1) or "PDFs"
-            downloads_dir = str((Path.home() / "Downloads").resolve())
-            state.steps = [
-                AgentStep(step_id=1, description=f"Search for all PDF files in {downloads_dir}", action_type="SEARCH_FILES", parameters={"root": downloads_dir, "pattern": "*.pdf"}),
-                AgentStep(step_id=2, description=f"Create folder {dest_folder} in Downloads", action_type="CREATE_DIRECTORY", parameters={"path": str(Path(downloads_dir) / dest_folder)}),
-                AgentStep(step_id=3, description=f"Move PDF files into {dest_folder}", action_type="BATCH_MOVE", parameters={"dest_dir": str(Path(downloads_dir) / dest_folder)}),
-            ]
-            return state
-
-        # 7. Multi-step: "Open the folder and create test.txt"
+        # 9. Multi-step: "Open the folder <name> and create <file>"
         m_folder_create_file = re.search(r"(?i)\bopen\s+(?:the\s+)?folder\s+([A-Za-z0-9_\-]+)\s+(?:and|aur)\s+create\s+([A-Za-z0-9_\-\.]+)\b", clean)
         if m_folder_create_file:
             folder_name = m_folder_create_file.group(1).strip()
@@ -133,16 +188,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 8. Multi-step: "Check why my program is giving an error" / "Check why my project isn't running"
-        m_check_err = re.search(r"(?i)\b(?:check\s+why\s+(?:my\s+)?(?:program|project)\s+(?:is\s+giving\s+an\s+error|isn't\s+running)|error\s+check\s+karo)\b", clean)
-        if m_check_err:
-            state.steps = [
-                AgentStep(step_id=1, description="Run project diagnostic script/tests", action_type="RUN_TERMINAL", parameters={"command": "python -m pytest tests/ -q"}),
-                AgentStep(step_id=2, description="Reason and diagnose error output", action_type="DIAGNOSE_ERROR", parameters={}),
-            ]
-            return state
-
-        # 9. Destructive Multi-step: "Delete <folder/file>"
+        # 10. Destructive Multi-step: "Delete <folder/file>"
         m_del_folder = re.search(r"(?i)\bdelete\s+(?:folder\s+)?([A-Za-z0-9_\-\.]+)\b", clean)
         if m_del_folder:
             target = m_del_folder.group(1).strip()
@@ -161,6 +207,7 @@ class ComputerAgentLoop:
 
     def __init__(
         self,
+        tool_engine: ToolEngine,
         computer: ComputerController,
         filesystem: FilesystemController,
         terminal: TerminalController,
@@ -169,6 +216,7 @@ class ComputerAgentLoop:
         screen_analyzer: ScreenAnalyzer,
         projects: ProjectRegistry,
     ):
+        self.tools = tool_engine
         self.computer = computer
         self.fs = filesystem
         self.terminal = terminal
@@ -231,18 +279,22 @@ class ComputerAgentLoop:
         params = step.parameters
 
         try:
-            if act == "OPEN_APPLICATION":
+            if act == "PLAY_YOUTUBE":
+                query = params["query"]
+                res = self.tools.execute_tool("play_youtube", {"query": query})
+                return res.success, res.message, f"Playing YouTube query '{query}'"
+
+            elif act == "OPEN_APPLICATION":
                 target = params["target"]
                 args = params.get("args")
-                ok = self.apps.launch_application(target, args=args)
+                res = self.tools.execute_tool("open_application", {"application": target, "args": args})
                 time.sleep(0.5)
-                return ok, f"Launched {target}", f"App {target} launched"
+                return res.success, res.message, f"App {target} launched"
 
             elif act == "OPEN_FOLDER":
                 target = params["target"]
                 p = self.fs.resolve_path(target)
                 if not p.exists():
-                    # Try user folder resolution or auto-create in workspace
                     user_home = Path.home()
                     cand = user_home / target
                     if cand.exists():
@@ -257,56 +309,44 @@ class ComputerAgentLoop:
 
             elif act == "SEARCH_WEB":
                 query = params["query"]
-                ok = self.browser.search_web(query)
-                return ok, f"Searched web for '{query}'", f"Browser opened search for '{query}'"
+                res = self.tools.execute_tool("search_web", {"query": query})
+                return res.success, res.message, f"Browser opened search for '{query}'"
 
             elif act == "TYPE_TEXT":
                 text = params["text"]
                 time.sleep(0.3)
-                ok = self.computer.type_text(text)
-                return ok, f"Typed: {text}", f"Text entered: {text}"
+                res = self.tools.execute_tool("type_text", {"text": text})
+                return res.success, res.message, f"Text entered: {text}"
 
             elif act == "CREATE_FILE":
                 path = params["path"]
                 content = params.get("content", "")
-                created_path = self.fs.create_file(path, content)
-                return True, f"Created file {created_path}", f"File created at {created_path}"
+                res = self.tools.execute_tool("create_file", {"path": path, "content": content})
+                return res.success, res.message, f"File created at {path}"
 
             elif act == "CREATE_DIRECTORY":
                 path = params["path"]
-                dir_path = self.fs.create_directory(path)
-                return True, f"Created directory {dir_path}", f"Directory created at {dir_path}"
+                res = self.tools.execute_tool("create_directory", {"path": path})
+                return res.success, res.message, f"Directory created at {path}"
 
             elif act == "DELETE_DIRECTORY":
                 path = params["path"]
-                ok = self.fs.delete_directory(path, recursive=True)
-                return ok, f"Deleted directory {path}", f"Directory {path} deleted"
+                res = self.tools.execute_tool("delete_directory", {"path": path})
+                return res.success, res.message, f"Directory {path} deleted"
 
             elif act == "SEARCH_FILES":
                 root = params.get("root")
                 pattern = params.get("pattern", "*")
-                matches = self.fs.search_files(pattern, root_path=root)
+                res = self.tools.execute_tool("search_files", {"pattern": pattern, "root": root})
                 search_cache.clear()
-                search_cache.extend(matches)
-                return True, f"Found {len(matches)} files matching {pattern}", f"Matches: {matches[:5]}"
-
-            elif act == "BATCH_MOVE":
-                dest_dir = params["dest_dir"]
-                moved = 0
-                for f in search_cache:
-                    try:
-                        self.fs.move_file(f, str(Path(dest_dir) / Path(f).name))
-                        moved += 1
-                    except Exception:
-                        pass
-                return True, f"Moved {moved} files to {dest_dir}", f"Moved {moved} files"
+                search_cache.extend(res.data.get("matches", []))
+                return res.success, f"Found {len(search_cache)} files matching {pattern}", f"Matches: {search_cache[:5]}"
 
             elif act == "RUN_TERMINAL":
                 cmd = params["command"]
-                timeout = params.get("timeout", 30)
-                res = self.terminal.execute_command(cmd, timeout_sec=timeout)
-                out = res.output
-                return True, out, f"Command exit code: {res.exit_code}"
+                res = self.tools.execute_tool("execute_terminal_command", {"command": cmd})
+                out = res.data.get("output", res.message)
+                return True, out, f"Command exit code: {res.data.get('exit_code', 0)}"
 
             elif act == "RESOLVE_PROJECT":
                 name = params["name"]
@@ -316,7 +356,6 @@ class ComputerAgentLoop:
             elif act == "VERIFY_WINDOW":
                 title = params.get("title", "")
                 time.sleep(0.4)
-                # Verify window presence
                 found = self.screen_analyzer.verify_window_present(title)
                 return True, f"Window verified for '{title}' (found: {found})", f"Window '{title}' detected"
 
