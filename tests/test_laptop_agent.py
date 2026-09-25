@@ -484,3 +484,134 @@ def test_plan_destructive_action_confirmation_cycle(agent_manager):
     handled_conf, msg_conf, res_conf = agent_manager.handle_command("Yes, proceed.", lang="en")
     assert handled_conf is True
     assert agent_manager.pending_destructive_action is None
+
+
+# ----------------------------------------------------------------------
+# GENERAL-PURPOSE CODING AGENT TESTS (Test A through Test H)
+# ----------------------------------------------------------------------
+
+def test_coding_agent_test_a_python_calculator(agent_manager):
+    """Test A: VS Code open karo aur Python mein calculator banao"""
+    handled, msg, result = agent_manager.handle_command(
+        "VS Code open karo aur Python mein calculator banao",
+        lang="hinglish"
+    )
+    assert handled is True
+    assert "calculator" in msg.lower()
+
+    f = Path(agent_manager.workspace_dir) / "calculator.py"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "class Calculator" in content
+    assert "def add" in content
+    assert "def divide" in content
+
+
+def test_coding_agent_test_b_cpp_linked_list(agent_manager):
+    """Test B: VS Code open karo aur C++ mein linked list implement karo"""
+    handled, msg, result = agent_manager.handle_command(
+        "VS Code open karo aur C++ mein linked list implement karo",
+        lang="hinglish"
+    )
+    assert handled is True
+    assert "linked" in msg.lower() or "cpp" in msg.lower()
+
+    f = Path(agent_manager.workspace_dir) / "linked_list.cpp"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "#include <iostream>" in content
+    assert "struct Node" in content
+    assert "class LinkedList" in content
+
+
+def test_coding_agent_test_c_java_student_manager(agent_manager):
+    """Test C: VS Code open karo aur Java mein student management class banao"""
+    handled, msg, result = agent_manager.handle_command(
+        "VS Code open karo aur Java mein student management class banao",
+        lang="hinglish"
+    )
+    assert handled is True
+    assert "student" in msg.lower() or "java" in msg.lower()
+
+    f = Path(agent_manager.workspace_dir) / "StudentManager.java"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "public class StudentManager" in content
+    assert "class Student" in content
+    assert "public static void main" in content
+
+
+def test_coding_agent_test_d_javascript_todo_app(agent_manager):
+    """Test D: VS Code open karo aur JavaScript mein todo app banao"""
+    handled, msg, result = agent_manager.handle_command(
+        "VS Code open karo aur JavaScript mein todo app banao",
+        lang="hinglish"
+    )
+    assert handled is True
+    assert "todo" in msg.lower() or "app" in msg.lower()
+
+    f = Path(agent_manager.workspace_dir) / "todo.js"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "function App" in content or "useState" in content or "todo" in content.lower()
+
+
+def test_coding_agent_test_e_rust_file_reader(agent_manager):
+    """Test E: VS Code open karo aur Rust mein file reader banao"""
+    handled, msg, result = agent_manager.handle_command(
+        "VS Code open karo aur Rust mein file reader banao",
+        lang="hinglish"
+    )
+    assert handled is True
+    assert "rust" in msg.lower() or "file" in msg.lower()
+
+    f = Path(agent_manager.workspace_dir) / "file_reader.rs"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "fn read_file_content" in content
+    assert "fn main()" in content
+
+
+def test_coding_agent_test_f_python_csv_salary_analysis(agent_manager):
+    """Test F: VS Code open karo aur Python mein CSV analysis program banao"""
+    handled, msg, result = agent_manager.handle_command(
+        "VS Code open karo aur Python mein CSV analysis program banao",
+        lang="hinglish"
+    )
+    assert handled is True
+    assert "csv" in msg.lower() or "python" in msg.lower()
+
+    f = Path(agent_manager.workspace_dir) / "csv_analyzer.py"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "import csv" in content
+    assert "def analyze_salaries" in content
+
+
+def test_coding_agent_test_g_cpp_binary_search_and_run(agent_manager):
+    """Test G: VS Code open karo aur C++ mein binary search banao aur run karo"""
+    handled, msg, result = agent_manager.handle_command(
+        "VS Code open karo aur C++ mein binary search banao aur run karo",
+        lang="hinglish"
+    )
+    assert handled is True
+    f = Path(agent_manager.workspace_dir) / "binary_search.cpp"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "binarySearch" in content
+    assert "#include <iostream>" in content
+
+
+def test_coding_agent_test_h_unseen_task_sha256_duplicates(agent_manager):
+    """Test H: Unanticipated task: Create a Python program that finds duplicate files in a directory using SHA-256 hashes"""
+    handled, msg, result = agent_manager.handle_command(
+        "Create a Python program that finds duplicate files in a directory using SHA-256 hashes",
+        lang="en"
+    )
+    assert handled is True
+    f = Path(agent_manager.workspace_dir) / "duplicate_finder.py"
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "hashlib.sha256" in content
+    assert "find_duplicates" in content
+

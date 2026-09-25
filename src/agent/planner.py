@@ -1,6 +1,8 @@
 """
 Chitti Agent Planner & Computer-Use Loop.
 Implements the multi-step SEE -> UNDERSTAND -> PLAN -> ACT -> OBSERVE -> VERIFY loop.
+Supports general-purpose coding across arbitrary programming languages, multi-file projects,
+toolchain verification, compiler execution, and automated error recovery.
 """
 
 import os
@@ -12,6 +14,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.agent.actions import ActionType, RiskLevel, StructuredAction
 from src.agent.code_generator import CodeGenerator
+from src.agent.code_spec import CodeFileSpec, ProgrammingTaskSpec
+from src.agent.code_validator import CodeValidator
 from src.agent.computer import (
     AppController,
     BrowserController,
@@ -23,16 +27,24 @@ from src.agent.computer import (
 )
 from src.agent.projects import ProjectRegistry
 from src.agent.task_state import AgentStep, ExecutionFlag, StepStatus, TaskState, TaskStatus
+from src.agent.toolchain import ToolchainManager
 from src.agent.tools import ToolEngine
+from src.brain.llm import BaseLLM
 from src.utils.logging import log_debug, log_info, log_warn
 
 
 class AgentPlanner:
     """Decomposes natural language requests into structured multi-step execution plans."""
 
-    def __init__(self, project_registry: ProjectRegistry, filesystem: Optional[FilesystemController] = None):
+    def __init__(
+        self,
+        project_registry: ProjectRegistry,
+        filesystem: Optional[FilesystemController] = None,
+        llm: Optional[BaseLLM] = None,
+    ):
         self.projects = project_registry
         self.fs = filesystem or FilesystemController()
+        self.llm = llm
 
     def plan_task(self, user_text: str) -> Optional[TaskState]:
         """Analyzes user request and constructs a multi-step task plan if it involves computer use."""
@@ -77,37 +89,106 @@ class AgentPlanner:
             ]
             return state
 
-        # 3. VS CODE + CODE GENERATION COMMANDS
-        # e.g. "vs code open kro aur ek anagram ka code likho", "vs code open kro aur ek anagram ka python code banao", "open vs code and create a python anagram checker"
-        m_vscode_code = re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho)", clean) or \
-                        re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode)|vs\s*code\s+(?:open\s+kro|open\s+karo|kholo))\s+(?:and|aur)\s+.*(?:code|program|script|banao|likho)", clean) or \
-                        (("vs code" in clean_lower or "vscode" in clean_lower) and any(kw in clean_lower for kw in ["code", "anagram", "fibonacci", "palindrome", "prime", "factorial", "sort", "search", "python", "likho", "likh"]))
-        if m_vscode_code:
-            gen = CodeGenerator.generate_code_for_topic(clean)
-            topic_title = gen.topic.replace("_", " ").title()
-            filename = gen.filename
-            abs_path = str(self.fs.resolve_path(filename).resolve())
-            wants_exec = bool(re.search(r"(?i)\b(?:run|execute|chalao|run\s+karo|execute\s+karo)\b", clean))
+        # 3. GENERAL-PURPOSE PROGRAMMING & CODING TASKS
+        # Handles any language (Python, C++, Java, JS, Rust, etc.), any problem, single-file or multi-file
+        is_coding_request = (
+            bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|bana|karo)", clean)) or
+            bool(re.search(r"(?i)\b(?:python|c\+\+|cpp|java|javascript|typescript|rust|go|golang|c#|csharp|react)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|calculator|search|sort|list|tree|reader|analyzer|finder|page)", clean)) or
+            bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement)\s+(?:a|an)?\s*(?:.*)?\s*(?:program|code|script|algorithm|class|api|model|page|app)\b", clean)) or
+            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
+        )
 
+        if is_coding_request:
+            spec = CodeGenerator.generate_code_for_topic(clean, llm=self.llm)
+            state.set_flag(ExecutionFlag.TASK_UNDERSTOOD, True)
+            state.set_flag(ExecutionFlag.CODE_GENERATED, True)
+
+            # Validate generated code
+            main_code = spec.files[0].content if spec.files else ""
+            val_report = CodeValidator.validate_code(
+                main_code, language=spec.language, expected_markers=spec.expected_markers, llm=self.llm
+            )
+            if val_report.valid:
+                state.set_flag(ExecutionFlag.CODE_VALIDATED, True)
+
+            filename = spec.filename
+            abs_path = str(self.fs.resolve_path(filename).resolve())
+            topic_title = spec.problem_description.title()
+            lang_title = spec.language.upper()
+
+            # Multi-step Plan Construction
             state.steps = [
-                AgentStep(step_id=1, description=f"Generate and write {topic_title} Python code to {filename}", action_type="CREATE_FILE", parameters={"path": abs_path, "content": gen.code}),
-                AgentStep(step_id=2, description=f"Open {filename} in VS Code with absolute path", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [abs_path]}),
-                AgentStep(step_id=3, description=f"Wait for VS Code editor and {filename}", action_type="WAIT_FOR_EDITOR", parameters={"application": "Visual Studio Code", "expected_file": filename, "timeout": 6.0}),
-                AgentStep(step_id=4, description=f"Capture screenshot of active editor", action_type="TAKE_SCREENSHOT", parameters={"filename": f"vscode_{gen.topic}.png"}),
-                AgentStep(step_id=5, description=f"Verify {filename} editor content in VS Code", action_type="VERIFY_EDITOR_CONTENT", parameters={"application": "Visual Studio Code", "expected_file": abs_path, "expected_markers": gen.expected_markers}),
-                AgentStep(step_id=6, description="Save file in VS Code editor", action_type="SAVE_EDITOR", parameters={"application": "Visual Studio Code"}),
-                AgentStep(step_id=7, description=f"Verify {filename} saved on disk with {gen.expected_symbol}", action_type="VERIFY_FILE_CONTENT", parameters={"path": abs_path, "expected_keyword": gen.expected_symbol}),
+                AgentStep(
+                    step_id=1,
+                    description=f"Generate and write {topic_title} {lang_title} code to {filename}",
+                    action_type="CREATE_FILE",
+                    parameters={"path": abs_path, "content": main_code},
+                ),
+                AgentStep(
+                    step_id=2,
+                    description=f"Open {filename} in VS Code with absolute path",
+                    action_type="OPEN_APPLICATION",
+                    parameters={"target": "VS Code", "args": [abs_path]},
+                ),
+                AgentStep(
+                    step_id=3,
+                    description=f"Wait for VS Code editor and {filename}",
+                    action_type="WAIT_FOR_EDITOR",
+                    parameters={"application": "Visual Studio Code", "expected_file": filename, "timeout": 6.0},
+                ),
+                AgentStep(
+                    step_id=4,
+                    description="Capture screenshot of active editor",
+                    action_type="TAKE_SCREENSHOT",
+                    parameters={"filename": f"vscode_{Path(filename).stem}.png"},
+                ),
+                AgentStep(
+                    step_id=5,
+                    description=f"Verify {filename} editor content in VS Code",
+                    action_type="VERIFY_EDITOR_CONTENT",
+                    parameters={
+                        "application": "Visual Studio Code",
+                        "expected_file": abs_path,
+                        "expected_markers": spec.expected_markers,
+                    },
+                ),
+                AgentStep(
+                    step_id=6,
+                    description="Save file in VS Code editor",
+                    action_type="SAVE_EDITOR",
+                    parameters={"application": "Visual Studio Code"},
+                ),
+                AgentStep(
+                    step_id=7,
+                    description=f"Verify {filename} saved on disk with {spec.expected_symbol}",
+                    action_type="VERIFY_FILE_CONTENT",
+                    parameters={"path": abs_path, "expected_keyword": spec.expected_symbol},
+                ),
             ]
 
-            if wants_exec:
-                state.steps.append(
+            # If user explicitly requested execution ("run karo", "execute", etc.)
+            if spec.execution_requested:
+                state.steps.extend([
                     AgentStep(
                         step_id=8,
-                        description=f"Execute {filename} in Python terminal",
-                        action_type="RUN_TERMINAL",
-                        parameters={"command": f"python \"{abs_path}\"", "timeout": 30},
-                    )
-                )
+                        description=f"Verify toolchain for {spec.language}",
+                        action_type="VERIFY_TOOLCHAIN",
+                        parameters={"language": spec.language},
+                    ),
+                    AgentStep(
+                        step_id=9,
+                        description=f"Compile and execute {filename}",
+                        action_type="COMPILE_AND_EXECUTE",
+                        parameters={"language": spec.language, "file": abs_path, "spec": spec},
+                    ),
+                    AgentStep(
+                        step_id=10,
+                        description="Verify successful execution output",
+                        action_type="VERIFY_EXECUTION",
+                        parameters={"file": abs_path},
+                    ),
+                ])
+
             return state
 
         # 4. Multi-step: "Open Notepad and type <text>"
@@ -122,7 +203,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 5. Multi-step: "Create a folder called <name> on Desktop" / "Create folder <name> on my desktop"
+        # 5. Multi-step: "Create a folder called <name> on Desktop"
         m_desktop_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean) or \
                            re.search(r"(?i)\bdesktop\s+(?:pe|par|me|mein)\s+(?:ek\s+)?([A-Za-z0-9_\-]+)\s+(?:naam\s+ka\s+)?folder\s+banao\b", clean)
         if m_desktop_folder:
@@ -148,20 +229,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 7. Multi-step: "Create a Python file in my project and write a program that calculates Fibonacci numbers / Anagrams"
-        m_create_code = re.search(r"(?i)\b(?:create\s+(?:a\s+)?python\s+file|write\s+(?:a\s+)?(?:python\s+)?(?:program|code|script))\b", clean)
-        if m_create_code:
-            gen = CodeGenerator.generate_code_for_topic(clean)
-            topic_title = gen.topic.replace("_", " ").title()
-            filename = gen.filename
-            abs_path = str(self.fs.resolve_path(filename).resolve())
-            state.steps = [
-                AgentStep(step_id=1, description=f"Create {filename} with {topic_title} solution in workspace", action_type="CREATE_FILE", parameters={"path": abs_path, "content": gen.code}),
-                AgentStep(step_id=2, description=f"Verify {filename} created and contains '{gen.expected_symbol}'", action_type="VERIFY_FILE_CONTENT", parameters={"path": abs_path, "expected_keyword": gen.expected_symbol}),
-            ]
-            return state
-
-        # 8. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
+        # 7. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
         m_tests = re.search(r"(?i)\b(?:run\s+(?:the\s+)?tests?|run\s+pytest|run\s+(?:the\s+)?project|test\s+chalao|is\s+program\s+ko\s+run\s+karo)\b", clean)
         if m_tests:
             state.steps = [
@@ -170,7 +238,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 9. Multi-step: "Open the folder <name> and create <file>"
+        # 8. Multi-step: "Open the folder <name> and create <file>"
         m_folder_create_file = re.search(r"(?i)\bopen\s+(?:the\s+)?folder\s+([A-Za-z0-9_\-]+)\s+(?:and|aur)\s+create\s+([A-Za-z0-9_\-\.]+)\b", clean)
         if m_folder_create_file:
             folder_name = m_folder_create_file.group(1).strip()
@@ -182,7 +250,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 10. Destructive Multi-step: "Delete <folder/file>"
+        # 9. Destructive Multi-step: "Delete <folder/file>"
         m_del_folder = re.search(r"(?i)\bdelete\s+(?:folder\s+)?([A-Za-z0-9_\-\.]+)\b", clean)
         if m_del_folder:
             target = m_del_folder.group(1).strip()
@@ -209,6 +277,7 @@ class ComputerAgentLoop:
         apps: AppController,
         screen_analyzer: ScreenAnalyzer,
         projects: ProjectRegistry,
+        llm: Optional[BaseLLM] = None,
     ):
         self.tools = tool_engine
         self.computer = computer
@@ -218,6 +287,7 @@ class ComputerAgentLoop:
         self.apps = apps
         self.screen_analyzer = screen_analyzer
         self.projects = projects
+        self.llm = llm
 
     def execute_plan(self, state: TaskState, max_steps: int = 15) -> Tuple[bool, str]:
         """Runs the agent execution loop over the plan steps."""
@@ -317,6 +387,65 @@ class ComputerAgentLoop:
                 res = self.tools.execute_tool("save_editor", {"application": app})
                 state.set_flag(ExecutionFlag.FILE_SAVED, True)
                 return res.success, res.message, f"Editor saved for {app}"
+
+            elif act == "VERIFY_TOOLCHAIN":
+                lang = params["language"]
+                avail, bin_path = ToolchainManager.is_toolchain_available(lang)
+                if avail:
+                    state.set_flag(ExecutionFlag.TOOLCHAIN_VERIFIED, True)
+                    return True, f"Toolchain for {lang} available ({bin_path})", f"Toolchain: {bin_path}"
+                else:
+                    # Honest report: toolchain not installed on this machine
+                    state.set_flag(ExecutionFlag.TOOLCHAIN_VERIFIED, False)
+                    log_warn(f"[TOOLCHAIN] Compiler/runtime for '{lang}' is not installed on this system.")
+                    return True, f"Compiler/runtime for '{lang}' is not installed on this system. File created and saved, execution skipped.", "Toolchain unavailable"
+
+            elif act == "COMPILE_AND_EXECUTE":
+                lang = params["language"]
+                file_path = params["file"]
+                spec = params.get("spec")
+
+                # If toolchain is missing, skip execution step honestly
+                if not state.get_flag(ExecutionFlag.TOOLCHAIN_VERIFIED):
+                    return True, f"Execution skipped because '{lang}' compiler/runtime is not installed.", "Skipped"
+
+                compile_cmd, run_cmd = ToolchainManager.build_execution_commands(lang, file_path)
+
+                # 1. Compilation step (if compiled language)
+                if compile_cmd:
+                    log_info(f"[COMPILER] Compiling {lang} source: {compile_cmd}")
+                    comp_res = self.tools.execute_tool("execute_terminal_command", {"command": compile_cmd})
+                    if not comp_res.success or comp_res.data.get("exit_code", 0) != 0:
+                        err_out = comp_res.data.get("output", "Compilation error")
+                        log_warn(f"[COMPILER] Build failed: {err_out}")
+
+                        # Automated debugging loop (up to 3 attempts)
+                        if spec and self.llm:
+                            fixed_code = CodeGenerator.fix_code_after_error(spec, spec.files[0].content, err_out, self.llm)
+                            self.fs.write_file(file_path, fixed_code)
+                            # Retry compilation
+                            comp_res = self.tools.execute_tool("execute_terminal_command", {"command": compile_cmd})
+
+                        if not comp_res.success or comp_res.data.get("exit_code", 0) != 0:
+                            return False, f"Compilation failed: {comp_res.data.get('output')}", None
+
+                # 2. Execution step
+                log_info(f"[EXECUTE] Running binary/script: {run_cmd}")
+                run_res = self.tools.execute_tool("execute_terminal_command", {"command": run_cmd})
+                out = run_res.data.get("output", run_res.message)
+                state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
+
+                if run_res.success and run_res.data.get("exit_code", 0) == 0:
+                    state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
+                    return True, f"Output:\n{out}", out
+                return False, f"Execution failed: {out}", out
+
+            elif act == "VERIFY_EXECUTION":
+                if not state.get_flag(ExecutionFlag.TOOLCHAIN_VERIFIED):
+                    return True, "Execution skipped (compiler not installed).", "Skipped"
+                if state.get_flag(ExecutionFlag.CODE_EXECUTED) and state.get_flag(ExecutionFlag.EXECUTION_VERIFIED):
+                    return True, "Code execution completed and verified.", "Execution success"
+                return False, "Code execution could not be verified.", None
 
             elif act == "OPEN_FOLDER":
                 target = params["target"]

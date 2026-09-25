@@ -1,10 +1,11 @@
 """
 Chitti Laptop Agent Manager Module.
 Coordinates command classification, multi-step planning, tool execution, safety validation,
-risk assessment, and confirmation handling for Windows laptop operations.
+risk assessment, general-purpose coding agent, and confirmation handling for Windows laptop operations.
 """
 
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from src.agent.actions import ActionResult, ActionType, RiskLevel, StructuredAction
@@ -25,6 +26,7 @@ from src.agent.projects import ProjectRegistry
 from src.agent.task_state import ExecutionFlag, TaskState, TaskStatus
 from src.agent.tools import ToolEngine
 from src.agent.validator import ActionValidator
+from src.brain.llm import BaseLLM
 from src.config import get_config
 from src.utils.logging import log_chitti, log_debug, log_error, log_info, log_warning
 
@@ -37,11 +39,13 @@ class LaptopAgentManager:
         workspace_dir: Optional[str] = None,
         screenshots_dir: Optional[str] = None,
         project_registry_path: Optional[str] = None,
+        llm: Optional[BaseLLM] = None,
     ):
         cfg = get_config()
         self.workspace_dir = workspace_dir or cfg.agent.workspace_dir
         self.screenshots_dir = screenshots_dir or cfg.agent.screenshots_dir
         self.project_registry_path = project_registry_path or cfg.agent.project_registry_path
+        self.llm = llm
 
         # Core Computer Controllers
         self.computer = ComputerController(screenshots_dir=self.screenshots_dir)
@@ -67,7 +71,7 @@ class LaptopAgentManager:
         self.parser = ActionParser()
         self.validator = ActionValidator()
         self.executor = ActionExecutor()
-        self.planner = AgentPlanner(project_registry=self.projects, filesystem=self.filesystem)
+        self.planner = AgentPlanner(project_registry=self.projects, filesystem=self.filesystem, llm=self.llm)
         self.loop = ComputerAgentLoop(
             tool_engine=self.tools,
             computer=self.computer,
@@ -77,6 +81,7 @@ class LaptopAgentManager:
             apps=self.apps,
             screen_analyzer=self.screen_analyzer,
             projects=self.projects,
+            llm=self.llm,
         )
 
         # State tracking
@@ -191,7 +196,7 @@ class LaptopAgentManager:
         return True, response_msg, result
 
     def _format_multistep_response(self, raw_input: str, task_state: TaskState, success: bool, raw_msg: str, lang: str = "en") -> str:
-        """Formats natural multilingual responses for multi-step agent plans."""
+        """Formats natural multilingual responses for multi-step agent plans dynamically."""
         lower = raw_input.lower()
 
         if not success:
@@ -211,30 +216,24 @@ class LaptopAgentManager:
                 return f"YouTube open karke {norm_artist} ka song select kar diya hai aur playback verify ho gaya hai."
             return f"Done. I opened YouTube, selected a {norm_artist} song, and verified playback started."
 
-        elif "vs code" in lower or "vscode" in lower:
-            topic = CodeGenerator.detect_topic(raw_input)
-            if topic != "script" or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho"]):
-                gen = CodeGenerator.generate_code_for_topic(raw_input)
-                topic_title = gen.topic.replace("_", " ").title()
-                executed = task_state.get_flag(ExecutionFlag.CODE_EXECUTED) and task_state.get_flag(ExecutionFlag.EXECUTION_VERIFIED)
-                if executed:
-                    if lang == "hi":
-                        return f"VS Code खोल दिया गया है, {topic_title} का Python कोड ({gen.filename}) बनाकर सुरक्षित, सत्यापित और निष्पादित कर दिया गया है।"
-                    elif lang in ("hinglish", "mixed"):
-                        return f"VS Code open kar diya hai, {gen.filename} create karke {topic_title} ka code save, verify aur execute kar diya hai."
-                    return f"VS Code is open and the {topic_title} Python code ({gen.filename}) has been created, verified, saved, and executed."
-                else:
-                    if lang == "hi":
-                        return f"VS Code खोल दिया गया है और {gen.filename} में {topic_title} का Python कोड लिखकर सुरक्षित और सत्यापित कर दिया गया है।"
-                    elif lang in ("hinglish", "mixed"):
-                        return f"VS Code open hai aur {gen.filename} mein {topic_title} code likhkar save aur verify kar diya hai."
-                    return f"VS Code is open, and {gen.filename} has been created with the {topic_title} solution, verified in the editor, and saved."
+        elif "vs code" in lower or "vscode" in lower or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho", "implement"]):
+            spec = CodeGenerator.parse_programming_task(raw_input)
+            topic_title = spec.problem_description.title()
+            lang_name = spec.language.upper()
+            executed = task_state.get_flag(ExecutionFlag.CODE_EXECUTED) and task_state.get_flag(ExecutionFlag.EXECUTION_VERIFIED)
+
+            if executed:
+                if lang == "hi":
+                    return f"VS Code खोल दिया गया है, {topic_title} का {lang_name} कोड ({spec.filename}) बनाकर सुरक्षित, सत्यापित और निष्पादित कर दिया गया है।"
+                elif lang in ("hinglish", "mixed"):
+                    return f"VS Code open kar diya hai, {spec.filename} create karke {topic_title} ka {lang_name} code save, verify aur execute kar diya hai."
+                return f"VS Code is open and the {topic_title} {lang_name} code ({spec.filename}) has been created, verified, saved, and executed."
             else:
                 if lang == "hi":
-                    return "VS Code में प्रोजेक्ट खोल दिया गया है।"
+                    return f"VS Code खोल दिया गया है और {spec.filename} में {topic_title} का {lang_name} कोड लिखकर सुरक्षित और सत्यापित कर दिया गया है।"
                 elif lang in ("hinglish", "mixed"):
-                    return "VS Code me project open kar diya gaya hai."
-                return "Your project is now open in VS Code."
+                    return f"VS Code open hai aur {spec.filename} mein {topic_title} {lang_name} code likhkar save aur verify kar diya hai."
+                return f"VS Code is open, and {spec.filename} has been created with the {topic_title} {lang_name} solution, verified in the editor, and saved."
 
         elif "notepad" in lower:
             if lang == "hi":
