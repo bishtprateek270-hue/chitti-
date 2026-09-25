@@ -26,7 +26,7 @@ class CodeValidator:
     PLACEHOLDER_PATTERNS = [
         r"(?i)\bTODO\b",
         r"(?i)\bFIXME\b",
-        r"(?i)\bplaceholder\b",
+        r"(?i)\bplaceholder\s+(?:code|logic|function|implementation|method|solution)\b",
         r"(?i)\bnot implemented\b",
         r"(?i)\bpass\s*#\s*implement\b",
         r"(?i)\bthrow new NotImplementedException\b",

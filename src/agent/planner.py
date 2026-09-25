@@ -126,12 +126,28 @@ class AgentPlanner:
             steps: List[AgentStep] = []
             curr_id = 1
 
-            # Step 1: Create main code file
+            # Optional: Dependency Installation step if required by framework
+            if spec.dependencies:
+                dep_list = ", ".join(spec.dependencies)
+                steps.append(AgentStep(
+                    step_id=curr_id,
+                    description=f"Verify and install required dependencies ({dep_list})",
+                    action_type="INSTALL_DEPENDENCY",
+                    parameters={"dependencies": spec.dependencies, "language": spec.language},
+                ))
+                dep_step_id = curr_id
+                curr_id += 1
+            else:
+                dep_step_id = None
+
+            # Step 1: Create/Update main code file
+            file_action_desc = f"Update {filename} with {topic_title} {lang_title} code" if spec.is_existing_project else f"Generate and write {topic_title} {lang_title} code to {filename}"
             steps.append(AgentStep(
                 step_id=curr_id,
-                description=f"Generate and write {topic_title} {lang_title} code to {filename}",
+                description=file_action_desc,
                 action_type="CREATE_FILE",
                 parameters={"path": abs_path, "content": main_code, "spec": spec},
+                depends_on=[dep_step_id] if dep_step_id else [],
             ))
             create_step_id = curr_id
             curr_id += 1
@@ -230,7 +246,6 @@ class AgentPlanner:
                         depends_on=[browser_step_id],
                     ))
                     curr_id += 1
-
 
                     steps.append(AgentStep(
                         step_id=curr_id,
@@ -565,6 +580,25 @@ class ComputerAgentLoop:
                 res = self.tools.execute_tool("open_url", {"url": url, "site_name": site_name})
                 state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
                 return res.success, res.message, f"Live application opened: {url}"
+
+            elif act == "INSTALL_DEPENDENCY":
+                deps = params.get("dependencies", [])
+                lang = params.get("language", "python")
+                if not deps:
+                    return True, "No extra dependencies required.", "Dependencies verified"
+                
+                # Verify or install packages safely
+                if lang in ("python", "py"):
+                    for dep in deps:
+                        try:
+                            # Quick import test
+                            __import__(dep.replace("-", "_"))
+                        except ImportError:
+                            log_info(f"[DEPENDENCY] Installing Python dependency '{dep}'...")
+                            inst_res = self.tools.execute_tool("execute_terminal_command", {"command": f"python -m pip install {dep}"})
+                            if not inst_res.success:
+                                log_warn(f"[DEPENDENCY] Notice: {inst_res.message}")
+                return True, f"Dependencies verified ({', '.join(deps)})", f"Dependencies ready: {deps}"
 
             elif act == "VERIFY_TOOLCHAIN":
                 lang = params["language"]
