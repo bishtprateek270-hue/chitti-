@@ -1,6 +1,7 @@
 """
 Chitti - Personal Multimodal AI Desktop Companion Robot
 PHASE 1: Voice AI Brain  +  PHASE 2: Long-Term Memory  +  PHASE 3: Computer Vision
+PHASE 4 & 4A: Multilingual Understanding, Memory Reliability & Response Quality
 """
 
 import sys
@@ -21,6 +22,7 @@ from src.utils.logging import (
 )
 from src.brain.personality import ConversationHistory, CHITTI_SYSTEM_PROMPT
 from src.brain.llm import get_llm, LLMError, LLMConnectionError, LLMTimeoutError, LLMModelNotFoundError
+from src.brain.validator import ResponseValidator
 from src.audio.microphone import MicrophoneManager, AudioCaptureError
 from src.audio.stt import get_stt, STTError
 from src.audio.tts import get_tts, TTSError
@@ -38,14 +40,14 @@ BANNER = r"""
 |                          C H I T T I                             |
 |             Personal AI Desktop Companion Robot                  |
 |    Phase 1: Voice  +  Phase 2: Memory  +  Phase 3: Vision        |
-|    Phase 4: Multilingual Understanding & Translation             |
+|    Phase 4: Multilingual  +  Phase 4A: Brain Reliability         |
 |                                                                  |
 +------------------------------------------------------------------+
 """
 
 
 class ChittiController:
-    """Main application controller for Chitti (Phase 1, Phase 2, Phase 3, and Phase 4)."""
+    """Main application controller for Chitti."""
 
     def __init__(self):
         self.config = get_config()
@@ -89,16 +91,18 @@ class ChittiController:
             log_error(f"TTS initialization failed: {e}")
             self.tts = None
 
-        # 3. Initialize STT (Whisper)
+        # 3. Initialize STT (Whisper) with eager preloading
         log_chitti(f"Loading speech recognition model ({self.config.stt.model}) on {self.config.stt.device.upper()}...")
         try:
             self.stt = get_stt(self.config.stt)
-            log_chitti("STT module initialized.")
+            if hasattr(self.stt, "preload"):
+                self.stt.preload()
+            log_chitti("STT module initialized and preloaded in memory.")
         except Exception as e:
             log_error(f"STT initialization failed: {e}")
             self.stt = None
 
-        # 4. Initialize Long-Term Memory (Phase 2)
+        # 4. Initialize Long-Term Memory (Phase 2 & 4A)
         if self.config.memory.enabled:
             log_chitti("Initializing persistent long-term memory...")
             try:
@@ -177,6 +181,8 @@ class ChittiController:
             f"Normalized: '{parsed_intent.normalized_text}', Negated: {parsed_intent.is_negated}"
         )
 
+        active_lang = self.session_response_language or detected_lang or "en"
+
         # 1. Check for Explicit Language Switch Command
         if parsed_intent.intent_category == IntentCategory.LANGUAGE_SWITCH.value:
             self.session_response_language = parsed_intent.target_response_language
@@ -228,29 +234,47 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Face command processing failed: {e}")
 
-        # 4. Check for Explicit Memory Command (multilingual: "yaad rakhna ki...", "remember that...", "forget...")
+        # 4. Check for Direct Identity / Creator / Occupation Query (Phase 4A)
+        if self.memory is not None:
+            try:
+                direct_id_resp = self.memory.resolve_identity_query(user_text, lang=active_lang)
+                if (direct_id_resp is None or not isinstance(direct_id_resp, str)) and parsed_intent.normalized_text != user_text:
+                    direct_id_resp = self.memory.resolve_identity_query(parsed_intent.normalized_text, lang=active_lang)
+
+                if isinstance(direct_id_resp, str) and direct_id_resp.strip():
+                    self.history.add_user_message(user_text)
+                    self.history.add_assistant_message(direct_id_resp)
+                    log_state("CHITTI")
+                    print(direct_id_resp)
+                    self.speak(direct_id_resp)
+                    return
+            except Exception as e:
+                log_warning(f"Identity resolution failed: {e}")
+
+        # 5. Check for Explicit Memory Command & Fact Statement (multilingual: "yaad rakhna ki...", "remember that...", "my name is...", "forget...")
         if self.memory is not None:
             try:
                 mem_result = self.memory.handle_interaction(user_text)
                 if mem_result is None and parsed_intent.normalized_text != user_text:
                     mem_result = self.memory.handle_interaction(parsed_intent.normalized_text)
 
-                if mem_result is not None:
+                if mem_result is not None and isinstance(mem_result, tuple):
                     action_tag, response_text = mem_result
-                    self.history.add_user_message(user_text)
-                    self.history.add_assistant_message(response_text)
+                    if isinstance(response_text, str) and response_text.strip():
+                        self.history.add_user_message(user_text)
+                        self.history.add_assistant_message(response_text)
 
-                    log_state("CHITTI")
-                    print(response_text)
-                    self.speak(response_text)
-                    return
+                        log_state("CHITTI")
+                        print(response_text)
+                        self.speak(response_text)
+                        return
             except Exception as e:
                 log_warning(f"Memory command processing failed: {e}")
 
         # Add to short-term session history
         self.history.add_user_message(user_text)
 
-        # 5. Multilingual Vision Perception Trigger
+        # 6. Multilingual Vision Perception Trigger
         vision_context = None
         recognized_names_seen = []
 
@@ -273,7 +297,7 @@ class ChittiController:
 
         self.history.set_vision_context(vision_context)
 
-        # 6. Retrieve relevant long-term memories (cross-lingual semantic search)
+        # 7. Retrieve relevant long-term memories (cross-lingual semantic search)
         relevant_memories = []
         if self.memory is not None:
             try:
@@ -300,12 +324,7 @@ class ChittiController:
 
         self.history.set_relevant_memories(relevant_memories)
 
-        # 7. Configure Response Language Guidance for LLM
-        active_lang = self.session_response_language
-        if not active_lang:
-            # Mirror user language
-            active_lang = detected_lang
-
+        # 8. Configure Response Language Guidance for LLM
         lang_name_map = {
             "en": "English",
             "hi": "Hindi (Devanagari script)",
@@ -314,13 +333,14 @@ class ChittiController:
         lang_target_name = lang_name_map.get(active_lang, "English")
 
         lang_guidance = (
-            f"\n\n[RESPONSE LANGUAGE DIRECTIVE: The user's query is in {lang_target_name}. "
-            f"Respond naturally in {lang_target_name}. Keep programming code, technical terms (e.g. Python, GPU, RAM, Docker, VS Code), "
-            f"file paths, and proper names in English/Roman text. Never translate technical terms awkwardly.]"
+            f"\n\n[RESPONSE LANGUAGE DIRECTIVE: Respond naturally in {lang_target_name}. "
+            f"Keep programming code, technical terms (e.g. Python, GPU, RAM, Docker, VS Code), "
+            f"file paths, and proper names in English/Roman text. Never translate technical terms awkwardly. "
+            f"Never output placeholders like [Creator's Name]. If you don't know something, admit it directly.]"
         )
         self.history.set_language_instruction(lang_guidance)
 
-        # 8. Generate LLM response
+        # 9. Generate LLM response
         log_state("THINKING")
         try:
             messages = self.history.get_messages_for_llm()
@@ -341,11 +361,21 @@ class ChittiController:
             log_error(f"Unexpected error: {e}")
             response_text = "Something went wrong while generating my response."
 
-        # Display and speak Chitti's response
+        # 10. Post-processing Response Validation & Placeholder Sanitization (Phase 4A)
+        user_name = self.memory.get_user_name() if self.memory else None
+        creator_name = self.memory.get_creator_name() if self.memory else None
+        sanitized_response = ResponseValidator.sanitize(
+            response_text,
+            user_name=user_name,
+            creator_name=creator_name,
+            target_lang=active_lang,
+        )
+
+        # Display and speak Chitti's sanitized response
         log_state("CHITTI")
-        print(response_text)
-        self.history.add_assistant_message(response_text)
-        self.speak(response_text)
+        print(sanitized_response)
+        self.history.add_assistant_message(sanitized_response)
+        self.speak(sanitized_response)
 
     def trigger_vision_snapshot(self):
         """Performs an instant camera snapshot and reports what Chitti sees."""
@@ -359,43 +389,46 @@ class ChittiController:
         if result.faces:
             print("Detected Faces:", flush=True)
             for f in result.faces:
-                status = f"Registered ({f.name}, similarity: {f.similarity:.2f})" if f.is_known else "Unknown Person"
-                print(f"  - {status} at bbox {f.bbox}", flush=True)
-        if result.object_counts:
+                print(f"  - {f.identity} (confidence: {f.confidence:.2f}, bbox: {f.bbox})", flush=True)
+        if result.objects:
             print("Detected Objects:", flush=True)
-            for obj, cnt in result.object_counts.items():
-                print(f"  - {obj}: {cnt}", flush=True)
-
-        self.speak(result.summary_text)
+            for o in result.objects:
+                print(f"  - {o.label} ({o.confidence*100:.1f}%)", flush=True)
 
     def trigger_face_registration_interactive(self):
-        """Interactively registers a person's face using the camera."""
+        """Interactive CLI wizard for registering a new person's face."""
         if not self.vision:
             print("\n[VISION] Camera/Vision system is not available.", flush=True)
             return
 
-        name = input("\nEnter the person's name to register: ").strip()
+        print("\n==========================================", flush=True)
+        print(" INTERACTIVE FACE REGISTRATION WIZARD", flush=True)
+        print("==========================================", flush=True)
+        name = input("Enter the person's full name: ").strip()
         if not name:
-            print("Registration cancelled: Name cannot be empty.", flush=True)
+            print("[ERROR] Name cannot be empty.", flush=True)
             return
 
-        print(f"\nPlease look directly at the camera. Collecting face samples for '{name}'...", flush=True)
-        success, msg = self.vision.register_person(name, num_samples=3)
-        print(f"\n{msg}", flush=True)
-        self.speak(msg)
+        print(f"\nStarting face registration for '{name}'...", flush=True)
+        print("Please look directly into the camera.", flush=True)
+        success, message = self.vision.register_face_interactive(name, num_samples=5)
+        print(f"\nResult: {message}\n", flush=True)
+        if success:
+            self.speak(f"Face registration complete for {name}.")
 
     def trigger_list_registered_faces(self):
-        """Lists all registered face identities in the database."""
-        if not self.vision:
+        """Prints all registered people in the face database."""
+        if not self.vision or not self.vision.face_db:
             print("\n[VISION] Face database is not available.", flush=True)
             return
-        names = self.vision.list_registered_people()
+
+        records = self.vision.face_db.list_all_faces()
         print("\n==========================================", flush=True)
         print(" REGISTERED PEOPLE IN FACE DATABASE", flush=True)
         print("==========================================", flush=True)
-        if names:
-            for i, n in enumerate(names, 1):
-                print(f"  {i}. {n}", flush=True)
+        if records:
+            for idx, r in enumerate(records, 1):
+                print(f"  {idx}. {r.name} (samples: {r.sample_count}, registered: {r.created_at[:10]})", flush=True)
         else:
             print("  No registered faces found in database.", flush=True)
         print("==========================================\n", flush=True)

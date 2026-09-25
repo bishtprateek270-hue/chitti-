@@ -1,11 +1,13 @@
 """
 Chitti Speech-to-Text (STT) Module.
-Wraps OpenAI Whisper with GPU/CPU acceleration, robust error handling, and audio normalization.
+Wraps OpenAI Whisper with GPU/CPU acceleration, eager preloading,
+robust error handling, audio normalization, and hallucination filtering.
 """
 
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 import numpy as np
 
 from src.config import STTConfig, get_config
@@ -26,8 +28,17 @@ class STTEngine(ABC):
         pass
 
 
+# Common Whisper subtitle hallucination artifacts on silence / noise
+WHISPER_HALLUCINATION_PATTERNS = [
+    r"(?i)\b(?:thanks\s+for\s+watching|thank\s+you\s+for\s+watching|subscribe\s+to\s+my\s+channel)\b",
+    r"(?i)\b(?:subtitles\s+by|translated\s+by|captioned\s+by)\b",
+    r"(?i)\b(?:humans\s+are\s+so\s+hard|oh\s+julian)\b",
+    r"(?i)^\[.*\]$",  # e.g. [Music], [Applause], [Silence]
+]
+
+
 class WhisperSTT(STTEngine):
-    """OpenAI Whisper STT Engine with CUDA/CPU execution."""
+    """OpenAI Whisper STT Engine with CUDA/CPU execution and hallucination rejection."""
 
     def __init__(self, config: Optional[STTConfig] = None):
         self.config = config or get_config().stt
@@ -36,8 +47,12 @@ class WhisperSTT(STTEngine):
         self.language = self.config.language
         self._model = None
 
+    def preload(self):
+        """Eagerly loads the Whisper model into memory at startup."""
+        self._load_model()
+
     def _load_model(self):
-        """Loads the Whisper model on demand to save memory until needed."""
+        """Loads the Whisper model into GPU or CPU memory."""
         if self._model is not None:
             return
 
@@ -65,9 +80,27 @@ class WhisperSTT(STTEngine):
                     raise STTError(f"Failed to load Whisper on both CUDA and CPU: {fallback_err}") from fallback_err
             raise STTError(f"Failed to load Whisper model '{self.model_name}': {e}") from e
 
+    @staticmethod
+    def is_hallucination(text: str) -> bool:
+        """Returns True if the transcribed text matches known Whisper phantom hallucinations."""
+        clean = text.strip()
+        if not clean:
+            return True
+
+        for pat in WHISPER_HALLUCINATION_PATTERNS:
+            if re.search(pat, clean):
+                return True
+
+        # Check for extreme word repetition (e.g. "you you you you you")
+        words = clean.split()
+        if len(words) >= 4 and len(set(words)) == 1:
+            return True
+
+        return False
+
     def transcribe(self, audio: Union[np.ndarray, str, Path]) -> str:
         """
-        Transcribes audio to text.
+        Transcribes audio to text with pre-filtering and post-processing.
         Accepts:
             - np.ndarray: 1D float32 array sampled at 16kHz
             - str / Path: path to audio file
@@ -103,6 +136,11 @@ class WhisperSTT(STTEngine):
         try:
             result = self._model.transcribe(audio, **options)
             text = result.get("text", "").strip()
+
+            if self.is_hallucination(text):
+                log_debug(f"Rejected Whisper hallucination: '{text}'")
+                return ""
+
             log_debug(f"Whisper transcription: '{text}'")
             return text
         except Exception as e:

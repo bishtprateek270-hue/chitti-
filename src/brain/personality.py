@@ -7,16 +7,15 @@ visual perception context injection, and multilingual language mirroring.
 from typing import List, Dict, Any, Optional, Union
 from src.language.prompts import MULTILINGUAL_PERSONA_GUIDELINES
 
-CHITTI_SYSTEM_PROMPT = f"""You are Chitti, a personal multimodal AI desktop companion robot.
-You are running locally on your creator's Windows machine.
+CHITTI_SYSTEM_PROMPT = f"""You are Chitti, a personal multimodal AI desktop companion robot running locally on your user's Windows machine.
 
 Core Personality & Voice Guidelines:
-1. Tone: Friendly, intelligent, sharp, and naturally conversational with a touch of wit and dry humor.
-2. Conciseness: Keep responses crisp and punchy for simple questions. Provide deeper explanations only when the user explicitly asks for details or complex topics.
-3. Spoken Delivery: Your words will be read aloud by a Text-to-Speech engine. Phrase your answers so they sound natural when spoken. Avoid markdown formatting like bullet points, asterisks, tables, or excessive symbols unless asked.
-4. Authenticity: Never say "As an AI..." or "As a large language model...". Do not use overly enthusiastic, robotic, or corporate customer-service clichés.
-5. Honesty: If you don't know something, admit it directly without making up facts.
-6. Scope: In this Phase 4, you operate as a desktop companion with voice interaction, persistent long-term memory, computer vision, and fluent multilingual intelligence (English, Hindi, Roman Hindi, and Hinglish).
+1. Tone: Friendly, intelligent, calm, sharp, and naturally conversational.
+2. Conciseness: Keep responses crisp and punchy. Provide deeper technical explanations only when requested.
+3. Spoken Delivery: Responses will be spoken aloud via TTS. Phrase answers so they sound completely natural when spoken. Avoid markdown formatting like bullet points, bold asterisks, tables, or excessive symbols.
+4. Authenticity: Never say "As an AI..." or "As a large language model...". Do not use robotic or corporate clichés.
+5. Honesty & Anti-Hallucination: If you don't know a personal fact about the user, state plainly that you don't have it in memory yet. NEVER invent names, creator identities, or preferences.
+6. Absolute Zero-Placeholder Rule: NEVER output brackets or placeholders such as [Creator's Name], [User Name], or [Name].
 
 {MULTILINGUAL_PERSONA_GUIDELINES}
 
@@ -30,13 +29,13 @@ def format_memory_context(memories: List[Any]) -> str:
         return ""
 
     lines = [
-        "\n\nRELEVANT LONG-TERM MEMORIES:",
+        "\n\n[STORED LONG-TERM MEMORIES - FACTUAL GROUND TRUTH]:",
     ]
     for mem in memories:
         content = mem.content if hasattr(mem, "content") else str(mem)
         lines.append(f"- {content}")
 
-    lines.append("\nUse these stored memories when relevant. Do not invent or assume memories not listed here.")
+    lines.append("Instructions on Memories: Use these factual memories when relevant. If a question asks about personal user facts or creator identities NOT in these memories, state that you do not have that stored yet. Do not guess or invent facts.")
     return "\n".join(lines)
 
 
@@ -54,6 +53,16 @@ class ConversationHistory:
         self._relevant_memories: List[Any] = []
         self._vision_context: Optional[str] = None
         self._language_instruction: Optional[str] = None
+
+    @property
+    def is_empty(self) -> bool:
+        """Returns True if no user or assistant messages are stored."""
+        return len(self._messages) == 0
+
+    @property
+    def message_count(self) -> int:
+        """Returns the total number of recorded user/assistant turns."""
+        return len(self._messages)
 
     def add_user_message(self, content: str) -> None:
         """Appends a user message to the conversation history."""
@@ -102,25 +111,17 @@ class ConversationHistory:
         messages.extend(self._messages)
         return messages
 
+    def _trim_history(self) -> None:
+        """Keeps history within max_messages while preserving recent turns."""
+        if len(self._messages) > self.max_messages:
+            self._messages = self._messages[-self.max_messages:]
+
     def clear(self) -> None:
-        """Resets the conversation history for the current session."""
+        """Clears all session dialogue history."""
         self._messages.clear()
         self._relevant_memories.clear()
         self._vision_context = None
         self._language_instruction = None
 
-    @property
-    def message_count(self) -> int:
-        """Returns the number of dialogue turns (user + assistant) in session."""
+    def __len__(self) -> int:
         return len(self._messages)
-
-    @property
-    def is_empty(self) -> bool:
-        """True if no dialogue has occurred yet in this session."""
-        return len(self._messages) == 0
-
-    def _trim_history(self) -> None:
-        """Keeps history within the maximum allowed messages window."""
-        if len(self._messages) > self.max_messages:
-            # Drop the oldest messages, keeping the most recent
-            self._messages = self._messages[-self.max_messages:]

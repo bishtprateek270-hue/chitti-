@@ -1,7 +1,8 @@
-"""Tests for Memory Manager End-to-End Orchestration."""
+"""Tests for Memory Manager End-to-End Orchestration & Identity Resolution (Phase 4A)."""
 
 import pytest
 from src.memory.manager import MemoryManager
+from src.memory.extractor import ExtractedFact
 
 
 @pytest.fixture
@@ -21,6 +22,57 @@ def test_remember_and_recall_flow(manager):
     results = manager.recall("What is my main AI project?")
     assert len(results) > 0
     assert "DocForensics AI" in results[0].content
+
+
+def test_remember_multi_facts_and_identity_queries(manager):
+    # Store multiple facts
+    facts = [
+        ExtractedFact(content="User's name is Prateek Singh Bisht.", memory_type="identity", key="user_name", value="Prateek Singh Bisht"),
+        ExtractedFact(content="Prateek Singh Bisht is my creator (User created Chitti).", memory_type="relationship", key="creator", value="Prateek Singh Bisht"),
+        ExtractedFact(content="User is an AIML engineer.", memory_type="professional_identity", key="occupation", value="AIML engineer"),
+    ]
+    success, msg, records = manager.remember_facts(facts)
+    assert success is True
+    assert len(records) == 3
+    assert manager.db.count() == 3
+
+    # Test user name retrieval
+    assert manager.get_user_name() == "Prateek Singh Bisht"
+    assert manager.get_creator_name() == "Prateek Singh Bisht"
+    assert manager.get_user_occupation() == "AIML engineer"
+
+    # Test identity queries in English
+    name_resp_en = manager.resolve_identity_query("what is my name", lang="en")
+    assert "Prateek Singh Bisht" in name_resp_en
+
+    creator_resp_en = manager.resolve_identity_query("who created you?", lang="en")
+    assert "Prateek Singh Bisht" in creator_resp_en
+
+    occ_resp_en = manager.resolve_identity_query("what do I do?", lang="en")
+    assert "AIML engineer" in occ_resp_en
+
+    # Test identity queries in Hinglish / Hindi
+    name_resp_hi = manager.resolve_identity_query("mera nam kya h", lang="hinglish")
+    assert "Prateek Singh Bisht" in name_resp_hi
+    assert "Tumhara naam" in name_resp_hi
+
+    creator_resp_hi = manager.resolve_identity_query("tujhe kisne bnaya h", lang="hinglish")
+    assert "Prateek Singh Bisht" in creator_resp_hi
+    assert "Mujhe Prateek Singh Bisht ne banaya hai." in creator_resp_hi
+
+    occ_resp_hi = manager.resolve_identity_query("main kya karta hoon", lang="hinglish")
+    assert "AIML engineer" in occ_resp_hi
+
+
+def test_identity_queries_when_unknown(manager):
+    # When no identity has been registered yet
+    name_resp = manager.resolve_identity_query("mera naam kya hai", lang="hinglish")
+    assert "nahi mila" in name_resp or "yaad nahi" in name_resp
+    assert "[Creator's Name]" not in name_resp
+
+    creator_resp = manager.resolve_identity_query("who created you", lang="en")
+    assert "don't have" in creator_resp.lower() or "not" in creator_resp.lower()
+    assert "[Creator's Name]" not in creator_resp
 
 
 def test_deduplication_updates_memory(manager):
@@ -54,7 +106,7 @@ def test_forget_all_confirmation_cycle(manager):
     action, msg = manager.handle_interaction("Forget everything about me.")
     assert action == "confirm_required"
     assert "confirm" in msg.lower() or "yes or no" in msg.lower()
-    assert manager.db.count() == 2  # Not deleted yet!
+    assert manager.db.count() == 2
 
     # User confirms
     action_confirm, msg_confirm = manager.handle_interaction("Yes, please delete all.")
@@ -69,7 +121,7 @@ def test_forget_all_cancellation(manager):
     manager.handle_interaction("Forget everything")
     action_cancel, msg_cancel = manager.handle_interaction("No, cancel that.")
     assert action_cancel == "cancelled"
-    assert manager.db.count() == 1  # Intact!
+    assert manager.db.count() == 1
 
 
 def test_persistence_across_reloads(tmp_path):
