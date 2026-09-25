@@ -429,3 +429,73 @@ class MemoryManager:
 
         # Not an explicit memory command
         return None
+
+    def auto_capture_interaction(
+        self,
+        user_text: str,
+        assistant_response: str,
+        lang: str = "en",
+    ) -> Tuple[List[MemoryRecord], Optional[MemoryRecord]]:
+        """
+        Automatically persists:
+        1. Implicit facts, preferences, life updates, or personal details mentioned by the user.
+        2. The episodic conversation turn (User statement + Chitti response) for conversational recall.
+        Returns (list_of_captured_facts, dialogue_turn_record).
+        """
+        if not user_text or not user_text.strip() or not assistant_response or not assistant_response.strip():
+            return [], None
+
+        # Check for sensitive data
+        if self.extractor.is_sensitive(user_text) or self.extractor.is_sensitive(assistant_response):
+            log_warning("[MEMORY] Sensitive credential detected. Skipped auto-capture.")
+            return [], None
+
+        user_clean = user_text.strip()
+        resp_clean = assistant_response.strip()
+        captured_facts: List[MemoryRecord] = []
+        dialogue_record: Optional[MemoryRecord] = None
+
+        # 1. Auto-capture implicit facts
+        implicit_facts = self.extractor.extract_implicit_facts(user_clean)
+        for fact in implicit_facts:
+            meta = {"auto_captured": True}
+            if fact.key:
+                meta["key"] = fact.key
+            if fact.value:
+                meta["value"] = fact.value
+
+            success, msg, rec = self.remember(
+                content=fact.content,
+                memory_type=fact.memory_type,
+                importance=fact.importance,
+                metadata=meta,
+            )
+            if success and rec:
+                captured_facts.append(rec)
+                log_chitti(f"[MEMORY AUTO-CAPTURED FACT] (ID: {rec.id}): '{rec.content}'")
+
+        # 2. Auto-capture episodic dialogue turn (if not trivial chit-chat or empty)
+        if not self.extractor.is_trivial_chit_chat(user_clean) or len(user_clean) > 10:
+            dialogue_content = f'User said: "{user_clean}" | Chitti replied: "{resp_clean}"'
+            dup = self.retriever.find_duplicate(dialogue_content, threshold=0.92)
+            if not dup:
+                emb = self.embedding_engine.embed_text(dialogue_content)
+                rec = MemoryRecord(
+                    content=dialogue_content,
+                    memory_type="conversation",
+                    importance=2,
+                    embedding=emb,
+                    metadata={
+                        "type": "dialogue_turn",
+                        "user_text": user_clean,
+                        "chitti_text": resp_clean,
+                        "auto_captured": True,
+                    },
+                )
+                mem_id = self.db.insert_memory(rec)
+                rec.id = mem_id
+                dialogue_record = rec
+                log_chitti(f"[MEMORY AUTO-CAPTURED DIALOGUE] (ID: {mem_id})")
+
+        return captured_facts, dialogue_record
+

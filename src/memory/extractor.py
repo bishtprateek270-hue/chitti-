@@ -397,3 +397,79 @@ class MemoryExtractor:
 
         # No memory command found
         return ExtractedMemoryCommand(action="none")
+
+    @classmethod
+    def is_question(cls, text: str) -> bool:
+        """Determines if the text is primarily a question rather than a user disclosure."""
+        clean = text.strip()
+        if not clean:
+            return False
+        if clean.endswith("?"):
+            return True
+        lower = clean.lower()
+        question_starters = [
+            r"^(?:what|why|how|who|when|where|which|whose|whom)\b",
+            r"^(?:is|are|am|was|were|do|does|did|can|could|will|would|should|may|might)\b",
+            r"^(?:tell\s+me|explain|batao|kya\s+|kaise\s+|kab\s+|kaha\s+|kaun\s+|kyun\s+|kya\s+tum|kya\s+aap)\b",
+            r"(?:kya\s+hai|kaun\s+hai|kahan\s+hai|kab\s+hai|kyun\s+hai)\b",
+        ]
+        return any(re.search(pat, lower) for pat in question_starters)
+
+    @classmethod
+    def is_trivial_chit_chat(cls, text: str) -> bool:
+        """Determines if text is trivial greeting, acknowledgement, or filler."""
+        clean = text.strip().lower().rstrip(".!? \t\n")
+        trivial_set = {
+            "hi", "hello", "hey", "namaste", "chitti", "hey chitti", "hello chitti",
+            "ok", "okay", "alright", "sure", "cool", "got it", "fine", "nice",
+            "good morning", "good evening", "good afternoon", "good night",
+            "bye", "goodbye", "see you", "tata", "alvida",
+            "thanks", "thank you", "dhanyawad", "shukriya",
+            "yes", "no", "yep", "nope", "haan", "nahi", "nahin", "ha",
+            "theek hai", "sahi hai", "sahi h", "accha", "achha",
+        }
+        return clean in trivial_set or len(clean) <= 2
+
+    @classmethod
+    def extract_implicit_facts(cls, raw_text: str) -> List[ExtractedFact]:
+        """
+        Extracts implicit facts from casual user statements (without explicit 'remember' keywords).
+        Captures personal statements, preferences, life updates, possessions, family/friends, and activities.
+        """
+        if not raw_text or not raw_text.strip():
+            return []
+
+        if cls.is_sensitive(raw_text):
+            return []
+
+        if cls.is_question(raw_text) or cls.is_trivial_chit_chat(raw_text):
+            return []
+
+        # First, run discrete facts extractor
+        facts = cls.extract_discrete_facts(raw_text)
+
+        # Filter and enhance facts
+        valid_facts: List[ExtractedFact] = []
+        for f in facts:
+            # If it's already a recognized structured key (user_name, creator, occupation, preference, project)
+            if f.key or f.memory_type in ("identity", "relationship", "professional_identity", "preference", "project"):
+                valid_facts.append(f)
+                continue
+
+            # Check if it represents a personal declarative statement
+            lower = f.content.lower()
+            if any(k in lower for k in [
+                "i am ", "i'm ", "i have ", "i like ", "i love ", "i hate ", "i prefer ",
+                "i bought ", "i live ", "i work ", "i went ", "i visited ", "i study ",
+                "my ", "meri ", "mera ", "mere ", "mujhe ", "maine ", "main ", "hum ",
+                "sister", "brother", "friend", "father", "mother", "dog", "cat", "car",
+                "laptop", "phone", "hobby", "birthday", "salary", "college", "school",
+            ]):
+                f.importance = 3
+                valid_facts.append(f)
+            elif len(f.content.split()) >= 3 and not cls.is_question(f.content):
+                # General meaningful user statement
+                f.importance = 3
+                valid_facts.append(f)
+
+        return valid_facts

@@ -194,6 +194,8 @@ class ChittiController:
             resp = lang_confirmations.get(self.session_response_language, f"Switched response language to {self.session_response_language}.")
             self.history.add_user_message(user_text)
             self.history.add_assistant_message(resp)
+            if self.memory is not None:
+                self.memory.auto_capture_interaction(user_text, resp, lang=active_lang)
             log_state("CHITTI")
             print(resp)
             self.speak(resp)
@@ -210,6 +212,8 @@ class ChittiController:
             trans_res = self.translator.translate(text_to_translate, target_lang, source_language=detected_lang)
             self.history.add_user_message(user_text)
             self.history.add_assistant_message(trans_res.translated_text)
+            if self.memory is not None:
+                self.memory.auto_capture_interaction(user_text, trans_res.translated_text, lang=active_lang)
             log_state("CHITTI")
             print(trans_res.translated_text)
             self.speak(trans_res.translated_text)
@@ -226,6 +230,8 @@ class ChittiController:
                     action_tag, response_text = face_cmd_result
                     self.history.add_user_message(user_text)
                     self.history.add_assistant_message(response_text)
+                    if self.memory is not None:
+                        self.memory.auto_capture_interaction(user_text, response_text, lang=active_lang)
 
                     log_state("CHITTI")
                     print(response_text)
@@ -244,6 +250,7 @@ class ChittiController:
                 if isinstance(direct_id_resp, str) and direct_id_resp.strip():
                     self.history.add_user_message(user_text)
                     self.history.add_assistant_message(direct_id_resp)
+                    self.memory.auto_capture_interaction(user_text, direct_id_resp, lang=active_lang)
                     log_state("CHITTI")
                     print(direct_id_resp)
                     self.speak(direct_id_resp)
@@ -263,6 +270,7 @@ class ChittiController:
                     if isinstance(response_text, str) and response_text.strip():
                         self.history.add_user_message(user_text)
                         self.history.add_assistant_message(response_text)
+                        self.memory.auto_capture_interaction(user_text, response_text, lang=active_lang)
 
                         log_state("CHITTI")
                         print(response_text)
@@ -375,6 +383,8 @@ class ChittiController:
         log_state("CHITTI")
         print(sanitized_response)
         self.history.add_assistant_message(sanitized_response)
+        if self.memory is not None:
+            self.memory.auto_capture_interaction(user_text, sanitized_response, lang=active_lang)
         self.speak(sanitized_response)
 
     def trigger_vision_snapshot(self):

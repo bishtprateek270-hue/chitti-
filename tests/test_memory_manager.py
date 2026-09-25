@@ -137,3 +137,24 @@ def test_persistence_across_reloads(tmp_path):
     recalled = mgr2.recall("DocForensics")
     assert len(recalled) > 0
     assert "DocForensics" in recalled[0].content
+
+
+def test_auto_capture_interaction(manager):
+    user_msg = "I really love drinking iced matcha lattes with oat milk."
+    bot_resp = "Iced matcha latte with oat milk sounds delicious and refreshing!"
+
+    facts, dialogue = manager.auto_capture_interaction(user_msg, bot_resp)
+    assert len(facts) >= 1
+    assert dialogue is not None
+    assert "iced matcha" in dialogue.content.lower()
+
+    # Verify retrieval can recall what user likes or what Chitti replied
+    recalled_pref = manager.recall("What do I like to drink?")
+    assert len(recalled_pref) > 0
+    assert any("matcha" in r.content.lower() for r in recalled_pref)
+
+    # Verify retrieval can recall past conversation
+    recalled_conv = manager.recall("What did we discuss about matcha?")
+    assert len(recalled_conv) > 0
+    assert any("matcha" in r.content.lower() for r in recalled_conv)
+

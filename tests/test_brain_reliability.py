@@ -40,7 +40,7 @@ def test_learn_compound_identity_statement(test_controller):
     test_controller.process_user_input(input_text)
 
     # Verify that discrete facts are stored in memory
-    assert test_controller.memory.db.count() == 3
+    assert test_controller.memory.db.count() >= 3
     assert test_controller.memory.get_user_name() == "Prateek Singh Bisht"
     assert test_controller.memory.get_creator_name() == "Prateek Singh Bisht"
     assert test_controller.memory.get_user_occupation() == "AIML engineer"

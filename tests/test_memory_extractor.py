@@ -107,3 +107,30 @@ def test_casual_speech_not_an_explicit_command():
 
     cmd2 = extractor.extract_command("How is the weather today?")
     assert cmd2.action == "none"
+
+
+def test_implicit_fact_extraction():
+    extractor = MemoryExtractor()
+
+    # User sharing preferences without explicit remember
+    facts1 = extractor.extract_implicit_facts("I enjoy drinking green tea every morning.")
+    assert len(facts1) >= 1
+    assert any("green tea" in f.content.lower() for f in facts1)
+
+    # User personal life / family updates
+    facts2 = extractor.extract_implicit_facts("My sister's name is Ananya.")
+    assert len(facts2) >= 1
+    assert any("ananya" in f.content.lower() for f in facts2)
+
+    # Question should not extract facts
+    facts3 = extractor.extract_implicit_facts("What is the capital of France?")
+    assert len(facts3) == 0
+
+    # Trivial greetings should not extract facts
+    facts4 = extractor.extract_implicit_facts("Hey Chitti, good morning!")
+    assert len(facts4) == 0
+
+    # Sensitive data should not extract facts
+    facts5 = extractor.extract_implicit_facts("My password is secretpassword123")
+    assert len(facts5) == 0
+
