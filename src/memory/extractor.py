@@ -43,27 +43,28 @@ SENSITIVE_PATTERNS = [
     r"(?i)\b(?:private[_-]?key)\b",
 ]
 
-# Explicit memory command prefixes across English, Hindi, Hinglish
+# Explicit memory command prefixes across English, Hindi, Hinglish (with typo tolerance)
 REMEMBER_PREFIX_PATTERNS = [
-    r"^(?:chitti,?\s*)?(?:please\s+)?remember\s+that\s+(.*)$",
-    r"^(?:chitti,?\s*)?(?:please\s+)?remember\s+my\s+(.*)$",
-    r"^(?:chitti,?\s*)?(?:please\s+)?remember\s+(.*)$",
+    r"^(?:chitti,?\s*)?(?:please\s+)?(?:r[e]?m[e]?mb[e]?r|rmbr)\s+that\s+(.*)$",
+    r"^(?:chitti,?\s*)?(?:please\s+)?(?:r[e]?m[e]?mb[e]?r|rmbr)\s+my\s+(.*)$",
+    r"^(?:chitti,?\s*)?(?:please\s+)?(?:r[e]?m[e]?mb[e]?r|rmbr)\s+(.*)$",
     r"^(?:chitti,?\s*)?(?:please\s+)?don'?t\s+forget\s+(?:that\s+)?(.*)$",
     r"^(?:chitti,?\s*)?(?:please\s+)?keep\s+in\s+mind\s+(?:that\s+)?(.*)$",
     r"^(?:chitti,?\s*)?(?:please\s+)?note\s+(?:down\s+)?(?:that\s+)?(.*)$",
-    r"^(?:chitti,?\s*)?(?:ye\s+baat\s+)?yaad\s+rakhna\s+(?:ki\s+)?(.*)$",
-    r"^(?:chitti,?\s*)?yaad\s+rakho\s+(?:ki\s+)?(.*)$",
+    r"^(?:chitti,?\s*)?(?:ye\s+baat\s+)?yaad\s+r[a]?khna\s+(?:ki\s+)?(.*)$",
+    r"^(?:chitti,?\s*)?yaad\s+r[a]?kho\s+(?:ki\s+)?(.*)$",
     r"^(?:chitti,?\s*)?याद\s+रखना\s+(?:कि\s+)?(.*)$",
     r"^(?:chitti,?\s*)?याद\s+रखो\s+(?:कि\s+)?(.*)$",
 ]
 
 REMEMBER_SUFFIX_PATTERNS = [
-    r"^(.*)[,\.\s]+(?:please\s+)?remember\s+this[!\.]?$",
-    r"^(.*)[,\.\s]+(?:please\s+)?remember\s+it[!\.]?$",
-    r"^(.*)[,\.\s]+(?:please\s+)?remember[!\.]?$",
-    r"^(.*)[,\.\s]+(?:ye\s+)?yaad\s+rakhna[!\.]?$",
-    r"^(.*)[,\.\s]+yaad\s+rakh[!\.]?$",
-    r"^(.*)[,\.\s]+yaad\s+rakho[!\.]?$",
+    r"^(.*)[,\.\s]+(?:please\s+)?(?:r[e]?m[e]?mb[e]?r|rmbr)\s+this[!\.]?$",
+    r"^(.*)[,\.\s]+(?:please\s+)?(?:r[e]?m[e]?mb[e]?r|rmbr)\s+that[!\.]?$",
+    r"^(.*)[,\.\s]+(?:please\s+)?(?:r[e]?m[e]?mb[e]?r|rmbr)\s+it[!\.]?$",
+    r"^(.*)[,\.\s]+(?:please\s+)?(?:r[e]?m[e]?mb[e]?r|rmbr)[!\.]?$",
+    r"^(.*)[,\.\s]+(?:ye\s+)?yaad\s+r[a]?khna[!\.]?$",
+    r"^(.*)[,\.\s]+yaad\s+r[a]?kh[!\.]?$",
+    r"^(.*)[,\.\s]+yaad\s+r[a]?kho[!\.]?$",
     r"^(.*)[,\.\s]+bhoolna\s+mat[!\.]?$",
     r"^(.*)[,\.\s]+don'?t\s+forget[!\.]?$",
     r"^(.*)[,\.\s]+याद\s+रखना[!\.]?$",
@@ -169,7 +170,7 @@ class MemoryExtractor:
         for clause in clauses:
             # 1. User Name Patterns (English / Hindi / Hinglish / Devanagari)
             name_patterns = [
-                r"(?i)\b(?:my\s+name\s+is|i\s+am|i'm)\s+([A-Za-z\s]+?)(?:\s+(?:and|who|i|mera|maine)|$)",
+                r"(?i)\b(?:my\s+name\s+is|i\s+am|i'm)\s+([A-Za-z\s]+?)(?:\s+(?:and|who|i|mera|maine|also|and\s+i|and\s+i'm|and\s+i\s+have)|$)",
                 r"(?i)\b(?:mera\s+na+m\s+(?:hai\s+)?|main\s+)([A-Za-z\s]+?)(?:\s+(?:hoon|hu|h|hai)|$)",
                 r"(?:मेरा\s+नाम\s+|मैं\s+)([\u0900-\u097F\s]+?)(?:\s+हूँ|\s+हूं|\s+है|$)",
             ]
@@ -190,34 +191,11 @@ class MemoryExtractor:
 
             lower = clause_clean.lower()
 
-            # 1. User Name Extraction
-            name_match = False
-            name_patterns = [
-                r"(?i)\b(?:my\s+name\s+is)\s+([A-Za-z\s]+)",
-                r"(?i)\b(?:mera\s+na+m\s+)([A-Za-z\s]+?)(?:\s+hai|\s+h|$)",
-                r"(?:मेरा\s+नाम\s+)([\u0900-\u097F\s]+?)(?:\s+है|$)",
-            ]
-            for pat in name_patterns:
-                m = re.search(pat, clause_clean)
-                if m:
-                    name_val = m.group(1).strip()
-                    if name_val.lower() not in {"an", "a", "your", "tumhara", "the"}:
-                        facts.append(ExtractedFact(
-                            content=f"User's name is {name_val}.",
-                            memory_type="identity",
-                            key="user_name",
-                            value=name_val,
-                            importance=5,
-                        ))
-                        user_name_found = name_val
-                        name_match = True
-                        break
-
-            # 2. Creator Relationship Extraction
+            # 1. Creator Relationship Extraction (Highest Priority)
             creator_patterns = [
-                r"(?i)\b(?:i\s+created\s+you|i\s+made\s+you|i\s+built\s+you|i\s+am\s+your\s+creator|i'm\s+your\s+creator)\b",
-                r"(?i)\b(?:maine\s+tumhe\s+banaya\s+hai|maine\s+tujhe\s+banaya|main\s+tumhara\s+creator\s+hoon|main\s+tera\s+creator\s+hu)\b",
-                r"(?:मैंने\s+तुम्हें\s+बनाया\s+है|मैं\s+तुम्हारा\s+क्रिएटर\s+हूँ)",
+                r"(?i)\b(?:i\s+(?:have\s+)?(?:created|create|made|make|built|build|developed|develop)\s+you|i\s+am\s+your\s+creator|i'm\s+your\s+creator|you\s+(?:were|are|have\s+been)\s+(?:created|made|built|developed)\s+by\s+me)\b",
+                r"(?i)\b(?:maine\s+(?:hi\s+)?(?:tumhe|tujhe|chitti\s+ko)\s+banaya\s*(?:hai|h)?|main\s+(?:hi\s+)?(?:tumhara|tera)\s+creator\s+(?:hoon|hu|h)|maine\s+(?:hi\s+)?create\s+kiya\s+(?:hai|h))\b",
+                r"(?:मैंने\s+(?:ही\s+)?तुम्हें\s+बनाया\s+है|मैं\s+तुम्हारा\s+क्रिएटर\s+हूँ)",
             ]
             if any(re.search(pat, clause_clean) for pat in creator_patterns):
                 creator_name = user_name_found if user_name_found else "User"
@@ -231,22 +209,42 @@ class MemoryExtractor:
                 is_creator_found = True
                 continue
 
-            # 3. Occupation / Profession Extraction
-            occ_patterns = [
-                r"(?i)\b(?:i\s+am\s+an?|i'm\s+an?|i\s+work\s+as\s+an?)\s+([A-Za-z0-9_\-\s]+?)(?:\s+engineer|\s+developer|\s+scientist|\s+student|\s+designer|\s+researcher|\s+doctor|$)",
-                r"(?i)\b(?:main\s+ek\s+|main\s+)([A-Za-z0-9_\-\s]+?)(?:\s+hoon|\s+hu|\s+h)\b",
-                r"(?:मैं\s+एक\s+|मैं\s+)([\u0900-\u097F\s]+?)(?:\s+हूँ|\s+हूं)",
-            ]
-            # Direct occupation keywords
-            if any(k in lower for k in ["aiml engineer", "ai engineer", "ml engineer", "software engineer", "developer", "data scientist"]):
-                occ_val = "AIML engineer"
+            # 2. Occupation / Profession Extraction (Higher priority than general 'I am')
+            is_occ = False
+            occ_val = None
+            if any(k in lower for k in ["aiml engineer", "ai engineer", "ml engineer", "software engineer", "developer", "data scientist", "researcher", "student", "doctor", "designer"]):
                 if "software engineer" in lower:
                     occ_val = "Software Engineer"
                 elif "data scientist" in lower:
                     occ_val = "Data Scientist"
                 elif "aiml" in lower or "ai/ml" in lower or "ai engineer" in lower:
                     occ_val = "AIML engineer"
+                elif "developer" in lower:
+                    occ_val = "Developer"
+                elif "student" in lower:
+                    occ_val = "Student"
+                elif "doctor" in lower:
+                    occ_val = "Doctor"
+                elif "designer" in lower:
+                    occ_val = "Designer"
+                else:
+                    occ_val = "Engineer"
 
+            occ_patterns = [
+                r"(?i)\b(?:i\s+am\s+an?|i'm\s+an?|i\s+work\s+as\s+an?)\s+([A-Za-z0-9_\-\s]+?)(?:\s+engineer|\s+developer|\s+scientist|\s+student|\s+designer|\s+researcher|\s+doctor|$)",
+                r"(?i)\b(?:main\s+ek\s+|main\s+)([A-Za-z0-9_\-\s]+?)(?:\s+hoon|\s+hu|\s+h)\b",
+                r"(?:मैं\s+एक\s+|मैं\s+)([\u0900-\u097F\s]+?)(?:\s+हूँ|\s+हूं)",
+            ]
+            if not occ_val:
+                for pat in occ_patterns:
+                    m = re.search(pat, clause_clean)
+                    if m:
+                        captured = m.group(1).strip()
+                        if captured.lower() not in {"user", "creator", "prateek", "human"}:
+                            occ_val = captured.title()
+                            break
+
+            if occ_val:
                 facts.append(ExtractedFact(
                     content=f"User is an {occ_val}.",
                     memory_type="professional_identity",
@@ -254,6 +252,33 @@ class MemoryExtractor:
                     value=occ_val,
                     importance=4,
                 ))
+                continue
+
+            # 3. User Name Extraction
+            name_val = None
+            name_patterns = [
+                r"(?i)\b(?:my\s+name\s+is)\s+([A-Za-z\s]+)",
+                r"(?i)\b(?:i\s+am|i'm)\s+(?!an?\s+|the\s+|your\s+|a\s+)([A-Za-z\s]+)",
+                r"(?i)\b(?:mera\s+na+m\s+)([A-Za-z\s]+?)(?:\s+hai|\s+h|$)",
+                r"(?:मेरा\s+नाम\s+)([\u0900-\u097F\s]+?)(?:\s+है|$)",
+            ]
+            for pat in name_patterns:
+                m = re.search(pat, clause_clean)
+                if m:
+                    candidate = m.group(1).strip()
+                    if candidate.lower() not in {"an", "a", "your", "tumhara", "the", "creator", "engineer", "developer", "aiml"}:
+                        name_val = candidate.title()
+                        break
+
+            if name_val:
+                facts.append(ExtractedFact(
+                    content=f"User's name is {name_val}.",
+                    memory_type="identity",
+                    key="user_name",
+                    value=name_val,
+                    importance=5,
+                ))
+                user_name_found = name_val
                 continue
 
             # 4. Preference Extraction
@@ -281,8 +306,8 @@ class MemoryExtractor:
                 ))
                 continue
 
-            # 6. Fallback General Fact (if not already extracted as name)
-            if not name_match and len(clause_clean) > 3:
+            # 6. Fallback General Fact
+            if len(clause_clean) > 3:
                 facts.append(ExtractedFact(
                     content=clause_clean,
                     memory_type="fact",
@@ -340,11 +365,19 @@ class MemoryExtractor:
                 is_explicit_remember = True
                 break
 
-        # Also detect direct self-identification statements as facts to remember
+        # Check for remember / yaad rakhna keywords anywhere in text
+        if not is_explicit_remember:
+            is_explicit_remember = bool(re.search(
+                r"(?i)\b(?:r[e]?m[e]?mb[e]?r|rmbr|yaad\s+r[a]?khna|yaad\s+r[a]?kho|yaad\s+r[a]?kh|bhoolna\s+mat|don'?t\s+forget)\b",
+                raw
+            ))
+
+        # Also detect direct self-identification or creator statements as facts to remember
         is_self_identity = bool(re.search(
-            r"(?i)\b(?:my\s+name\s+is|mera\s+na+m\s+|i\s+created\s+you|maine\s+tumhe\s+banaya|main\s+tumhara\s+creator|main\s+tera\s+creator|"
+            r"(?i)\b(?:my\s+name\s+is|i\s+am\s+[A-Za-z]|i'm\s+[A-Za-z]|mera\s+na+m\s+|"
+            r"i\s+(?:have\s+)?(?:created|create|made|make|built|build|developed)\s+you|maine\s+tumhe\s+banaya|main\s+tumhara\s+creator|main\s+tera\s+creator|"
             r"main\s+(?:ek\s+)?[A-Za-z0-9_\-\s]+?(?:engineer|developer|scientist|student|designer|doctor|hoon|hu|h)|"
-            r"i\s+am\s+an?|i'm\s+an?|i\s+work\s+as|मेरा\s+नाम\s+|मैंने\s+तुम्हें\s+बनाया|मैं\s+.*हूँ)\b",
+            r"i\s+work\s+as|मेरा\s+नाम\s+|मैंने\s+तुम्हें\s+बनाया|मैं\s+.*हूँ)\b",
             raw
         ))
 

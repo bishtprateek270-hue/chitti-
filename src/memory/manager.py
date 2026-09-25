@@ -63,7 +63,28 @@ class MemoryManager:
 
         clean_content = content.strip().rstrip(".!? \t\n") + "."
 
-        # Check for semantically similar existing memory (deduplication)
+        # 1. Check for structured key collision (e.g. key="user_name", key="creator", key="occupation")
+        target_key = metadata.get("key") if metadata else None
+        if target_key:
+            for existing_rec in self.db.list_all_memories():
+                if existing_rec.metadata and existing_rec.metadata.get("key") == target_key:
+                    new_emb = self.embedding_engine.embed_text(clean_content)
+                    merged_meta = existing_rec.metadata.copy() if existing_rec.metadata else {}
+                    if metadata:
+                        merged_meta.update(metadata)
+                    self.db.update_memory(
+                        existing_rec.id,
+                        content=clean_content,
+                        memory_type=memory_type,
+                        importance=max(existing_rec.importance, importance),
+                        embedding=new_emb,
+                        metadata=merged_meta,
+                    )
+                    verified = self.db.get_memory(existing_rec.id)
+                    log_chitti(f"[MEMORY] Updated existing structured key='{target_key}' (ID: {existing_rec.id}): '{clean_content}'")
+                    return True, "I've updated that in my memory.", verified
+
+        # 2. Check for semantically similar existing memory (deduplication)
         dup = self.retriever.find_duplicate(clean_content, threshold=0.88)
         if dup:
             existing_rec, score = dup
@@ -80,10 +101,11 @@ class MemoryManager:
                 embedding=new_emb,
                 metadata=merged_meta,
             )
+            verified = self.db.get_memory(existing_rec.id)
             log_chitti(f"[MEMORY] Updated existing memory (ID: {existing_rec.id}): '{clean_content}'")
-            return True, "I've updated that in my memory.", existing_rec
+            return True, "I've updated that in my memory.", verified
 
-        # Insert new record
+        # 3. Insert new record with immediate write verification
         emb = self.embedding_engine.embed_text(clean_content)
         record = MemoryRecord(
             content=clean_content,
@@ -94,21 +116,39 @@ class MemoryManager:
         )
         mem_id = self.db.insert_memory(record)
         record.id = mem_id
-        log_chitti(f"[MEMORY] New memory created (ID: {mem_id}): '{clean_content}'")
-        return True, "I'll remember that.", record
 
-    def remember_facts(self, facts: List[ExtractedFact]) -> Tuple[bool, str, List[MemoryRecord]]:
-        """Stores a list of extracted discrete facts."""
+        # Verification check
+        verified = self.db.get_memory(mem_id)
+        if not verified:
+            log_error(f"[MEMORY ERROR] Failed to verify persistent storage of memory (ID: {mem_id})")
+            return False, "Failed to persist memory in database.", None
+
+        log_chitti(f"[MEMORY] New memory created and verified (ID: {mem_id}): '{clean_content}'")
+        return True, "I'll remember that.", verified
+
+    def remember_facts(self, facts: List[ExtractedFact], lang: str = "en") -> Tuple[bool, str, List[MemoryRecord]]:
+        """Stores a list of extracted discrete facts and returns a natural confirmation."""
         if not facts:
             return False, "Nothing to remember.", []
 
         stored_records: List[MemoryRecord] = []
+        user_name_stored: Optional[str] = None
+        creator_stored = False
+        occ_stored: Optional[str] = None
+
         for fact in facts:
             meta = {}
             if fact.key:
                 meta["key"] = fact.key
             if fact.value:
                 meta["value"] = fact.value
+
+            if fact.key == "user_name":
+                user_name_stored = fact.value
+            elif fact.key == "creator":
+                creator_stored = True
+            elif fact.key == "occupation":
+                occ_stored = fact.value
 
             success, msg, rec = self.remember(
                 content=fact.content,
@@ -119,12 +159,50 @@ class MemoryManager:
             if success and rec:
                 stored_records.append(rec)
 
+        if not stored_records:
+            return False, "Failed to store memories.", []
+
+        # If user_name was stored and creator was also stored, update creator memory value to user_name
+        if user_name_stored:
+            for rec in stored_records:
+                if rec.metadata and rec.metadata.get("key") == "creator" and (rec.metadata.get("value") == "User" or not rec.metadata.get("value")):
+                    rec.metadata["value"] = user_name_stored
+                    rec.content = f"{user_name_stored} is my creator (User created Chitti)."
+                    self.db.update_memory(rec.id, content=rec.content, metadata=rec.metadata)
+
+        # Build rich, natural confirmation
+        if user_name_stored and creator_stored:
+            if lang == "hi":
+                return True, f"समझ गया। मुझे याद रहेगा कि आप {user_name_stored} हैं और आपने मुझे बनाया है।", stored_records
+            elif lang in ("hinglish", "mixed"):
+                return True, f"Got it. Yaad rahega — tum {user_name_stored} ho aur tumne mujhe banaya hai.", stored_records
+            else:
+                return True, f"Got it. I'll remember that you're {user_name_stored} and that you created me.", stored_records
+        elif user_name_stored:
+            if lang == "hi":
+                return True, f"समझ गया। मुझे याद रहेगा कि आपका नाम {user_name_stored} है।", stored_records
+            elif lang in ("hinglish", "mixed"):
+                return True, f"Got it. Mujhe yaad rahega ki tumhara naam {user_name_stored} hai.", stored_records
+            else:
+                return True, f"Got it. I'll remember that your name is {user_name_stored}.", stored_records
+        elif creator_stored:
+            if lang == "hi":
+                return True, "समझ गया। मुझे याद रहेगा कि आपने मुझे बनाया है।", stored_records
+            elif lang in ("hinglish", "mixed"):
+                return True, "Got it. Mujhe yaad rahega ki tumne mujhe banaya hai.", stored_records
+            else:
+                return True, "Got it. I'll remember that you created me.", stored_records
+        elif occ_stored:
+            if lang == "hi":
+                return True, f"समझ गया। मुझे याद रहेगा कि आप एक {occ_stored} हैं।", stored_records
+            elif lang in ("hinglish", "mixed"):
+                return True, f"Got it. Yaad rahega ki tum {occ_stored} ho.", stored_records
+            else:
+                return True, f"Got it. I'll remember that you are an {occ_stored}.", stored_records
+
         if len(stored_records) == 1:
             return True, "I'll remember that.", stored_records
-        elif len(stored_records) > 1:
-            return True, f"I've saved {len(stored_records)} details to memory.", stored_records
-
-        return False, "Failed to store memories.", []
+        return True, f"I've saved {len(stored_records)} details to memory.", stored_records
 
     def recall(self, query: str, top_k: int = 5) -> List[MemoryRecord]:
         """Retrieves top_k relevant memories for a given query."""
@@ -158,6 +236,8 @@ class MemoryManager:
                 if c_name.lower() == "user" and user_name:
                     return user_name
                 return c_name
+            if "user created chitti" in rec.content.lower() and user_name:
+                return user_name
         return user_name
 
     def get_user_occupation(self) -> Optional[str]:
@@ -179,9 +259,9 @@ class MemoryManager:
 
         # 1. Creator Queries
         creator_patterns = [
-            r"(?i)\b(?:who\s+(?:created|create|makes|made|make|built|build)\s+(?:you|u)|who\s+is\s+your\s+creator|who\s+developed\s+you)\b",
-            r"(?i)\b(?:tujhe\s+kisne\s+(?:banaya|bnaya)|tumhe\s+kisne\s+banaya|tumhara\s+creator\s+kaun\s+hai|tera\s+creator\s+kaun\s+hai|aapko\s+kisne\s+banaya)\b",
-            r"(?:तुम्हें\s+किसने\s+बनाया|तुम्हारा\s+क्रिएटर\s+कौन\s+है|आपको\s+किसने\s+बनाया)",
+            r"(?i)\b(?:who\s+(?:created|create|makes|made|make|built|build|developed|develop)\s+(?:you|u)|who\s+is\s+your\s+creator|who\s+developed\s+you|who\s+built\s+you)\b",
+            r"(?i)\b(?:tujhe\s+kisne\s+(?:banaya|bnaya)|tumhe\s+kisne\s+banaya|tumhara\s+creator\s+kaun\s+hai|tera\s+creator\s+kaun\s+hai|aapko\s+kisne\s+banaya|kisne\s+banaya\s+(?:tujhe|tumhe|aapko))\b",
+            r"(?:तुम्हें\s+किसने\s+बनाया|तुम्हारा\s+क्रिएटर\s+कौन\s+है|आपको\s+किसने\s+बनाया|किसने\s+बनाया\s+तुम्हें)",
         ]
         if any(re.search(pat, lower) for pat in creator_patterns):
             creator = self.get_creator_name()
@@ -202,7 +282,7 @@ class MemoryManager:
 
         # 2. User Name Queries
         name_patterns = [
-            r"(?i)\b(?:what\s+is\s+my\s+name|who\s+am\s+i|do\s+you\s+know\s+my\s+name|what'?s\s+my\s+name|tell\s+me\s+my\s+name)\b",
+            r"(?i)\b(?:what\s+is\s+my\s+name|who\s+am\s+i|tell\s+me\s+who\s+i\s+am|do\s+you\s+know\s+my\s+name|what'?s\s+my\s+name|tell\s+me\s+my\s+name)\b",
             r"(?i)\b(?:mera\s+na+m\s+kya\s+(?:hai|h)|main\s+kaun\s+(?:hoon|hu)|mera\s+na+m\s+yaad\s+hai|(?:kya\s+)?(?:tujhe|tumhe|aapko)\s+mera\s+naam\s+(?:pata|yaad)\s+hai)\b",
             r"(?:मेरा\s+नाम\s+क्या\s+है|मैं\s+कौन\s+हूँ|मेरा\s+नाम\s+याद\s+है|क्या\s+(?:तुम|तुम्हें|आप|आपको)\s+मेरा\s+नाम\s+(?:जानते|पता)\s+हो)",
         ]
@@ -287,7 +367,7 @@ class MemoryManager:
         log_chitti(f"[MEMORY] All {count} memories cleared.")
         return count
 
-    def handle_interaction(self, user_text: str) -> Optional[Tuple[str, str]]:
+    def handle_interaction(self, user_text: str, lang: str = "en") -> Optional[Tuple[str, str]]:
         """
         Evaluates user input for explicit memory actions or pending confirmations.
         Returns (action_tag, response_message) if handled as a memory command, or None for standard LLM flow.
@@ -316,7 +396,7 @@ class MemoryManager:
 
         if cmd.action == "remember":
             if cmd.facts:
-                success, msg, _ = self.remember_facts(cmd.facts)
+                success, msg, _ = self.remember_facts(cmd.facts, lang=lang)
                 return ("remembered", msg)
             elif cmd.content:
                 success, msg, _ = self.remember(cmd.content, cmd.memory_type, cmd.importance)

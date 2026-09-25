@@ -254,9 +254,9 @@ class ChittiController:
         # 5. Check for Explicit Memory Command & Fact Statement (multilingual: "yaad rakhna ki...", "remember that...", "my name is...", "forget...")
         if self.memory is not None:
             try:
-                mem_result = self.memory.handle_interaction(user_text)
+                mem_result = self.memory.handle_interaction(user_text, lang=active_lang)
                 if mem_result is None and parsed_intent.normalized_text != user_text:
-                    mem_result = self.memory.handle_interaction(parsed_intent.normalized_text)
+                    mem_result = self.memory.handle_interaction(parsed_intent.normalized_text, lang=active_lang)
 
                 if mem_result is not None and isinstance(mem_result, tuple):
                     action_tag, response_text = mem_result

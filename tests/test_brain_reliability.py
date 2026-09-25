@@ -119,3 +119,61 @@ def test_stt_hallucination_filter():
     assert WhisperSTT.is_hallucination("[Music]") is True
     assert WhisperSTT.is_hallucination("who created you") is False
     assert WhisperSTT.is_hallucination("mera naam kya hai") is False
+
+
+def test_learn_creator_with_rember_that_typo(test_controller):
+    """
+    Tests explicit input with typo in 'remember':
+    'i am prateek singh bisht and i have created you rember that'
+    """
+    input_text = "i am prateek singh bisht and i have created you rember that"
+    test_controller.process_user_input(input_text)
+
+    # Verify that memory is stored
+    assert test_controller.memory.get_user_name() == "Prateek Singh Bisht"
+    assert test_controller.memory.get_creator_name() == "Prateek Singh Bisht"
+
+    resp_creator = test_controller.memory.resolve_identity_query("who created you", lang="en")
+    assert "Prateek Singh Bisht" in resp_creator
+
+
+def test_full_application_restart_persistence(tmp_path):
+    """
+    Tests complete application restart persistence:
+    1. Teach user name & creator to Chitti.
+    2. Completely shut down and destroy the memory manager and database connection.
+    3. Re-instantiate a completely new MemoryManager on the exact same database.
+    4. Verify that identity and creator queries work flawlessly without amnesia.
+    """
+    db_file = tmp_path / "restart_test_memory.db"
+
+    # Step 1: Session 1 - Learn identity & creator
+    mgr1 = MemoryManager(db_path=str(db_file))
+    extractor1 = MemoryExtractor()
+    cmd1 = extractor1.extract_command("I am Prateek Singh Bisht and I have created you. Remember that.")
+    assert cmd1.action == "remember"
+    success1, msg1, records1 = mgr1.remember_facts(cmd1.facts, lang="en")
+    assert success1 is True
+    assert mgr1.get_user_name() == "Prateek Singh Bisht"
+    assert mgr1.get_creator_name() == "Prateek Singh Bisht"
+
+    # Step 2: Full restart - destroy mgr1
+    del mgr1
+
+    # Step 3: Session 2 - New MemoryManager instance on the same SQLite file
+    mgr2 = MemoryManager(db_path=str(db_file))
+
+    # Step 4: Verify persistence survives restart
+    assert mgr2.get_user_name() == "Prateek Singh Bisht"
+    assert mgr2.get_creator_name() == "Prateek Singh Bisht"
+
+    # Step 5: Test queries in English, Hindi, and Hinglish after restart
+    resp_en = mgr2.resolve_identity_query("who created you", lang="en")
+    assert "Prateek Singh Bisht" in resp_en
+    assert "[Creator's Name]" not in resp_en
+
+    resp_hi = mgr2.resolve_identity_query("tumhe kisne banaya h?", lang="hinglish")
+    assert "Mujhe Prateek Singh Bisht ne banaya hai." == resp_hi
+
+    resp_name = mgr2.resolve_identity_query("tell me who i am?", lang="hinglish")
+    assert "Tumhara naam Prateek Singh Bisht hai." == resp_name
