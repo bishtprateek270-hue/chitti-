@@ -92,10 +92,11 @@ class AgentPlanner:
         # 3. GENERAL-PURPOSE PROGRAMMING & CODING TASKS
         # Handles any language (Python, C++, Java, JS, Rust, etc.), any problem, single-file or multi-file
         is_coding_request = (
-            bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|bana|karo)", clean)) or
-            bool(re.search(r"(?i)\b(?:python|c\+\+|cpp|java|javascript|typescript|rust|go|golang|c#|csharp|react)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|calculator|search|sort|list|tree|reader|analyzer|finder|page)", clean)) or
+            bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|bana|karo)", clean)) or
+            bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker)", clean)) or
+            bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker)", clean)) or
             bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement)\s+(?:a|an)?\s*(?:.*)?\s*(?:program|code|script|algorithm|class|api|model|page|app)\b", clean)) or
-            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
+            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
         )
 
         if is_coding_request:

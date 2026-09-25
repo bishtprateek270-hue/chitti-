@@ -258,6 +258,42 @@ class ToolEngine:
             is_destructive=True,
         )
         self._register(
+            "append_file",
+            "Appends content to an existing text or code file.",
+            {
+                "path": {"type": "string", "description": "File path to append to"},
+                "content": {"type": "string", "description": "Content to append"},
+            },
+            self._tool_append_file,
+        )
+        self._register(
+            "rename_file",
+            "Renames a file or folder in the filesystem.",
+            {
+                "path": {"type": "string", "description": "Current file path"},
+                "new_name": {"type": "string", "description": "New filename"},
+            },
+            self._tool_rename_file,
+        )
+        self._register(
+            "move_file",
+            "Moves a file from source to destination path.",
+            {
+                "src": {"type": "string", "description": "Source path"},
+                "dst": {"type": "string", "description": "Destination path"},
+            },
+            self._tool_move_file,
+        )
+        self._register(
+            "copy_file",
+            "Copies a file from source to destination path.",
+            {
+                "src": {"type": "string", "description": "Source path"},
+                "dst": {"type": "string", "description": "Destination path"},
+            },
+            self._tool_copy_file,
+        )
+        self._register(
             "search_files",
             "Searches for files matching a glob pattern (e.g. '*.py', '*.pdf').",
             {
@@ -377,6 +413,22 @@ class ToolEngine:
     def _tool_write_file(self, path: str, content: str) -> Dict[str, Any]:
         p = self.fs.write_file(path, content)
         return {"success": True, "path": p, "message": f"Wrote content to {p}"}
+
+    def _tool_append_file(self, path: str, content: str) -> Dict[str, Any]:
+        p = self.fs.append_file(path, content)
+        return {"success": True, "path": p, "message": f"Appended content to {p}"}
+
+    def _tool_rename_file(self, path: str, new_name: str) -> Dict[str, Any]:
+        p = self.fs.rename_file(path, new_name)
+        return {"success": True, "path": p, "message": f"Renamed to {p}"}
+
+    def _tool_move_file(self, src: str, dst: str) -> Dict[str, Any]:
+        p = self.fs.move_file(src, dst)
+        return {"success": True, "path": p, "message": f"Moved {src} -> {p}"}
+
+    def _tool_copy_file(self, src: str, dst: str) -> Dict[str, Any]:
+        p = self.fs.copy_file(src, dst)
+        return {"success": True, "path": p, "message": f"Copied {src} -> {p}"}
 
     def _tool_verify_file_content(self, path: str, expected_keyword: str) -> Dict[str, Any]:
         resolved = self.fs.resolve_path(path)

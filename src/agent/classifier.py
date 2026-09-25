@@ -46,6 +46,8 @@ class TaskClassifier:
         r"(?i)\b(?:screenshot|screen\s+capture)\b",
         r"(?i)\b(?:play\s+.*song|play\s+.*on\s+youtube|youtube\s+pe|gaana\s+chalao|play\s+a\s+.*song)\b",
         r"(?i)\b(?:create|make|delete|remove|rename|move|copy|banao)\s+.*(?:file|folder|directory|project|desktop|downloads)\b",
+        r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|csharp|react|html|css|sql)\b.*(?:banao|likho|create|write|implement|code|program|script|class|api|app|algorithm|checker|finder|analyzer|calculator)\b",
+        r"(?i)(?:c\+\+|c\#).*(?:banao|likho|create|write|implement|code|program|script|class|api|app|algorithm|checker|finder|analyzer|calculator)\b",
         r"(?i)\b(?:type\s+.*into|click\s+on|press\s+key|volume|mute|unmute)\b",
         r"(?i)\b(?:search\s+for|search\s+.*on)\b",
         r"(?i)\b(?:run\s+(?:the\s+)?tests?|run\s+pytest|is\s+program\s+ko\s+run\s+karo)\b",
