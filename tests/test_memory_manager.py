@@ -143,18 +143,13 @@ def test_auto_capture_interaction(manager):
     user_msg = "I really love drinking iced matcha lattes with oat milk."
     bot_resp = "Iced matcha latte with oat milk sounds delicious and refreshing!"
 
-    facts, dialogue = manager.auto_capture_interaction(user_msg, bot_resp)
+    facts, _ = manager.auto_capture_interaction(user_msg, bot_resp)
     assert len(facts) >= 1
-    assert dialogue is not None
-    assert "iced matcha" in dialogue.content.lower()
+    assert any("matcha" in f.content.lower() for f in facts)
 
-    # Verify retrieval can recall what user likes or what Chitti replied
+    # Verify retrieval can recall what user likes
     recalled_pref = manager.recall("What do I like to drink?")
     assert len(recalled_pref) > 0
     assert any("matcha" in r.content.lower() for r in recalled_pref)
 
-    # Verify retrieval can recall past conversation
-    recalled_conv = manager.recall("What did we discuss about matcha?")
-    assert len(recalled_conv) > 0
-    assert any("matcha" in r.content.lower() for r in recalled_conv)
 

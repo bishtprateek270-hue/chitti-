@@ -209,7 +209,115 @@ class MemoryExtractor:
                 is_creator_found = True
                 continue
 
-            # 2. Occupation / Profession Extraction (Higher priority than general 'I am')
+            # 2. Relationship Extraction (Friends, Family, Teammates, Coworkers)
+            # Best Friend
+            m_bf = re.search(r"(?i)\b(?:my\s+best\s+friend(?:'s\s+name|'s|\s+name)?\s+is|mera\s+best\s+friend)\s+([A-Za-z]+)", clause_clean) or \
+                   re.search(r"(?i)\b([A-Z][a-z]+)\s+is\s+my\s+best\s+friend", clause_clean)
+            if m_bf:
+                bf_name = m_bf.group(1).strip().title()
+                facts.append(ExtractedFact(
+                    content=f"User's best friend is {bf_name}.",
+                    memory_type="relationship",
+                    key="best_friend",
+                    value=bf_name,
+                    importance=4,
+                ))
+                continue
+
+            # Sister
+            m_sis = re.search(r"(?i)\b(?:my\s+sister(?:'s\s+name|'s|\s+name)?\s+is|meri\s+behen)\s+([A-Za-z]+)", clause_clean) or \
+                    re.search(r"(?i)\b([A-Z][a-z]+)\s+is\s+my\s+sister", clause_clean)
+            if m_sis:
+                sis_name = m_sis.group(1).strip().title()
+                facts.append(ExtractedFact(
+                    content=f"User's sister is {sis_name}.",
+                    memory_type="relationship",
+                    key="sister",
+                    value=sis_name,
+                    importance=4,
+                ))
+                continue
+
+            # Brother
+            m_bro = re.search(r"(?i)\b(?:my\s+brother(?:'s\s+name|'s|\s+name)?\s+is|mera\s+bhai)\s+([A-Za-z]+)", clause_clean) or \
+                    re.search(r"(?i)\b([A-Z][a-z]+)\s+is\s+my\s+brother", clause_clean)
+            if m_bro:
+                bro_name = m_bro.group(1).strip().title()
+                facts.append(ExtractedFact(
+                    content=f"User's brother is {bro_name}.",
+                    memory_type="relationship",
+                    key="brother",
+                    value=bro_name,
+                    importance=4,
+                ))
+                continue
+
+            # Teammate / Coworker
+            m_team = re.search(r"(?i)\b([A-Z][a-z]+)\s+is\s+my\s+teammate", clause_clean) or \
+                     re.search(r"(?i)\b([A-Z][a-z]+)\s+works\s+with\s+me", clause_clean)
+            if m_team:
+                tm_name = m_team.group(1).strip().title()
+                facts.append(ExtractedFact(
+                    content=f"{tm_name} is User's teammate.",
+                    memory_type="relationship",
+                    key=f"teammate_{tm_name.lower()}",
+                    value=tm_name,
+                    importance=4,
+                ))
+                continue
+
+            # School / College Friend
+            m_fr = re.search(r"(?i)\b([A-Z][a-z]+)\s+is\s+my\s+(?:school\s+|college\s+)?friend", clause_clean)
+            if m_fr:
+                fr_name = m_fr.group(1).strip().title()
+                facts.append(ExtractedFact(
+                    content=f"{fr_name} is User's friend.",
+                    memory_type="relationship",
+                    key=f"friend_{fr_name.lower()}",
+                    value=fr_name,
+                    importance=4,
+                ))
+                continue
+
+            # 3. Education / College / University Extraction
+            m_college = re.search(r"(?i)\b(?:my\s+college\s+is|i\s+study\s+at|i\s+go\s+to\s+college\s+at|mera\s+college)\s+([A-Za-z0-9_\-\s]+?)(?:\s*\.|\s+and|\s+also|$)", clause_clean)
+            if m_college:
+                c_name = m_college.group(1).strip().title()
+                if c_name.lower() not in {"an", "a", "the", "home"}:
+                    facts.append(ExtractedFact(
+                        content=f"User's college is {c_name}.",
+                        memory_type="education",
+                        key="college",
+                        value=c_name,
+                        importance=4,
+                    ))
+                    continue
+
+            m_uni = re.search(r"(?i)\b(?:my\s+university\s+is|meri\s+university)\s+([A-Za-z0-9_\-\s]+?)(?:\s*\.|\s+and|$)", clause_clean)
+            if m_uni:
+                u_name = m_uni.group(1).strip().title()
+                facts.append(ExtractedFact(
+                    content=f"User's university is {u_name}.",
+                    memory_type="education",
+                    key="university",
+                    value=u_name,
+                    importance=4,
+                ))
+                continue
+
+            m_year = re.search(r"(?i)\b(?:i'm\s+in|i\s+am\s+in)\s+((?:first|second|third|fourth|\d(?:st|nd|rd|th))\s+year)", clause_clean)
+            if m_year:
+                y_val = m_year.group(1).strip().title()
+                facts.append(ExtractedFact(
+                    content=f"User is in {y_val} of college.",
+                    memory_type="education",
+                    key="year",
+                    value=y_val,
+                    importance=4,
+                ))
+                continue
+
+            # 4. Occupation / Profession Extraction (Higher priority than general 'I am')
             is_occ = False
             occ_val = None
             if any(k in lower for k in ["aiml engineer", "ai engineer", "ml engineer", "software engineer", "developer", "data scientist", "researcher", "student", "doctor", "designer"]):
@@ -254,11 +362,11 @@ class MemoryExtractor:
                 ))
                 continue
 
-            # 3. User Name Extraction
+            # 5. User Name Extraction
             name_val = None
             name_patterns = [
                 r"(?i)\b(?:my\s+name\s+is)\s+([A-Za-z\s]+)",
-                r"(?i)\b(?:i\s+am|i'm)\s+(?!an?\s+|the\s+|your\s+|a\s+)([A-Za-z\s]+)",
+                r"(?i)\b(?:i\s+am|i'm)\s+(?!an?\s+|the\s+|your\s+|a\s+|building\s+|working\s+|studying\s+|living\s+|trying\s+|going\s+|learning\s+|making\s+|really\s+)([A-Za-z\s]+)",
                 r"(?i)\b(?:mera\s+na+m\s+)([A-Za-z\s]+?)(?:\s+hai|\s+h|$)",
                 r"(?:मेरा\s+नाम\s+)([\u0900-\u097F\s]+?)(?:\s+है|$)",
             ]
@@ -266,9 +374,11 @@ class MemoryExtractor:
                 m = re.search(pat, clause_clean)
                 if m:
                     candidate = m.group(1).strip()
-                    if candidate.lower() not in {"an", "a", "your", "tumhara", "the", "creator", "engineer", "developer", "aiml"}:
-                        name_val = candidate.title()
-                        break
+                    if candidate.lower() not in {"an", "a", "your", "tumhara", "the", "creator", "engineer", "developer", "aiml", "building", "working"}:
+                        # Extra guard: Name should not contain action words
+                        if not any(w in candidate.lower().split() for w in ["building", "working", "studying", "called", "robot", "project", "living", "matcha"]):
+                            name_val = candidate.title()
+                            break
 
             if name_val:
                 facts.append(ExtractedFact(
@@ -281,7 +391,43 @@ class MemoryExtractor:
                 user_name_found = name_val
                 continue
 
-            # 4. Preference Extraction
+            # 6. Specific Preferences (Language, Algorithm, Topic, Hobby, Goal)
+            m_fav_lang = re.search(r"(?i)\b(?:my\s+)?(?:favorite|favourite)\s+(?:programming\s+)?language\s+is\s+([A-Za-z0-9+#_]+)", clause_clean)
+            if m_fav_lang:
+                lang_val = m_fav_lang.group(1).strip()
+                facts.append(ExtractedFact(
+                    content=f"User's favorite programming language is {lang_val}.",
+                    memory_type="preference",
+                    key="favorite_language",
+                    value=lang_val,
+                    importance=4,
+                ))
+                continue
+
+            m_fav_algo = re.search(r"(?i)\b(?:my\s+)?(?:favorite|favourite)\s+algorithm\s+is\s+([A-Za-z0-9_\-\s]+)", clause_clean)
+            if m_fav_algo:
+                algo_val = m_fav_algo.group(1).strip()
+                facts.append(ExtractedFact(
+                    content=f"User's favorite algorithm is {algo_val}.",
+                    memory_type="preference",
+                    key="favorite_algorithm",
+                    value=algo_val,
+                    importance=4,
+                ))
+                continue
+
+            m_fav_topic = re.search(r"(?i)\b(?:my\s+)?(?:favorite|favourite)\s+topic\s+is\s+([A-Za-z0-9_\-\s]+)", clause_clean)
+            if m_fav_topic:
+                top_val = m_fav_topic.group(1).strip()
+                facts.append(ExtractedFact(
+                    content=f"User's favorite topic is {top_val}.",
+                    memory_type="preference",
+                    key="favorite_topic",
+                    value=top_val,
+                    importance=4,
+                ))
+                continue
+
             if any(k in lower for k in ["favorite", "favourite", "prefer", "like", "love", "pasand"]):
                 pref_content = clause_clean
                 if not pref_content.lower().startswith("user"):
@@ -295,18 +441,20 @@ class MemoryExtractor:
                 ))
                 continue
 
-            # 5. Project / Work Extraction
-            if any(k in lower for k in ["project", "docforensics", "building", "app", "codebase", "churnops"]):
+            # 7. Project / Work Extraction
+            m_proj = re.search(r"(?i)\b(?:i'm\s+building|i\s+am\s+building|my\s+project\s+is)\s+(?:a\s+robot\s+called|a\s+robot\s+named|an?\s+app\s+called)?\s*([A-Za-z0-9_\-\s]+)", clause_clean)
+            if m_proj or any(k in lower for k in ["project", "docforensics", "building", "app", "codebase", "churnops", "chitti"]):
+                proj_name = m_proj.group(1).strip().title() if m_proj else clause_clean
                 facts.append(ExtractedFact(
-                    content=clause_clean if clause_clean.lower().startswith("user") else f"User project: {clause_clean}",
+                    content=f"User is building {proj_name}." if m_proj else (clause_clean if clause_clean.lower().startswith("user") else f"User project: {clause_clean}"),
                     memory_type="project",
                     key="project",
-                    value=clause_clean,
+                    value=proj_name,
                     importance=4,
                 ))
                 continue
 
-            # 6. Fallback General Fact
+            # 8. Fallback General Fact
             if len(clause_clean) > 3:
                 facts.append(ExtractedFact(
                     content=clause_clean,

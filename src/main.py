@@ -305,29 +305,39 @@ class ChittiController:
 
         self.history.set_vision_context(vision_context)
 
-        # 7. Retrieve relevant long-term memories (cross-lingual semantic search)
+        # 7. Retrieve relevant long-term memories (Intent-First Semantic Routing)
         relevant_memories = []
         if self.memory is not None:
             try:
-                # Query memories using both raw text and normalized English text
-                relevant_memories = self.memory.recall(user_text, top_k=self.config.memory.top_k)
-                if parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
-                    norm_mems = self.memory.recall(parsed_intent.normalized_text, top_k=self.config.memory.top_k)
-                    for nm in norm_mems:
-                        if nm.id not in [m.id for m in relevant_memories]:
-                            relevant_memories.append(nm)
+                # Classify query intent using MemoryRouter
+                route_decision = self.memory.router.classify_intent(user_text)
+                if not route_decision.should_retrieve_memory and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                    route_decision = self.memory.router.classify_intent(parsed_intent.normalized_text)
 
-                # If a recognized person was detected in vision, also fetch memories about them
-                for person_name in recognized_names_seen:
-                    person_mems = self.memory.recall(person_name, top_k=2)
-                    for pm in person_mems:
-                        if pm.id not in [m.id for m in relevant_memories]:
-                            relevant_memories.append(pm)
+                if route_decision.should_retrieve_memory:
+                    log_chitti(f"[MEMORY ROUTER] Intent: {route_decision.intent.value}")
+                    log_chitti("[MEMORY ROUTER] Long-term retrieval: ENABLED")
 
-                if relevant_memories:
-                    log_chitti(f"[MEMORY] Retrieved {len(relevant_memories)} relevant memories for context.")
+                    # Query memories using both raw text and normalized English text
+                    relevant_memories = self.memory.recall(user_text, top_k=self.config.memory.top_k)
+                    if parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                        norm_mems = self.memory.recall(parsed_intent.normalized_text, top_k=self.config.memory.top_k)
+                        for nm in norm_mems:
+                            if nm.id not in [m.id for m in relevant_memories]:
+                                relevant_memories.append(nm)
+
+                    # If a recognized person was detected in vision, also fetch memories about them
+                    for person_name in recognized_names_seen:
+                        person_mems = self.memory.recall(person_name, top_k=2)
+                        for pm in person_mems:
+                            if pm.id not in [m.id for m in relevant_memories]:
+                                relevant_memories.append(pm)
+                else:
+                    log_chitti(f"[MEMORY ROUTER] Intent: {route_decision.intent.value}")
+                    log_chitti("[MEMORY ROUTER] Long-term retrieval: SKIPPED")
+                    relevant_memories = []
             except Exception as e:
-                log_warning(f"Memory retrieval failed: {e}")
+                log_warning(f"Memory retrieval routing failed: {e}")
                 relevant_memories = []
 
         self.history.set_relevant_memories(relevant_memories)

@@ -1,7 +1,7 @@
 """
 Chitti Memory Manager Module.
 Coordinates memory extraction, persistent storage, multi-fact decomposition,
-semantic retrieval, deduplication, identity resolution, and conversational memory commands.
+semantic retrieval, deduplication, identity & relationship resolution, and intelligent memory routing.
 """
 
 import re
@@ -10,12 +10,13 @@ from typing import List, Dict, Any, Optional, Tuple
 from src.memory.database import MemoryDatabase, MemoryRecord
 from src.memory.retriever import MemoryRetriever, get_embedding_engine
 from src.memory.extractor import MemoryExtractor, ExtractedMemoryCommand, ExtractedFact
+from src.memory.router import MemoryRouter, MemoryIntent, MemoryRouteDecision
 from src.config import get_config
-from src.utils.logging import log_debug, log_warning, log_chitti, log_state
+from src.utils.logging import log_debug, log_warning, log_chitti, log_error, log_state
 
 
 class MemoryManager:
-    """Central manager for Chitti's long-term memory and identity knowledge system."""
+    """Central manager for Chitti's long-term memory, personal identity, and knowledge system."""
 
     def __init__(
         self,
@@ -39,6 +40,7 @@ class MemoryManager:
             importance_threshold=imp_thresh,
         )
         self.extractor = MemoryExtractor()
+        self.router = MemoryRouter()
         self.pending_confirmation: Optional[str] = None
 
     def remember(
@@ -49,7 +51,7 @@ class MemoryManager:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, str, Optional[MemoryRecord]]:
         """
-        Stores or updates a single memory. Checks for duplicates before saving.
+        Stores or updates a single memory. Checks for key collisions and duplicate entries.
         """
         if not content or not content.strip():
             return False, "Nothing to remember.", None
@@ -62,9 +64,15 @@ class MemoryManager:
             )
 
         clean_content = content.strip().rstrip(".!? \t\n") + "."
-
-        # 1. Check for structured key collision (e.g. key="user_name", key="creator", key="occupation")
         target_key = metadata.get("key") if metadata else None
+
+        log_chitti("[MEMORY ROUTER] Personal information detected")
+        if target_key:
+            log_chitti(f"[MEMORY] Persisting structured memory ({target_key})...")
+        else:
+            log_chitti(f"[MEMORY] Persisting memory ({memory_type})...")
+
+        # 1. Check for structured key collision (e.g. key="user_name", key="creator", key="college", key="best_friend")
         if target_key:
             for existing_rec in self.db.list_all_memories():
                 if existing_rec.metadata and existing_rec.metadata.get("key") == target_key:
@@ -81,7 +89,7 @@ class MemoryManager:
                         metadata=merged_meta,
                     )
                     verified = self.db.get_memory(existing_rec.id)
-                    log_chitti(f"[MEMORY] Updated existing structured key='{target_key}' (ID: {existing_rec.id}): '{clean_content}'")
+                    log_chitti(f"[MEMORY] Verified successfully (ID: {existing_rec.id}): '{clean_content}' (Updated key='{target_key}')")
                     return True, "I've updated that in my memory.", verified
 
         # 2. Check for semantically similar existing memory (deduplication)
@@ -102,7 +110,7 @@ class MemoryManager:
                 metadata=merged_meta,
             )
             verified = self.db.get_memory(existing_rec.id)
-            log_chitti(f"[MEMORY] Updated existing memory (ID: {existing_rec.id}): '{clean_content}'")
+            log_chitti(f"[MEMORY] Verified successfully (ID: {existing_rec.id}): '{clean_content}' (Updated existing)")
             return True, "I've updated that in my memory.", verified
 
         # 3. Insert new record with immediate write verification
@@ -123,7 +131,7 @@ class MemoryManager:
             log_error(f"[MEMORY ERROR] Failed to verify persistent storage of memory (ID: {mem_id})")
             return False, "Failed to persist memory in database.", None
 
-        log_chitti(f"[MEMORY] New memory created and verified (ID: {mem_id}): '{clean_content}'")
+        log_chitti(f"[MEMORY] Verified successfully (ID: {mem_id}): '{clean_content}'")
         return True, "I'll remember that.", verified
 
     def remember_facts(self, facts: List[ExtractedFact], lang: str = "en") -> Tuple[bool, str, List[MemoryRecord]]:
@@ -135,6 +143,8 @@ class MemoryManager:
         user_name_stored: Optional[str] = None
         creator_stored = False
         occ_stored: Optional[str] = None
+        college_stored: Optional[str] = None
+        best_friend_stored: Optional[str] = None
 
         for fact in facts:
             meta = {}
@@ -149,6 +159,10 @@ class MemoryManager:
                 creator_stored = True
             elif fact.key == "occupation":
                 occ_stored = fact.value
+            elif fact.key == "college":
+                college_stored = fact.value
+            elif fact.key == "best_friend":
+                best_friend_stored = fact.value
 
             success, msg, rec = self.remember(
                 content=fact.content,
@@ -192,6 +206,20 @@ class MemoryManager:
                 return True, "Got it. Mujhe yaad rahega ki tumne mujhe banaya hai.", stored_records
             else:
                 return True, "Got it. I'll remember that you created me.", stored_records
+        elif college_stored:
+            if lang == "hi":
+                return True, f"समझ गया। मुझे याद रहेगा कि आपका कॉलेज {college_stored} है।", stored_records
+            elif lang in ("hinglish", "mixed"):
+                return True, f"Got it. Yaad rahega ki tumhara college {college_stored} hai.", stored_records
+            else:
+                return True, f"Got it. I'll remember that your college is {college_stored}.", stored_records
+        elif best_friend_stored:
+            if lang == "hi":
+                return True, f"समझ गया। मुझे याद रहेगा कि {best_friend_stored} आपका बेस्ट फ्रेंड है।", stored_records
+            elif lang in ("hinglish", "mixed"):
+                return True, f"Got it. Yaad rahega ki {best_friend_stored} tumhara best friend hai.", stored_records
+            else:
+                return True, f"Got it. I'll remember that your best friend is {best_friend_stored}.", stored_records
         elif occ_stored:
             if lang == "hi":
                 return True, f"समझ गया। मुझे याद रहेगा कि आप एक {occ_stored} हैं।", stored_records
@@ -204,17 +232,18 @@ class MemoryManager:
             return True, "I'll remember that.", stored_records
         return True, f"I've saved {len(stored_records)} details to memory.", stored_records
 
-    def recall(self, query: str, top_k: int = 5) -> List[MemoryRecord]:
+    def recall(self, query: str, top_k: int = 5, memory_type: Optional[str] = None) -> List[MemoryRecord]:
         """Retrieves top_k relevant memories for a given query."""
-        results = self.retriever.retrieve(query, top_k=top_k)
-        return [item[0] for item in results]
+        results = self.retriever.retrieve(query, top_k=top_k, memory_type=memory_type)
+        recs = [item[0] for item in results]
+        log_chitti(f"[MEMORY] Retrieved {len(recs)} relevant memories")
+        return recs
 
     def get_user_name(self) -> Optional[str]:
         """Retrieves stored user name if present in memory database."""
         for rec in self.db.list_all_memories():
             if rec.metadata and rec.metadata.get("key") == "user_name" and rec.metadata.get("value"):
                 return rec.metadata.get("value")
-            # Fallback to regex in content
             m = re.search(r"(?i)\buser'?s\s+name\s+is\s+([A-Za-z\s]+?)(?:\.|$)", rec.content)
             if m:
                 return m.group(1).strip()
@@ -229,7 +258,6 @@ class MemoryManager:
                 if val.lower() == "user" and user_name:
                     return user_name
                 return val
-            # Fallback regex in content
             m = re.search(r"(?i)\b([A-Za-z\s]+?)\s+is\s+my\s+creator", rec.content)
             if m:
                 c_name = m.group(1).strip()
@@ -250,9 +278,58 @@ class MemoryManager:
                 return m.group(1).strip()
         return None
 
+    def get_college_name(self) -> Optional[str]:
+        """Retrieves user's college or university from memory database."""
+        for rec in self.db.list_all_memories():
+            if rec.metadata and rec.metadata.get("key") in ("college", "university") and rec.metadata.get("value"):
+                return rec.metadata.get("value")
+            m = re.search(r"(?i)\buser'?s\s+(?:college|university)\s+is\s+([A-Za-z0-9_\-\s]+?)(?:\.|$)", rec.content)
+            if m:
+                return m.group(1).strip()
+        return None
+
+    def get_relationship(self, relation_key: str) -> Optional[str]:
+        """Retrieves a relationship by key (e.g. 'best_friend', 'sister', 'brother')."""
+        for rec in self.db.list_all_memories():
+            if rec.metadata and rec.metadata.get("key") == relation_key and rec.metadata.get("value"):
+                return rec.metadata.get("value")
+            m = re.search(rf"(?i)\buser'?s\s+{relation_key.replace('_', ' ')}\s+is\s+([A-Za-z\s]+?)(?:\.|$)", rec.content)
+            if m:
+                return m.group(1).strip()
+        return None
+
+    def get_entity_relationship(self, entity_name: str) -> Optional[str]:
+        """Looks up the relation of a specific person's name (e.g., 'Rahul' -> 'best friend')."""
+        clean_name = entity_name.strip().lower()
+        for rec in self.db.list_all_memories():
+            if rec.metadata and rec.metadata.get("value", "").lower() == clean_name:
+                key = rec.metadata.get("key", "")
+                if key == "best_friend":
+                    return f"{entity_name} is your best friend."
+                if key == "sister":
+                    return f"{entity_name} is your sister."
+                if key == "brother":
+                    return f"{entity_name} is your brother."
+                if "teammate" in key:
+                    return f"{entity_name} is your teammate."
+                if "friend" in key:
+                    return f"{entity_name} is your friend."
+            if clean_name in rec.content.lower():
+                return rec.content
+        return None
+
+    def get_project_name(self) -> Optional[str]:
+        """Retrieves active user project from memory database."""
+        for rec in self.db.list_all_memories():
+            if rec.metadata and rec.metadata.get("key") == "project" and rec.metadata.get("value"):
+                return rec.metadata.get("value")
+            if rec.memory_type == "project":
+                return rec.content
+        return None
+
     def resolve_identity_query(self, raw_query: str, lang: str = "en") -> Optional[str]:
         """
-        Directly and reliably resolves identity, creator, and occupation questions
+        Directly and reliably resolves identity, creator, college, relationship, and occupation questions
         without hallucinations or placeholder leakage.
         """
         lower = raw_query.lower().strip()
@@ -303,7 +380,64 @@ class MemoryManager:
                 else:
                     return "I don't have your name stored in my memory yet."
 
-        # 3. User Occupation Queries
+        # 3. College / University Queries
+        college_patterns = [
+            r"(?i)\b(?:what\s+is\s+my\s+college|where\s+do\s+i\s+study|tell\s+me\s+about\s+my\s+college|which\s+college\s+(?:do\s+i|am\s+i))\b",
+            r"(?i)\b(?:mera\s+college\s+kaunsa\s+hai|main\s+kaha\s+padhta\s+hoon|mera\s+college)\b",
+            r"(?:मेरा\s+कॉलेज\s+कौन\s+सा\s+है|मैं\s+कहाँ\s+पढ़ता\s+हूँ)",
+        ]
+        if any(re.search(pat, lower) for pat in college_patterns):
+            college = self.get_college_name()
+            if college:
+                if lang == "hi":
+                    return f"आपका कॉलेज {college} है।"
+                elif lang in ("hinglish", "mixed"):
+                    return f"Tumhara college {college} hai."
+                else:
+                    return f"Your college is {college}."
+            else:
+                if lang == "hi":
+                    return "मुझे अभी मेमोरी में आपके कॉलेज की जानकारी नहीं मिली।"
+                elif lang in ("hinglish", "mixed"):
+                    return "Mujhe abhi memory mein tumhare college ki information nahi mili."
+                else:
+                    return "I don't have information about your college stored in memory yet."
+
+        # 4. Best Friend / Specific Relationship Queries
+        if re.search(r"(?i)\b(?:who\s+is\s+my\s+best\s+friend|mera\s+best\s+friend\s+kaun\s+hai)\b", lower):
+            bf = self.get_relationship("best_friend")
+            if bf:
+                if lang == "hi":
+                    return f"आपका बेस्ट फ्रेंड {bf} है।"
+                elif lang in ("hinglish", "mixed"):
+                    return f"Tumhara best friend {bf} hai."
+                else:
+                    return f"Your best friend is {bf}."
+            else:
+                return "I don't have information about your best friend in memory yet."
+
+        if re.search(r"(?i)\b(?:who\s+is\s+my\s+sister|what\s+is\s+my\s+sister'?s\s+name|meri\s+behen\s+kaun\s+hai)\b", lower):
+            sis = self.get_relationship("sister")
+            if sis:
+                if lang == "hi":
+                    return f"आपकी बहन {sis} है।"
+                elif lang in ("hinglish", "mixed"):
+                    return f"Tumhari sister {sis} hai."
+                else:
+                    return f"Your sister's name is {sis}."
+            else:
+                return "I don't have information about your sister in memory yet."
+
+        # 5. Specific Person Entity Query (e.g. "Who is Rahul?", "Who is Ananya?")
+        m_entity = re.search(r"(?i)\bwho\s+is\s+([A-Z][a-z]+)\b", raw_query)
+        if m_entity:
+            target_name = m_entity.group(1).strip()
+            if target_name.lower() not in {"chitti", "user", "creator"}:
+                rel_info = self.get_entity_relationship(target_name)
+                if rel_info:
+                    return rel_info
+
+        # 6. User Occupation Queries
         occ_patterns = [
             r"(?i)\b(?:what\s+do\s+i\s+do|what\s+is\s+my\s+(?:job|profession|work|occupation)|what'?s\s+my\s+(?:job|profession|work|occupation))\b",
             r"(?i)\b(?:main\s+kya\s+karta\s+(?:hoon|hu)|mera\s+profession\s+kya\s+hai|mera\s+kaam\s+kya\s+hai)\b",
@@ -326,6 +460,14 @@ class MemoryManager:
                 else:
                     return "I don't have your profession stored in my memory yet."
 
+        # 7. Project Query (e.g. "What project am I building?", "What am I building?")
+        if re.search(r"(?i)\b(?:what\s+(?:project\s+)?am\s+i\s+(?:building|working\s+on)|what\s+am\s+i\s+making)\b", lower):
+            proj = self.get_project_name()
+            if proj:
+                return f"You are building {proj}." if not proj.lower().startswith("user") else proj
+            else:
+                return "I don't have information about your project in memory yet."
+
         return None
 
     def forget_by_query(self, query: str) -> Tuple[bool, str]:
@@ -333,10 +475,8 @@ class MemoryManager:
         if not query or not query.strip():
             return False, "Please specify what you would like me to forget."
 
-        # Search for matching memories with lower threshold for deletion match
         matches = self.retriever.retrieve(query, top_k=1, min_similarity=0.40)
         if not matches:
-            # Fallback to substring matching
             all_mems = self.db.list_all_memories()
             for m in all_mems:
                 if query.lower() in m.content.lower():
@@ -437,10 +577,8 @@ class MemoryManager:
         lang: str = "en",
     ) -> Tuple[List[MemoryRecord], Optional[MemoryRecord]]:
         """
-        Automatically persists:
-        1. Implicit facts, preferences, life updates, or personal details mentioned by the user.
-        2. The episodic conversation turn (User statement + Chitti response) for conversational recall.
-        Returns (list_of_captured_facts, dialogue_turn_record).
+        Selectively captures and persists personal, relationship, education, project, and preference facts.
+        General technical questions and knowledge queries are strictly excluded from long-term memory.
         """
         if not user_text or not user_text.strip() or not assistant_response or not assistant_response.strip():
             return [], None
@@ -451,12 +589,16 @@ class MemoryManager:
             return [], None
 
         user_clean = user_text.strip()
-        resp_clean = assistant_response.strip()
-        captured_facts: List[MemoryRecord] = []
-        dialogue_record: Optional[MemoryRecord] = None
+        decision = self.router.classify_intent(user_clean)
 
-        # 1. Auto-capture implicit facts
+        # Gate storage intent
+        if not decision.should_store_memory:
+            log_debug(f"[MEMORY ROUTER] Intent: {decision.intent.value}. Persistent storage skipped.")
+            return [], None
+
+        captured_facts: List[MemoryRecord] = []
         implicit_facts = self.extractor.extract_implicit_facts(user_clean)
+
         for fact in implicit_facts:
             meta = {"auto_captured": True}
             if fact.key:
@@ -472,30 +614,5 @@ class MemoryManager:
             )
             if success and rec:
                 captured_facts.append(rec)
-                log_chitti(f"[MEMORY AUTO-CAPTURED FACT] (ID: {rec.id}): '{rec.content}'")
 
-        # 2. Auto-capture episodic dialogue turn (if not trivial chit-chat or empty)
-        if not self.extractor.is_trivial_chit_chat(user_clean) or len(user_clean) > 10:
-            dialogue_content = f'User said: "{user_clean}" | Chitti replied: "{resp_clean}"'
-            dup = self.retriever.find_duplicate(dialogue_content, threshold=0.92)
-            if not dup:
-                emb = self.embedding_engine.embed_text(dialogue_content)
-                rec = MemoryRecord(
-                    content=dialogue_content,
-                    memory_type="conversation",
-                    importance=2,
-                    embedding=emb,
-                    metadata={
-                        "type": "dialogue_turn",
-                        "user_text": user_clean,
-                        "chitti_text": resp_clean,
-                        "auto_captured": True,
-                    },
-                )
-                mem_id = self.db.insert_memory(rec)
-                rec.id = mem_id
-                dialogue_record = rec
-                log_chitti(f"[MEMORY AUTO-CAPTURED DIALOGUE] (ID: {mem_id})")
-
-        return captured_facts, dialogue_record
-
+        return captured_facts, None
