@@ -146,6 +146,32 @@ class ToolEngine:
             {"title": {"type": "string", "description": "Window title substring"}},
             self._tool_verify_window,
         )
+        self._register(
+            "wait_for_editor",
+            "Polls and waits until an application and target file window is ready.",
+            {
+                "application": {"type": "string", "description": "Application name e.g. 'Visual Studio Code'"},
+                "expected_file": {"type": "string", "description": "Target filename e.g. 'anagram.py'", "optional": True},
+                "timeout": {"type": "number", "description": "Timeout in seconds", "optional": True},
+            },
+            self._tool_wait_for_editor,
+        )
+        self._register(
+            "verify_editor_content",
+            "Verifies that the target application's active editor contains expected code markers via GUI / UI inspection.",
+            {
+                "application": {"type": "string", "description": "Application name e.g. 'Visual Studio Code'"},
+                "expected_file": {"type": "string", "description": "Expected file name"},
+                "expected_markers": {"type": "array", "items": {"type": "string"}, "description": "List of expected code marker strings"},
+            },
+            self._tool_verify_editor_content,
+        )
+        self._register(
+            "save_editor",
+            "Saves the active editor file via hotkey Ctrl+S.",
+            {"application": {"type": "string", "description": "Application name e.g. 'Visual Studio Code'", "optional": True}},
+            self._tool_save_editor,
+        )
 
         # 4. MOUSE & KEYBOARD TOOLS
         self._register(
@@ -306,6 +332,22 @@ class ToolEngine:
     def _tool_verify_window(self, title: str) -> Dict[str, Any]:
         res = self.screen_analyzer.verify_window(title)
         return {"success": res.success, "evidence": res.evidence, "target": title}
+
+    def _tool_wait_for_editor(self, application: str = "Visual Studio Code", expected_file: Optional[str] = None, timeout: float = 6.0) -> Dict[str, Any]:
+        log_info(f"[TOOL] wait_for_editor -> App: {application}, File: {expected_file}")
+        res = self.screen_analyzer.wait_for_window_and_file(application=application, expected_file=expected_file, timeout_sec=timeout)
+        return {"success": res.success, "evidence": res.evidence, "application": application, "file": expected_file}
+
+    def _tool_verify_editor_content(self, application: str = "Visual Studio Code", expected_file: str = "script.py", expected_markers: Optional[List[str]] = None) -> Dict[str, Any]:
+        log_info(f"[TOOL] verify_editor_content -> App: {application}, File: {expected_file}, Markers: {expected_markers}")
+        resolved = self.fs.resolve_path(expected_file)
+        target_path = str(resolved) if resolved.exists() else expected_file
+        return self.screen_analyzer.verify_editor_content(application=application, expected_file=target_path, expected_markers=expected_markers)
+
+    def _tool_save_editor(self, application: str = "Visual Studio Code") -> Dict[str, Any]:
+        log_info(f"[TOOL] save_editor -> App: {application}")
+        ok = self.screen_analyzer.save_editor(application=application)
+        return {"success": ok, "application": application, "message": f"Saved active file in {application}"}
 
     def _tool_type_text(self, text: str) -> Dict[str, Any]:
         ok = self.computer.type_text(text)

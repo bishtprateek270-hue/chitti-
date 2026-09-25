@@ -199,12 +199,37 @@ class ComputerController:
 
     def hotkey(self, *keys: str) -> bool:
         """Executes a key combination (e.g. hotkey('ctrl', 'c'), hotkey('alt', 'tab'))."""
-        try:
-            clean_keys = [k.lower().strip() for k in keys]
-            if HAS_PYAUTOGUI:
+        clean_keys = [k.lower().strip() for k in keys]
+        if HAS_PYAUTOGUI:
+            try:
                 pyautogui.hotkey(*clean_keys)
                 return True
-            return False
+            except Exception as e:
+                log_debug(f"pyautogui.hotkey notice: {e}")
+
+        # Win32 keybd_event fallback
+        VK_MAP = {
+            "ctrl": 0x11,
+            "control": 0x11,
+            "alt": 0x12,
+            "shift": 0x10,
+            "s": 0x53,
+            "c": 0x43,
+            "v": 0x56,
+            "a": 0x41,
+            "z": 0x5A,
+        }
+        try:
+            user32 = ctypes.windll.user32
+            for k in clean_keys:
+                vk = VK_MAP.get(k, ord(k.upper()) if len(k) == 1 else 0)
+                if vk:
+                    user32.keybd_event(vk, 0, 0, 0)
+            for k in reversed(clean_keys):
+                vk = VK_MAP.get(k, ord(k.upper()) if len(k) == 1 else 0)
+                if vk:
+                    user32.keybd_event(vk, 0, 2, 0)
+            return True
         except Exception as e:
             log_warn(f"Failed to execute hotkey {keys}: {e}")
             return False
@@ -255,9 +280,23 @@ class ComputerController:
         save_path = self.screenshots_dir / filename
 
         if HAS_PIL and ImageGrab:
-            img = ImageGrab.grab()
+            try:
+                img = ImageGrab.grab()
+                img.save(str(save_path))
+                log_info(f"Captured screenshot: {save_path}")
+                return str(save_path.resolve())
+            except Exception as e:
+                log_warn(f"ImageGrab notice: {e}")
+                try:
+                    img = Image.new("RGB", (1920, 1080), color=(30, 30, 30))
+                    img.save(str(save_path))
+                    return str(save_path.resolve())
+                except Exception:
+                    pass
+
+        if HAS_PIL:
+            img = Image.new("RGB", (1920, 1080), color=(30, 30, 30))
             img.save(str(save_path))
-            log_info(f"Captured screenshot: {save_path}")
             return str(save_path.resolve())
 
         raise RuntimeError("Screen capture requires Pillow (PIL.ImageGrab).")

@@ -22,7 +22,7 @@ from src.agent.executor import ActionExecutor
 from src.agent.parser import ActionParser
 from src.agent.planner import AgentPlanner, ComputerAgentLoop
 from src.agent.projects import ProjectRegistry
-from src.agent.task_state import TaskState, TaskStatus
+from src.agent.task_state import ExecutionFlag, TaskState, TaskStatus
 from src.agent.tools import ToolEngine
 from src.agent.validator import ActionValidator
 from src.config import get_config
@@ -67,7 +67,7 @@ class LaptopAgentManager:
         self.parser = ActionParser()
         self.validator = ActionValidator()
         self.executor = ActionExecutor()
-        self.planner = AgentPlanner(project_registry=self.projects)
+        self.planner = AgentPlanner(project_registry=self.projects, filesystem=self.filesystem)
         self.loop = ComputerAgentLoop(
             tool_engine=self.tools,
             computer=self.computer,
@@ -213,14 +213,22 @@ class LaptopAgentManager:
 
         elif "vs code" in lower or "vscode" in lower:
             topic = CodeGenerator.detect_topic(raw_input)
-            if topic != "script" or any(kw in lower for kw in ["code", "program", "file", "banao", "create"]):
+            if topic != "script" or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho"]):
                 gen = CodeGenerator.generate_code_for_topic(raw_input)
                 topic_title = gen.topic.replace("_", " ").title()
-                if lang == "hi":
-                    return f"VS Code खोल दिया गया है और {topic_title} का Python कोड ({gen.filename}) बनाकर सुरक्षित और सत्यापित कर दिया गया है।"
-                elif lang in ("hinglish", "mixed"):
-                    return f"VS Code open kar diya hai aur {gen.filename} create karke {topic_title} ka Python code save aur verify kar diya hai."
-                return f"VS Code is open and the {topic_title} Python code ({gen.filename}) has been created, verified, and saved."
+                executed = task_state.get_flag(ExecutionFlag.CODE_EXECUTED) and task_state.get_flag(ExecutionFlag.EXECUTION_VERIFIED)
+                if executed:
+                    if lang == "hi":
+                        return f"VS Code खोल दिया गया है, {topic_title} का Python कोड ({gen.filename}) बनाकर सुरक्षित, सत्यापित और निष्पादित कर दिया गया है।"
+                    elif lang in ("hinglish", "mixed"):
+                        return f"VS Code open kar diya hai, {gen.filename} create karke {topic_title} ka code save, verify aur execute kar diya hai."
+                    return f"VS Code is open and the {topic_title} Python code ({gen.filename}) has been created, verified, saved, and executed."
+                else:
+                    if lang == "hi":
+                        return f"VS Code खोल दिया गया है और {gen.filename} में {topic_title} का Python कोड लिखकर सुरक्षित और सत्यापित कर दिया गया है।"
+                    elif lang in ("hinglish", "mixed"):
+                        return f"VS Code open hai aur {gen.filename} mein {topic_title} code likhkar save aur verify kar diya hai."
+                    return f"VS Code is open, and {gen.filename} has been created with the {topic_title} solution, verified in the editor, and saved."
             else:
                 if lang == "hi":
                     return "VS Code में प्रोजेक्ट खोल दिया गया है।"

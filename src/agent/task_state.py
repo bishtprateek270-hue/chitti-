@@ -20,6 +20,15 @@ class TaskStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class ExecutionFlag(str, enum.Enum):
+    FILE_CREATED = "FILE_CREATED"
+    FILE_OPENED = "FILE_OPENED"
+    EDITOR_CONTENT_VERIFIED = "EDITOR_CONTENT_VERIFIED"
+    FILE_SAVED = "FILE_SAVED"
+    CODE_EXECUTED = "CODE_EXECUTED"
+    EXECUTION_VERIFIED = "EXECUTION_VERIFIED"
+
+
 class StepStatus(str, enum.Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -50,9 +59,16 @@ class TaskState:
     steps: List[AgentStep] = field(default_factory=list)
     observations: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    verified_states: Dict[str, bool] = field(default_factory=dict)
     start_time: float = field(default_factory=time.time)
     end_time: Optional[float] = None
     pending_confirmation_step: Optional[AgentStep] = None
+
+    def set_flag(self, flag: ExecutionFlag, value: bool = True) -> None:
+        self.verified_states[flag.value] = value
+
+    def get_flag(self, flag: ExecutionFlag) -> bool:
+        return self.verified_states.get(flag.value, False)
 
     @property
     def current_step(self) -> Optional[AgentStep]:

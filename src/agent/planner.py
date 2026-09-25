@@ -22,7 +22,7 @@ from src.agent.computer import (
     TerminalRiskLevel,
 )
 from src.agent.projects import ProjectRegistry
-from src.agent.task_state import AgentStep, StepStatus, TaskState, TaskStatus
+from src.agent.task_state import AgentStep, ExecutionFlag, StepStatus, TaskState, TaskStatus
 from src.agent.tools import ToolEngine
 from src.utils.logging import log_debug, log_info, log_warn
 
@@ -30,8 +30,9 @@ from src.utils.logging import log_debug, log_info, log_warn
 class AgentPlanner:
     """Decomposes natural language requests into structured multi-step execution plans."""
 
-    def __init__(self, project_registry: ProjectRegistry):
+    def __init__(self, project_registry: ProjectRegistry, filesystem: Optional[FilesystemController] = None):
         self.projects = project_registry
+        self.fs = filesystem or FilesystemController()
 
     def plan_task(self, user_text: str) -> Optional[TaskState]:
         """Analyzes user request and constructs a multi-step task plan if it involves computer use."""
@@ -45,7 +46,6 @@ class AgentPlanner:
         state = TaskState(task_description=raw)
 
         # 1. YOUTUBE / SONG PLAYBACK COMMANDS
-        # e.g. "play a Sonu Nigam song", "play a shreya ghosal song", "go to youtube and play a sonu nigam song", "go to youtube and search for sonu nigam", "Sonu Nigam ka gaana chalao"
         m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+youtube\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+youtube|youtube\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
         if m_yt or ("youtube" in clean_lower and ("play" in clean_lower or "search" in clean_lower or "song" in clean_lower or "gaana" in clean_lower)):
             if m_yt:
@@ -63,8 +63,7 @@ class AgentPlanner:
             ]
             return state
 
-        # 2. VS CODE + PROJECT OPENING COMMANDS (Checked before generic VS Code code generation)
-        # e.g. "Open VS Code and open my Chitti project" / "Open my Chitti project in VS Code"
+        # 2. VS CODE + PROJECT OPENING COMMANDS
         m_vscode_proj = re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\b", clean) or \
                         re.search(r"(?i)\bopen\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\s+in\s+(?:vs\s*code|vscode)\b", clean) or \
                         re.search(r"(?i)\bmera\s+([A-Za-z0-9_\-]+)\s+project\s+vs\s*code\s+me(?:in)?\s+kholo\b", clean)
@@ -79,21 +78,36 @@ class AgentPlanner:
             return state
 
         # 3. VS CODE + CODE GENERATION COMMANDS
-        # e.g. "vs code open kro aur ek anagram ka python code banao", "VS Code open kro Aur ek Fibonacci series ka Python code kro", "open vs code and create a python anagram checker"
-        m_vscode_code = re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write)", clean) or \
-                        re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode)|vs\s*code\s+(?:open\s+kro|open\s+karo|kholo))\s+(?:and|aur)\s+.*(?:code|program|script|banao)", clean) or \
-                        (("vs code" in clean_lower or "vscode" in clean_lower) and any(kw in clean_lower for kw in ["code", "anagram", "fibonacci", "palindrome", "prime", "factorial", "sort", "search", "python"]))
+        # e.g. "vs code open kro aur ek anagram ka code likho", "vs code open kro aur ek anagram ka python code banao", "open vs code and create a python anagram checker"
+        m_vscode_code = re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho)", clean) or \
+                        re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode)|vs\s*code\s+(?:open\s+kro|open\s+karo|kholo))\s+(?:and|aur)\s+.*(?:code|program|script|banao|likho)", clean) or \
+                        (("vs code" in clean_lower or "vscode" in clean_lower) and any(kw in clean_lower for kw in ["code", "anagram", "fibonacci", "palindrome", "prime", "factorial", "sort", "search", "python", "likho", "likh"]))
         if m_vscode_code:
             gen = CodeGenerator.generate_code_for_topic(clean)
             topic_title = gen.topic.replace("_", " ").title()
             filename = gen.filename
+            abs_path = str(self.fs.resolve_path(filename).resolve())
+            wants_exec = bool(re.search(r"(?i)\b(?:run|execute|chalao|run\s+karo|execute\s+karo)\b", clean))
 
             state.steps = [
-                AgentStep(step_id=1, description=f"Generate and write {topic_title} Python code to {filename}", action_type="CREATE_FILE", parameters={"path": filename, "content": gen.code}),
-                AgentStep(step_id=2, description=f"Launch VS Code with {filename}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [filename]}),
-                AgentStep(step_id=3, description=f"Verify {filename} content contains '{gen.expected_symbol}'", action_type="VERIFY_FILE_CONTENT", parameters={"path": filename, "expected_keyword": gen.expected_symbol}),
-                AgentStep(step_id=4, description="Verify VS Code window is open", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}),
+                AgentStep(step_id=1, description=f"Generate and write {topic_title} Python code to {filename}", action_type="CREATE_FILE", parameters={"path": abs_path, "content": gen.code}),
+                AgentStep(step_id=2, description=f"Open {filename} in VS Code with absolute path", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [abs_path]}),
+                AgentStep(step_id=3, description=f"Wait for VS Code editor and {filename}", action_type="WAIT_FOR_EDITOR", parameters={"application": "Visual Studio Code", "expected_file": filename, "timeout": 6.0}),
+                AgentStep(step_id=4, description=f"Capture screenshot of active editor", action_type="TAKE_SCREENSHOT", parameters={"filename": f"vscode_{gen.topic}.png"}),
+                AgentStep(step_id=5, description=f"Verify {filename} editor content in VS Code", action_type="VERIFY_EDITOR_CONTENT", parameters={"application": "Visual Studio Code", "expected_file": abs_path, "expected_markers": gen.expected_markers}),
+                AgentStep(step_id=6, description="Save file in VS Code editor", action_type="SAVE_EDITOR", parameters={"application": "Visual Studio Code"}),
+                AgentStep(step_id=7, description=f"Verify {filename} saved on disk with {gen.expected_symbol}", action_type="VERIFY_FILE_CONTENT", parameters={"path": abs_path, "expected_keyword": gen.expected_symbol}),
             ]
+
+            if wants_exec:
+                state.steps.append(
+                    AgentStep(
+                        step_id=8,
+                        description=f"Execute {filename} in Python terminal",
+                        action_type="RUN_TERMINAL",
+                        parameters={"command": f"python \"{abs_path}\"", "timeout": 30},
+                    )
+                )
             return state
 
         # 4. Multi-step: "Open Notepad and type <text>"
@@ -140,9 +154,10 @@ class AgentPlanner:
             gen = CodeGenerator.generate_code_for_topic(clean)
             topic_title = gen.topic.replace("_", " ").title()
             filename = gen.filename
+            abs_path = str(self.fs.resolve_path(filename).resolve())
             state.steps = [
-                AgentStep(step_id=1, description=f"Create {filename} with {topic_title} solution in workspace", action_type="CREATE_FILE", parameters={"path": filename, "content": gen.code}),
-                AgentStep(step_id=2, description=f"Verify {filename} created and contains '{gen.expected_symbol}'", action_type="VERIFY_FILE_CONTENT", parameters={"path": filename, "expected_keyword": gen.expected_symbol}),
+                AgentStep(step_id=1, description=f"Create {filename} with {topic_title} solution in workspace", action_type="CREATE_FILE", parameters={"path": abs_path, "content": gen.code}),
+                AgentStep(step_id=2, description=f"Verify {filename} created and contains '{gen.expected_symbol}'", action_type="VERIFY_FILE_CONTENT", parameters={"path": abs_path, "expected_keyword": gen.expected_symbol}),
             ]
             return state
 
@@ -230,7 +245,7 @@ class ComputerAgentLoop:
                 return False, msg
 
             # 2. ACT & OBSERVE
-            success, message, observation = self._execute_step_action(step, last_search_results)
+            success, message, observation = self._execute_step_action(step, state, last_search_results)
             step.result_message = message
             step.observation = observation
             if observation:
@@ -252,7 +267,7 @@ class ComputerAgentLoop:
         log_info(f"[AGENT LOOP] Task completed successfully in {time.time() - state.start_time:.2f}s")
         return True, "Task completed successfully."
 
-    def _execute_step_action(self, step: AgentStep, search_cache: List[str]) -> Tuple[bool, str, Optional[str]]:
+    def _execute_step_action(self, step: AgentStep, state: TaskState, search_cache: List[str]) -> Tuple[bool, str, Optional[str]]:
         """Executes a single step action with strict honest verification."""
         act = step.action_type
         params = step.parameters
@@ -267,8 +282,41 @@ class ComputerAgentLoop:
                 target = params["target"]
                 args = params.get("args")
                 res = self.tools.execute_tool("open_application", {"application": target, "args": args})
+                if res.success:
+                    state.set_flag(ExecutionFlag.FILE_OPENED, True)
                 time.sleep(0.3)
-                return res.success, res.message, f"App {target} launched"
+                return res.success, res.message, f"App {target} launched with args {args}"
+
+            elif act == "WAIT_FOR_EDITOR":
+                app = params.get("application", "Visual Studio Code")
+                expected_file = params.get("expected_file")
+                timeout = params.get("timeout", 6.0)
+                res = self.tools.execute_tool("wait_for_editor", {"application": app, "expected_file": expected_file, "timeout": timeout})
+                if not res.success:
+                    return False, f"Wait for editor failed: {res.data.get('evidence', res.error)}", None
+                return True, f"Editor ready: {res.data.get('evidence')}", res.data.get("evidence")
+
+            elif act == "TAKE_SCREENSHOT":
+                filename = params.get("filename")
+                res = self.tools.execute_tool("take_screenshot", {"filename": filename})
+                return res.success, res.message, f"Screenshot captured: {res.data.get('path')}"
+
+            elif act == "VERIFY_EDITOR_CONTENT":
+                app = params.get("application", "Visual Studio Code")
+                expected_file = params.get("expected_file", "script.py")
+                markers = params.get("expected_markers", [])
+                res = self.tools.execute_tool("verify_editor_content", {"application": app, "expected_file": expected_file, "expected_markers": markers})
+                if not res.success:
+                    ev = res.data.get("evidence", res.error) or f"{app} editor verification failed for '{expected_file}'"
+                    return False, f"Editor verification failed: {ev}", None
+                state.set_flag(ExecutionFlag.EDITOR_CONTENT_VERIFIED, True)
+                return True, f"Editor content verified: {res.data.get('evidence')}", res.data.get("evidence")
+
+            elif act == "SAVE_EDITOR":
+                app = params.get("application", "Visual Studio Code")
+                res = self.tools.execute_tool("save_editor", {"application": app})
+                state.set_flag(ExecutionFlag.FILE_SAVED, True)
+                return res.success, res.message, f"Editor saved for {app}"
 
             elif act == "OPEN_FOLDER":
                 target = params["target"]
@@ -301,6 +349,8 @@ class ComputerAgentLoop:
                 path = params["path"]
                 content = params.get("content", "")
                 res = self.tools.execute_tool("create_file", {"path": path, "content": content})
+                if res.success:
+                    state.set_flag(ExecutionFlag.FILE_CREATED, True)
                 return res.success, res.message, f"File created at {path}"
 
             elif act == "CREATE_DIRECTORY":
@@ -325,6 +375,9 @@ class ComputerAgentLoop:
                 cmd = params["command"]
                 res = self.tools.execute_tool("execute_terminal_command", {"command": cmd})
                 out = res.data.get("output", res.message)
+                state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
+                if res.success and res.data.get("exit_code", 0) == 0:
+                    state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
                 return res.success, out, f"Command exit code: {res.data.get('exit_code', 0)}"
 
             elif act == "RESOLVE_PROJECT":
@@ -355,6 +408,7 @@ class ComputerAgentLoop:
                 resolved = self.fs.resolve_path(path)
                 if not resolved.exists():
                     return False, f"Verification failed: File '{path}' was not found on disk", None
+                state.set_flag(ExecutionFlag.FILE_SAVED, True)
                 return True, f"File {path} verified on disk", f"File exists at {resolved}"
 
             elif act == "VERIFY_FILE_CONTENT":
@@ -364,6 +418,7 @@ class ComputerAgentLoop:
                 if not res.success:
                     ev = res.data.get("evidence", res.error) or f"File '{path}' missing expected content"
                     return False, f"Verification failed: {ev}", None
+                state.set_flag(ExecutionFlag.FILE_SAVED, True)
                 return True, f"File content verified: {res.data.get('evidence')}", res.data.get("evidence")
 
             elif act == "VERIFY_DELETED":

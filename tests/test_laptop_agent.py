@@ -15,7 +15,7 @@ from src.agent.validator import ActionValidator
 from src.agent.executor import ActionExecutor
 from src.agent.manager import LaptopAgentManager
 from src.agent.projects import ProjectRegistry
-from src.agent.task_state import TaskState, TaskStatus, StepStatus, AgentStep
+from src.agent.task_state import AgentStep, ExecutionFlag, StepStatus, TaskState, TaskStatus
 from src.agent.planner import AgentPlanner, ComputerAgentLoop
 from src.agent.classifier import TaskClassifier, TaskIntent
 from src.agent.tools import ToolEngine
@@ -405,14 +405,73 @@ def test_honest_verification_failure_file_content(agent_manager, tmp_path):
     assert "does not contain 'are_anagrams'" in ver_res.data.get("evidence", "")
 
 
-def test_plan_and_execute_folder_and_file_creation(agent_manager, tmp_path):
+def test_plan_and_execute_vscode_anagram_exact_request(agent_manager, tmp_path):
+    """Tests the exact request 'vs code open kro aur ek anagram ka code likho' with GUI editor verification."""
     handled, msg, result = agent_manager.handle_command(
-        "Open the folder ProjectAlpha and create test.txt",
-        lang="en"
+        "vs code open kro aur ek anagram ka code likho",
+        lang="hinglish"
     )
     assert handled is True
-    created_file = Path(agent_manager.workspace_dir) / "ProjectAlpha" / "test.txt"
-    assert created_file.exists()
+    assert "anagram" in msg.lower()
+    assert "fibonacci" not in msg.lower()
+    assert "execute" not in msg.lower()  # Should not claim execution
+
+    # Verify task state tracking
+    task_state = agent_manager.active_task_state
+    assert task_state is not None
+    assert task_state.get_flag(ExecutionFlag.FILE_CREATED) is True
+    assert task_state.get_flag(ExecutionFlag.FILE_OPENED) is True
+    assert task_state.get_flag(ExecutionFlag.EDITOR_CONTENT_VERIFIED) is True
+    assert task_state.get_flag(ExecutionFlag.FILE_SAVED) is True
+    assert task_state.get_flag(ExecutionFlag.CODE_EXECUTED) is False  # Was not requested to execute
+
+    # Verify absolute path was used
+    anagram_file = Path(agent_manager.workspace_dir) / "anagram.py"
+    assert anagram_file.exists()
+    content = anagram_file.read_text(encoding="utf-8")
+    assert "def are_anagrams" in content
+    assert "sorted(" in content
+
+
+def test_verify_editor_content_tool_success_and_failure(agent_manager, tmp_path):
+    """Tests verify_editor_content tool with matching and non-matching markers."""
+    # 1. Matching markers
+    p = agent_manager.filesystem.create_file("anagram_test.py", "def are_anagrams(a, b):\n    return sorted(a) == sorted(b)")
+    res = agent_manager.tools.execute_tool(
+        "verify_editor_content",
+        {
+            "application": "Visual Studio Code",
+            "expected_file": "anagram_test.py",
+            "expected_markers": ["def are_anagrams", "sorted("],
+        },
+    )
+    assert res.success is True
+    assert res.data.get("content_verified") is True
+
+    # 2. Non-matching markers
+    res_fail = agent_manager.tools.execute_tool(
+        "verify_editor_content",
+        {
+            "application": "Visual Studio Code",
+            "expected_file": "non_existent_fake.py",
+            "expected_markers": ["def non_existent_function_99999()"],
+        },
+    )
+    assert res_fail.success is False
+    assert res_fail.data.get("content_verified") is False
+
+
+def test_plan_and_execute_vscode_with_explicit_run(agent_manager, tmp_path):
+    """Tests that when the user explicitly asks to run the code, execution is performed and verified."""
+    handled, msg, result = agent_manager.handle_command(
+        "vs code open kro, anagram ka code likho aur run karo",
+        lang="hinglish"
+    )
+    assert handled is True
+    task_state = agent_manager.active_task_state
+    assert task_state is not None
+    assert task_state.get_flag(ExecutionFlag.CODE_EXECUTED) is True
+    assert "execute" in msg.lower() or "chala" in msg.lower()
 
 
 def test_plan_destructive_action_confirmation_cycle(agent_manager):

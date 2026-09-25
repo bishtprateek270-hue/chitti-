@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
+
 @dataclass
 class CodeGenerationResult:
     topic: str
@@ -15,12 +19,13 @@ class CodeGenerationResult:
     code: str
     expected_symbol: str
     description: str
+    expected_markers: List[str] = field(default_factory=list)
 
 
 class CodeGenerator:
     """Generates problem-specific Python programs."""
 
-    TEMPLATES: Dict[str, Tuple[str, str, str, str]] = {
+    TEMPLATES: Dict[str, Tuple[str, str, str, str, List[str]]] = {
         "anagram": (
             "anagram.py",
             "are_anagrams",
@@ -34,16 +39,15 @@ class CodeGenerator:
                 "if __name__ == '__main__':\n"
                 "    test1 = 'listen'\n"
                 "    test2 = 'silent'\n"
-                "    print(f\"Are '{test1}' and '{test2}' anagrams? {are_anagrams(test1, test2)}\")\n"
+                "    result = are_anagrams(test1, test2)\n"
+                "    print(f\"Are '{test1}' and '{test2}' anagrams? {result}\")\n"
                 "    \n"
-                "    w1 = input('Enter first word (or press enter for default): ').strip() or test1\n"
-                "    w2 = input('Enter second word (or press enter for default): ').strip() or test2\n"
-                "    if are_anagrams(w1, w2):\n"
-                "        print(f\"'{w1}' and '{w2}' ARE anagrams!\")\n"
-                "    else:\n"
-                "        print(f\"'{w1}' and '{w2}' are NOT anagrams.\")\n"
+                "    sample_pairs = [('triangle', 'integral'), ('apple', 'banana')]\n"
+                "    for w1, w2 in sample_pairs:\n"
+                "        print(f\"Are '{w1}' and '{w2}' anagrams? {are_anagrams(w1, w2)}\")\n"
             ),
             "Anagram detection function",
+            ["def are_anagrams", "sorted(", "clean1 == clean2"],
         ),
         "fibonacci": (
             "fibonacci.py",
@@ -65,6 +69,7 @@ class CodeGenerator:
                 "    print(f'Fibonacci series (first {terms} terms): {fibonacci(terms)}')\n"
             ),
             "Fibonacci series generator",
+            ["def fibonacci", "seq.append", "seq[-1] + seq[-2]"],
         ),
         "palindrome": (
             "palindrome.py",
@@ -81,6 +86,7 @@ class CodeGenerator:
                 "    print(f\"Is '{sample}' a palindrome? {is_palindrome(sample)}\")\n"
             ),
             "Palindrome verification function",
+            ["def is_palindrome", "clean[::-1]"],
         ),
         "factorial": (
             "factorial.py",
@@ -102,6 +108,7 @@ class CodeGenerator:
                 "    print(f'Factorial of {num} is: {factorial(num)}')\n"
             ),
             "Factorial computation function",
+            ["def factorial", "result *="],
         ),
         "prime": (
             "prime_checker.py",
@@ -127,6 +134,7 @@ class CodeGenerator:
                 "    print(f'Is {test_num} prime? {is_prime(test_num)}')\n"
             ),
             "Prime number checker",
+            ["def is_prime", "while i * i <= n"],
         ),
         "binary_search": (
             "binary_search.py",
@@ -152,6 +160,7 @@ class CodeGenerator:
                 "    print(f'Found {target_val} at index: {idx}')\n"
             ),
             "Binary search implementation",
+            ["def binary_search", "while low <= high"],
         ),
         "bubble_sort": (
             "bubble_sort.py",
@@ -175,6 +184,7 @@ class CodeGenerator:
                 "    print('Sorted array:', bubble_sort(sample))\n"
             ),
             "Bubble sort implementation",
+            ["def bubble_sort", "for i in range(n)"],
         ),
     }
 
@@ -203,13 +213,14 @@ class CodeGenerator:
         """Generates appropriate code and metadata for the requested topic."""
         topic = cls.detect_topic(topic_or_text)
         if topic in cls.TEMPLATES:
-            fname, symbol, code, desc = cls.TEMPLATES[topic]
+            fname, symbol, code, desc, markers = cls.TEMPLATES[topic]
             return CodeGenerationResult(
                 topic=topic,
                 filename=fname,
                 code=code,
                 expected_symbol=symbol,
                 description=desc,
+                expected_markers=markers,
             )
 
         # Generic fallback script
@@ -227,4 +238,5 @@ class CodeGenerator:
             code=code,
             expected_symbol="main",
             description=f"Python {topic} script",
+            expected_markers=["def main()"],
         )
