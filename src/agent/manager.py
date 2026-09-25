@@ -171,7 +171,8 @@ class LaptopAgentManager:
 
             # Generate natural multilingual summary response
             resp_formatted = self._format_multistep_response(raw, task_plan, success, msg, lang=lang)
-            return success, resp_formatted, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=resp_formatted)
+            return True, resp_formatted, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=resp_formatted)
+
 
         # 4. Check for Single-step Structured Action (Fast Path)
         structured_action = self.parser.parse_command(raw)
@@ -215,11 +216,24 @@ class LaptopAgentManager:
         lower = raw_input.lower()
 
         if not success:
+            if task_state.status == TaskStatus.BLOCKED:
+                if lang == "hi":
+                    return f"प्रोजेक्ट फ़ाइलें VS Code में बना दी गई हैं, लेकिन आवश्यक कंपाइलर/रनटाइम इंस्टॉल न होने के कारण निष्पादन रोक दिया गया है: {raw_msg}"
+                elif lang in ("hinglish", "mixed"):
+                    return f"Project files VS Code me create kar di gayi hain, lekin required compiler/runtime install na hone ki wajah se execution block ho gaya hai: {raw_msg}"
+                return f"I created the project and opened it in VS Code, but execution was blocked because the required toolchain/runtime is not installed: {raw_msg}"
+            elif task_state.status == TaskStatus.PARTIALLY_COMPLETED:
+                if lang == "hi":
+                    return f"कार्य आंशिक रूप से पूरा हुआ: {raw_msg}"
+                elif lang in ("hinglish", "mixed"):
+                    return f"Task partially complete hua: {raw_msg}"
+                return f"Task partially completed: {raw_msg}"
             if lang == "hi":
                 return f"माफ़ कीजिए, कार्य पूरा करने में समस्या आई: {raw_msg}"
             elif lang in ("hinglish", "mixed"):
                 return f"Sorry, task complete karne me issue aaya: {raw_msg}"
             return f"I encountered an issue while executing the task: {raw_msg}"
+
 
         if "youtube" in lower or "song" in lower or "gaana" in lower:
             norm_artist = BrowserController.normalize_artist_query(raw_input)

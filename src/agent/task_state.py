@@ -23,6 +23,8 @@ class TaskStatus(str, enum.Enum):
     REPLANNING = "REPLANNING"
     WAITING_FOR_CONFIRMATION = "WAITING_FOR_CONFIRMATION"
     WAITING_CONFIRMATION = "WAITING_CONFIRMATION"  # Alias for backward compatibility
+    BLOCKED = "BLOCKED"
+    PARTIALLY_COMPLETED = "PARTIALLY_COMPLETED"
     PAUSED = "PAUSED"
     CANCELLED = "CANCELLED"
     COMPLETED = "COMPLETED"
@@ -166,6 +168,16 @@ class TaskState:
 
     def mark_completed(self) -> None:
         self.status = TaskStatus.COMPLETED
+        self.end_time = time.time()
+
+    def mark_partially_completed(self, summary: str) -> None:
+        self.status = TaskStatus.PARTIALLY_COMPLETED
+        self.add_observation(summary)
+        self.end_time = time.time()
+
+    def mark_blocked(self, reason: str) -> None:
+        self.status = TaskStatus.BLOCKED
+        self.add_error(reason)
         self.end_time = time.time()
 
     def mark_failed(self, reason: str) -> None:

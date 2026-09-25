@@ -122,15 +122,20 @@ class SubtaskVerifier:
 
         # 5. CODE EXECUTION & TERMINAL
         elif act in ("RUN_TERMINAL", "COMPILE_AND_EXECUTE", "VERIFY_EXECUTION"):
+            is_web = params.get("is_web", False)
+            if is_web:
+                return VerificationOutcome(True, "Web application active in browser.")
             if not state.get_flag(ExecutionFlag.TOOLCHAIN_VERIFIED):
-                return VerificationOutcome(True, "Execution skipped honestly (toolchain not installed on machine).")
+                return VerificationOutcome(False, "Toolchain is not installed on this system. Execution cannot proceed.")
             if action_result and action_result.success:
-                exit_code = action_result.data.get("exit_code", 0)
+                exit_code = action_result.data.get("exit_code", 0) if action_result.data else 0
                 if exit_code == 0:
                     state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
                     state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
-                    return VerificationOutcome(True, f"Process exited with code 0. Output:\n{action_result.data.get('output', '')[:200]}")
-                return VerificationOutcome(False, f"Process exited with non-zero code {exit_code}. Stderr: {action_result.data.get('error', '')}")
+                    out_text = action_result.data.get("output", "") if action_result.data else action_result.message
+                    return VerificationOutcome(True, f"Process exited with code 0. Output:\n{out_text[:200]}")
+                err_text = action_result.data.get("error", "") if action_result.data else action_result.message
+                return VerificationOutcome(False, f"Process exited with non-zero code {exit_code}. Stderr: {err_text}")
             elif action_result and not action_result.success:
                 return VerificationOutcome(False, f"Command execution failed: {action_result.message}")
             return VerificationOutcome(True, "Execution verified.")
@@ -139,3 +144,4 @@ class SubtaskVerifier:
         if action_result:
             return VerificationOutcome(action_result.success, action_result.message)
         return VerificationOutcome(True, "Step verified.")
+

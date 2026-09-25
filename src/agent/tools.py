@@ -331,10 +331,11 @@ class ToolEngine:
         ok = self.apps.close_application(application)
         return {"success": ok, "application": application, "message": f"Closed application {application}"}
 
-    def _tool_open_url(self, url: str, browser: Optional[str] = None) -> Dict[str, Any]:
+    def _tool_open_url(self, url: str, browser: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         log_info(f"[TOOL] open_url -> {url}")
         ok = self.browser.open_url(url, browser=browser)
         return {"success": ok, "url": url, "message": f"Opened {url} in browser"}
+
 
     def _tool_search_web(self, query: str) -> Dict[str, Any]:
         log_info(f"[TOOL] search_web -> {query}")

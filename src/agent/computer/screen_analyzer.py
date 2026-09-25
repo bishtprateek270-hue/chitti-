@@ -71,7 +71,10 @@ class ScreenAnalyzer:
         "calculator": ["calculator.exe", "calculatorapp.exe", "calc.exe"],
         "terminal": ["powershell.exe", "cmd.exe", "windowsterminal.exe", "wt.exe"],
         "youtube": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera"],
+        "browser": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
+        "web": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
     }
+
 
     def verify_window(self, title_query: str) -> VerificationResult:
         """

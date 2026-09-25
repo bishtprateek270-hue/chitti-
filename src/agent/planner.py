@@ -98,11 +98,12 @@ class AgentPlanner:
         # 3. GENERAL-PURPOSE PROGRAMMING & CODING TASKS (Single-file & Multi-file)
         is_coding_request = (
             bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|bana|karo)", clean)) or
-            bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper)", clean)) or
-            bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper)", clean)) or
-            bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement)\s+(?:a|an)?\s*(?:.*)?\s*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper)\b", clean)) or
-            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm|project|tracker|scraper)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
+            bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer)", clean)) or
+            bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer)", clean)) or
+            bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement|develop)\s+.*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper|dashboard|calculator|timer|file|solution)\b", clean)) or
+            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm|project|tracker|scraper|dashboard|timer)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
         )
+
 
         if is_coding_request:
             spec = CodeGenerator.generate_code_for_topic(clean, llm=self.llm)
@@ -209,34 +210,65 @@ class AgentPlanner:
 
             # Execution & verification steps
             if spec.execution_requested or "run" in clean_lower or "test" in clean_lower:
-                toolchain_step_id = curr_id
-                steps.append(AgentStep(
-                    step_id=curr_id,
-                    description=f"Verify toolchain for {spec.language}",
-                    action_type="VERIFY_TOOLCHAIN",
-                    parameters={"language": spec.language},
-                    depends_on=[create_step_id],
-                ))
-                curr_id += 1
+                if spec.language in ("html", "htm") or (spec.ui_required and spec.language in ("html", "react")):
+                    browser_step_id = curr_id
+                    file_url = f"file:///{abs_path.replace('\\', '/')}"
+                    steps.append(AgentStep(
+                        step_id=curr_id,
+                        description=f"Launch {filename} in browser for live UI interaction",
+                        action_type="OPEN_URL",
+                        parameters={"url": file_url, "target": abs_path, "site_name": topic_title},
+                        depends_on=[create_step_id],
+                    ))
+                    curr_id += 1
 
-                exec_step_id = curr_id
-                steps.append(AgentStep(
-                    step_id=curr_id,
-                    description=f"Compile and execute {filename}",
-                    action_type="COMPILE_AND_EXECUTE",
-                    parameters={"language": spec.language, "file": abs_path, "spec": spec},
-                    depends_on=[toolchain_step_id],
-                ))
-                curr_id += 1
+                    steps.append(AgentStep(
+                        step_id=curr_id,
+                        description=f"Verify browser application window is active",
+                        action_type="VERIFY_WINDOW",
+                        parameters={"title": "browser"},
+                        depends_on=[browser_step_id],
+                    ))
+                    curr_id += 1
 
-                steps.append(AgentStep(
-                    step_id=curr_id,
-                    description="Verify successful execution output",
-                    action_type="VERIFY_EXECUTION",
-                    parameters={"file": abs_path},
-                    depends_on=[exec_step_id],
-                ))
-                curr_id += 1
+
+                    steps.append(AgentStep(
+                        step_id=curr_id,
+                        description="Verify interactive application running",
+                        action_type="VERIFY_EXECUTION",
+                        parameters={"file": abs_path, "is_web": True},
+                        depends_on=[browser_step_id],
+                    ))
+                    curr_id += 1
+                else:
+                    toolchain_step_id = curr_id
+                    steps.append(AgentStep(
+                        step_id=curr_id,
+                        description=f"Verify toolchain for {spec.language}",
+                        action_type="VERIFY_TOOLCHAIN",
+                        parameters={"language": spec.language},
+                        depends_on=[create_step_id],
+                    ))
+                    curr_id += 1
+
+                    exec_step_id = curr_id
+                    steps.append(AgentStep(
+                        step_id=curr_id,
+                        description=f"Compile and execute {filename}",
+                        action_type="COMPILE_AND_EXECUTE",
+                        parameters={"language": spec.language, "file": abs_path, "spec": spec},
+                        depends_on=[toolchain_step_id],
+                    ))
+                    curr_id += 1
+
+                    steps.append(AgentStep(
+                        step_id=curr_id,
+                        description="Verify successful execution output",
+                        action_type="VERIFY_EXECUTION",
+                        parameters={"file": abs_path},
+                        depends_on=[exec_step_id],
+                    ))
+                    curr_id += 1
 
             state.steps = steps
             state.status = TaskStatus.PLAN_READY
@@ -450,10 +482,19 @@ class ComputerAgentLoop:
                     continue
 
                 else:
-                    # Abort honestly
+                    # Abort honestly with proper status: BLOCKED or PARTIALLY_COMPLETED or FAILED
                     state.failed_steps.append(step)
-                    state.mark_failed(f"Step {step.step_id} failed: {err_msg}")
-                    return False, f"I ran into an issue while performing the task: {err_msg}"
+                    if step.action_type in ("VERIFY_TOOLCHAIN", "COMPILE_AND_EXECUTE", "VERIFY_EXECUTION") and state.get_flag(ExecutionFlag.FILE_SAVED):
+                        state.mark_blocked(f"Toolchain or execution blocked: {err_msg}")
+                        log_warn(f"[AGENT] Task BLOCKED: Toolchain/runtime missing for required execution: {err_msg}")
+                        return False, f"I created and saved your project files in VS Code, but execution could not proceed because the required runtime/compiler is not installed: {err_msg}"
+                    elif state.get_flag(ExecutionFlag.FILE_SAVED):
+                        state.mark_partially_completed(f"Partial success: Files saved but {step.description} failed: {err_msg}")
+                        log_warn(f"[AGENT] Task PARTIALLY_COMPLETED: {err_msg}")
+                        return False, f"Project was created and saved in VS Code, but subsequent step '{step.description}' could not be completed: {err_msg}"
+                    else:
+                        state.mark_failed(f"Step {step.step_id} failed: {err_msg}")
+                        return False, f"I ran into an issue while performing the task: {err_msg}"
 
             # Step succeeded & verified
             step.mark_success(message, observation)
@@ -464,6 +505,7 @@ class ComputerAgentLoop:
         state.mark_completed()
         log_info(f"[AGENT LOOP] Task completed successfully in {time.time() - state.start_time:.2f}s")
         return True, "Task completed successfully."
+
 
     def _execute_step_action(self, step: AgentStep, state: TaskState, search_cache: List[str]) -> Tuple[bool, str, Optional[str]]:
         """Executes a single step action with strict honest verification."""
@@ -516,6 +558,14 @@ class ComputerAgentLoop:
                 state.set_flag(ExecutionFlag.FILE_SAVED, True)
                 return res.success, res.message, f"Editor saved for {app}"
 
+            elif act == "OPEN_URL":
+                url = params.get("url", "")
+                target = params.get("target", "")
+                site_name = params.get("site_name", "Application")
+                res = self.tools.execute_tool("open_url", {"url": url, "site_name": site_name})
+                state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
+                return res.success, res.message, f"Live application opened: {url}"
+
             elif act == "VERIFY_TOOLCHAIN":
                 lang = params["language"]
                 avail, bin_path = ToolchainManager.is_toolchain_available(lang)
@@ -525,7 +575,7 @@ class ComputerAgentLoop:
                 else:
                     state.set_flag(ExecutionFlag.TOOLCHAIN_VERIFIED, False)
                     log_warn(f"[TOOLCHAIN] Compiler/runtime for '{lang}' is not installed on this system.")
-                    return True, f"Compiler/runtime for '{lang}' is not installed on this system. File created and saved, execution skipped.", "Toolchain unavailable"
+                    return False, f"Compiler/runtime for '{lang}' is not installed on this system.", "Toolchain unavailable"
 
             elif act == "COMPILE_AND_EXECUTE":
                 lang = params["language"]
@@ -533,7 +583,7 @@ class ComputerAgentLoop:
                 spec = params.get("spec")
 
                 if not state.get_flag(ExecutionFlag.TOOLCHAIN_VERIFIED):
-                    return True, f"Execution skipped because '{lang}' compiler/runtime is not installed.", "Skipped"
+                    return False, f"Execution skipped because '{lang}' compiler/runtime is not installed.", "Toolchain unavailable"
 
                 compile_cmd, run_cmd = ToolchainManager.build_execution_commands(lang, file_path)
 
@@ -566,11 +616,16 @@ class ComputerAgentLoop:
                 return False, f"Execution failed: {out}", out
 
             elif act == "VERIFY_EXECUTION":
+                is_web = params.get("is_web", False)
+                if is_web:
+                    state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
+                    return True, "Interactive application running and verified.", "Web UI active"
                 if not state.get_flag(ExecutionFlag.TOOLCHAIN_VERIFIED):
-                    return True, "Execution skipped (compiler not installed).", "Skipped"
+                    return False, "Execution could not be verified because runtime/compiler is not installed.", "Toolchain unavailable"
                 if state.get_flag(ExecutionFlag.CODE_EXECUTED) and state.get_flag(ExecutionFlag.EXECUTION_VERIFIED):
                     return True, "Code execution completed and verified.", "Execution success"
                 return False, "Code execution could not be verified.", None
+
 
             elif act == "OPEN_FOLDER":
                 target = params["target"]

@@ -62,74 +62,101 @@ class CodeGenerator:
     @classmethod
     def parse_programming_task(cls, user_text: str) -> ProgrammingTaskSpec:
         """
-        Parses natural language requests (English, Hindi, Hinglish) into a generic ProgrammingTaskSpec.
+        Parses natural language requests (English, Hindi, Hinglish) into a structured ProgrammingTaskSpec.
+        Extracts goal, UI requirements, explicit vs inferred language, and execution intent.
         """
         raw = user_text.strip()
         lower = raw.lower()
 
-        # 1. Detect Language (handles c++, c#, python, java, etc. robustly)
-        detected_lang = "python"  # Default
-        if re.search(r"(?i)\b(?:c\+\+|cpp)\b", raw) or "c++" in lower:
-            detected_lang = "cpp"
-        elif re.search(r"(?i)\b(?:c\#|csharp)\b", raw) or "c#" in lower:
-            detected_lang = "csharp"
-        elif re.search(r"(?i)\b(?:python|py)\b", raw):
-            detected_lang = "python"
-        elif re.search(r"(?i)\b(?:java)\b(?!\w)", raw):
-            detected_lang = "java"
-        elif re.search(r"(?i)\b(?:javascript|js|node|nodejs)\b", raw):
-            detected_lang = "javascript"
-        elif re.search(r"(?i)\b(?:typescript|ts)\b", raw):
-            detected_lang = "typescript"
-        elif re.search(r"(?i)\b(?:rust|rs)\b", raw):
-            detected_lang = "rust"
-        elif re.search(r"(?i)\b(?:golang|go)\b", raw):
-            detected_lang = "go"
-        elif re.search(r"(?i)\bc\b(?!\+|\#)", raw):
-            detected_lang = "c"
-        elif re.search(r"(?i)\b(?:react)\b", raw):
-            detected_lang = "react"
-        elif re.search(r"(?i)\b(?:html)\b", raw):
-            detected_lang = "html"
+        # 1. Detect UI Requirement
+        ui_required = bool(
+            re.search(r"(?i)\b(?:ui|good\s+ui|modern\s+ui|responsive\s+ui|gui|frontend|interface|user\s+interface|web\s+app|webpage|dashboard|website)\b", raw)
+        )
 
-        # 2. Detect Framework
+        # 2. Detect Explicit Language (strict matching to avoid false positives like English "go to")
+        explicit_lang: Optional[str] = None
+        if re.search(r"(?i)\b(?:c\+\+|cpp)\b", raw) or "c++" in lower:
+            explicit_lang = "cpp"
+        elif re.search(r"(?i)\b(?:c\#|csharp)\b", raw) or "c#" in lower:
+            explicit_lang = "csharp"
+        elif re.search(r"(?i)\b(?:python|py)\b", raw):
+            explicit_lang = "python"
+        elif re.search(r"(?i)\b(?:java)\b(?!\w)", raw):
+            explicit_lang = "java"
+        elif re.search(r"(?i)\b(?:javascript|js|node|nodejs)\b", raw):
+            explicit_lang = "javascript"
+        elif re.search(r"(?i)\b(?:typescript|ts)\b", raw):
+            explicit_lang = "typescript"
+        elif re.search(r"(?i)\b(?:rust)\b", raw):
+            explicit_lang = "rust"
+        elif re.search(r"(?i)\b(?:golang)\b", raw) or re.search(r"(?i)\b(?:in\s+go|using\s+go|go\s+language|go\s+code|go\s+program|go\s+me(?:in)?)\b", raw):
+            explicit_lang = "go"
+        elif re.search(r"(?i)\b(?:in\s+c|using\s+c|c\s+language|c\s+code|c\s+program|c\s+me(?:in)?)\b", raw):
+            explicit_lang = "c"
+        elif re.search(r"(?i)\b(?:react|reactjs)\b", raw):
+            explicit_lang = "react"
+        elif re.search(r"(?i)\b(?:html|html5|css)\b", raw):
+            explicit_lang = "html"
+        elif re.search(r"(?i)\b(?:sql|sqlite|postgres|mysql)\b", raw):
+            explicit_lang = "sql"
+
+        # 3. Detect Framework
         detected_framework = None
         for kw, fw in cls.FRAMEWORK_KEYWORDS.items():
             if kw in lower:
                 detected_framework = fw
                 if fw == "react":
-                    detected_lang = "react"
-                elif fw in ("flask", "fastapi", "django") and detected_lang not in ("python",):
-                    detected_lang = "python"
+                    explicit_lang = "react"
+                elif fw in ("flask", "fastapi", "django") and explicit_lang not in ("python",):
+                    explicit_lang = "python"
                 elif fw == "spring_boot":
-                    detected_lang = "java"
+                    explicit_lang = "java"
                 break
 
-        # 3. Detect Execution Intent
+        # 4. Resolve Final Language Decision
+        if explicit_lang:
+            detected_lang = explicit_lang
+        elif ui_required:
+            detected_lang = "html"  # Web application is optimal for UI tasks
+        else:
+            detected_lang = "python"  # Default general-purpose language
+
+        # 5. Detect Execution Intent
         execution_requested = bool(
-            re.search(r"(?i)\b(?:run|execute|chalao|run\s+karo|execute\s+karo|chala\s+do|isko\s+run|and\s+run|aur\s+run)\b", raw)
+            re.search(r"(?i)\b(?:run|execute|chalao|run\s+karo|execute\s+karo|chala\s+do|isko\s+run|and\s+run|aur\s+run|test\s+it|test\s+karo)\b", raw)
         )
 
-        # 4. Extract Problem Description
+        # 6. Extract Clean Problem Description (Strip navigation verbs and tool names)
         clean_desc = raw
-        remove_prefixes = [
-            r"(?i)^chitti,?\s*",
-            r"(?i)^vs\s*code\s+(?:open\s+kro|open\s+karo|kholo)\s*(?:aur|and|,)?\s*",
-            r"(?i)^open\s+(?:vs\s*code|vscode)\s*(?:and|aur|,)?\s*",
-            r"(?i)^(?:write|create|make|build|generate|implement)\s+(?:a|an)?\s*",
-            r"(?i)^(?:ek\s+)?",
+        remove_patterns = [
+            r"(?i)^(?:chitti,?\s*|hey\s+chitti,?\s*|please\s+)",
+            r"(?i)^(?:go\s+to|navigate\s+to|open)\s+(?:vs\s*code|vscode|the\s+editor)\s*(?:and|aur|,)?\s*",
+            r"(?i)^(?:in\s+vs\s*code|vs\s*code\s+me|vs\s*code\s+mein)\s*(?:and|aur|,)?\s*",
+            r"(?i)^(?:vs\s*code|vscode)\s+(?:open\s+kro|open\s+karo|kholo)\s*(?:aur|and|,)?\s*",
+            r"(?i)^(?:open\s+vs\s*code|open\s+vscode)\s*(?:and|aur|,)?\s*",
+            r"(?i)^(?:write|create|make|build|generate|implement|develop|banao|likho)\s+(?:an|a|the|ek)?\s*",
+            r"(?i)^(?:an|a|the|ek)\s+",
         ]
-        for p in remove_prefixes:
+        for p in remove_patterns:
             clean_desc = re.sub(p, "", clean_desc).strip()
 
-        # Remove trailing execution words from problem description
-        clean_desc = re.sub(r"(?i)\s*(?:aur|and|,)?\s*(?:run|execute|chalao|run\s+karo|execute\s+karo|chala\s+do).*$", "", clean_desc).strip()
+        # Remove trailing execution/UI modifiers from problem title
+        clean_desc = re.sub(r"(?i)\s*(?:aur|and|,)?\s*(?:run|execute|chalao|run\s+karo|execute\s+karo|chala\s+do|test\s+it|test\s+karo|open\s+it).*$", "", clean_desc).strip()
+        clean_desc = re.sub(r"(?i)\s*(?:with\s+(?:a\s+)?(?:good|modern|responsive|simple)?\s*ui|having\s+ui|jisme\s+achha\s+ui\s+ho).*$", "", clean_desc).strip()
 
-        # 5. Determine Project Type & File Naming
-        is_multi_file = bool(detected_framework in ("react", "spring_boot", "flask", "django") or "project" in lower or "app" in lower and detected_lang == "react")
-        project_type = "multi_file" if is_multi_file else "single_file"
+        # 7. Determine Requirements List
+        requirements = [clean_desc or "Software implementation"]
+        if ui_required:
+            requirements.append("Modern responsive user interface")
+        if "calculator" in lower:
+            requirements.extend(["Numeric buttons (0-9)", "Arithmetic operators (+, -, *, /)", "Clear and equals functionality", "Active display"])
 
-        filename = cls._derive_filename(clean_desc, detected_lang, detected_framework)
+        # 8. Determine Project Type & File Naming
+        is_multi_file = bool(detected_framework in ("react", "spring_boot", "flask", "django") or "project" in lower or "app" in lower and detected_lang in ("react", "html"))
+        project_type = "web_app" if (ui_required and detected_lang == "html") else ("multi_file" if is_multi_file else "single_file")
+
+        filename = cls._derive_filename(clean_desc, detected_lang, detected_framework, ui_required=ui_required)
+
 
         spec = ProgrammingTaskSpec(
             task_type="PROJECT_CREATION" if is_multi_file else "CODE_CREATION",
@@ -137,8 +164,9 @@ class CodeGenerator:
             framework=detected_framework,
             project_type=project_type,
             problem_description=clean_desc or "Programming Solution",
-            requirements=[],
+            requirements=requirements,
             filename=filename,
+            ui_required=ui_required,
             execution_requested=execution_requested,
             application="Visual Studio Code",
             raw_input=raw,
@@ -147,10 +175,21 @@ class CodeGenerator:
         return spec
 
     @classmethod
-    def _derive_filename(cls, description: str, language: str, framework: Optional[str]) -> str:
-        """Derives a semantic filename based on the problem and target language."""
+    def _derive_filename(cls, description: str, language: str, framework: Optional[str] = None, ui_required: bool = False) -> str:
+        """Derives a semantic filename based on the problem, target language, and UI requirements."""
         desc_lower = description.lower()
         ext = ToolchainManager.get_extension_for_language(language)
+
+        if language in ("html", "htm") or (ui_required and language == "html"):
+            if "calculator" in desc_lower:
+                return "calculator.html"
+            elif "todo" in desc_lower:
+                return "todo.html"
+            elif "dashboard" in desc_lower:
+                return "dashboard.html"
+            elif "pomodoro" in desc_lower or "timer" in desc_lower:
+                return "pomodoro_timer.html"
+            return "index.html"
 
         # Common algorithmic & utility naming
         if "anagram" in desc_lower:
@@ -178,9 +217,16 @@ class CodeGenerator:
         elif "prime" in desc_lower:
             return f"prime_checker{ext}"
         elif "sort" in desc_lower or "bubble" in desc_lower:
-            return f"sorting{ext}"
+            return f"sorter{ext}" if "sorter" in desc_lower or "user input" in desc_lower else f"sorting{ext}"
         elif "rest api" in desc_lower or "api" in desc_lower:
             return f"ApiController{ext}" if language == "java" else f"api{ext}"
+        elif "weather" in desc_lower:
+            return f"weather_parser{ext}"
+        elif "markdown" in desc_lower or "html" in desc_lower:
+            return f"markdown_converter{ext}"
+        elif "cache" in desc_lower or "lru" in desc_lower:
+            return f"lru_cache{ext}"
+
 
         # Default standard main file names
         if language in ("java", "csharp"):
@@ -717,14 +763,193 @@ class CodeGenerator:
             return code, markers, symbol, []
 
         # -------------------------------------------------------------
+        # 6. HTML / CSS / WEB APP SYNTHESIS
+        # -------------------------------------------------------------
+        elif lang in ("html", "htm", "css", "web") or (spec.ui_required and lang == "html"):
+            if "calculator" in desc:
+                symbol = "compute"
+                markers = ["<title>", "class=\"calculator\"", "function compute", "function appendNumber"]
+                code = (
+                    "<!DOCTYPE html>\n"
+                    "<html lang=\"en\">\n"
+                    "<head>\n"
+                    "    <meta charset=\"UTF-8\">\n"
+                    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+                    f"    <title>{title}</title>\n"
+                    "    <style>\n"
+                    "        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }\n"
+                    "        body { background: radial-gradient(circle at top, #1e1e38, #0f0f1a); min-height: 100vh; display: flex; align-items: center; justify-content: center; color: #fff; }\n"
+                    "        .calculator { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 24px; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); width: 340px; }\n"
+                    "        .display { background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px; text-align: right; min-height: 70px; display: flex; flex-direction: column; justify-content: flex-end; }\n"
+                    "        .previous-operand { font-size: 0.9rem; color: rgba(255,255,255,0.6); }\n"
+                    "        .current-operand { font-size: 2rem; font-weight: 600; color: #00ffcc; word-break: break-all; }\n"
+                    "        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }\n"
+                    "        button { border: none; outline: none; background: rgba(255, 255, 255, 0.08); color: #fff; font-size: 1.2rem; font-weight: 500; padding: 16px; border-radius: 12px; cursor: pointer; transition: all 0.2s ease; }\n"
+                    "        button:hover { background: rgba(255, 255, 255, 0.18); transform: translateY(-2px); }\n"
+                    "        button:active { transform: translateY(0); }\n"
+                    "        .operator { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; font-weight: 600; }\n"
+                    "        .operator:hover { background: rgba(255, 107, 107, 0.35); }\n"
+                    "        .equal { grid-column: span 2; background: linear-gradient(135deg, #00b4db, #0083b0); font-weight: bold; }\n"
+                    "        .equal:hover { background: linear-gradient(135deg, #00c6ff, #0072ff); box-shadow: 0 0 15px rgba(0,198,255,0.4); }\n"
+                    "        .clear { background: rgba(255, 71, 87, 0.25); color: #ff4757; }\n"
+                    "    </style>\n"
+                    "</head>\n"
+                    "<body>\n"
+                    "    <div class=\"calculator\">\n"
+                    "        <div class=\"display\">\n"
+                    "            <div class=\"previous-operand\" id=\"previous-operand\"></div>\n"
+                    "            <div class=\"current-operand\" id=\"current-operand\">0</div>\n"
+                    "        </div>\n"
+                    "        <div class=\"grid\">\n"
+                    "            <button class=\"clear\" onclick=\"clearDisplay()\">C</button>\n"
+                    "            <button onclick=\"deleteDigit()\">DEL</button>\n"
+                    "            <button class=\"operator\" onclick=\"chooseOperation('%')\">%</button>\n"
+                    "            <button class=\"operator\" onclick=\"chooseOperation('/')\">/</button>\n"
+                    "            <button onclick=\"appendNumber('7')\">7</button>\n"
+                    "            <button onclick=\"appendNumber('8')\">8</button>\n"
+                    "            <button onclick=\"appendNumber('9')\">9</button>\n"
+                    "            <button class=\"operator\" onclick=\"chooseOperation('*')\">*</button>\n"
+                    "            <button onclick=\"appendNumber('4')\">4</button>\n"
+                    "            <button onclick=\"appendNumber('5')\">5</button>\n"
+                    "            <button onclick=\"appendNumber('6')\">6</button>\n"
+                    "            <button class=\"operator\" onclick=\"chooseOperation('-')\">-</button>\n"
+                    "            <button onclick=\"appendNumber('1')\">1</button>\n"
+                    "            <button onclick=\"appendNumber('2')\">2</button>\n"
+                    "            <button onclick=\"appendNumber('3')\">3</button>\n"
+                    "            <button class=\"operator\" onclick=\"chooseOperation('+')\">+</button>\n"
+                    "            <button onclick=\"appendNumber('0')\">0</button>\n"
+                    "            <button onclick=\"appendNumber('.')\">.</button>\n"
+                    "            <button class=\"equal\" onclick=\"compute()\">=</button>\n"
+                    "        </div>\n"
+                    "    </div>\n"
+                    "    <script>\n"
+                    "        let currentOperand = '0';\n"
+                    "        let previousOperand = '';\n"
+                    "        let operation = null;\n"
+                    "        function updateDisplay() {\n"
+                    "            document.getElementById('current-operand').innerText = currentOperand;\n"
+                    "            document.getElementById('previous-operand').innerText = operation ? `${previousOperand} ${operation}` : '';\n"
+                    "        }\n"
+                    "        function appendNumber(number) {\n"
+                    "            if (number === '.' && currentOperand.includes('.')) return;\n"
+                    "            if (currentOperand === '0' && number !== '.') currentOperand = number.toString();\n"
+                    "            else currentOperand = currentOperand.toString() + number.toString();\n"
+                    "            updateDisplay();\n"
+                    "        }\n"
+                    "        function chooseOperation(op) {\n"
+                    "            if (currentOperand === '') return;\n"
+                    "            if (previousOperand !== '') compute();\n"
+                    "            operation = op; previousOperand = currentOperand; currentOperand = '';\n"
+                    "            updateDisplay();\n"
+                    "        }\n"
+                    "        function compute() {\n"
+                    "            let computation;\n"
+                    "            const prev = parseFloat(previousOperand);\n"
+                    "            const current = parseFloat(currentOperand);\n"
+                    "            if (isNaN(prev) || isNaN(current)) return;\n"
+                    "            switch (operation) {\n"
+                    "                case '+': computation = prev + current; break;\n"
+                    "                case '-': computation = prev - current; break;\n"
+                    "                case '*': computation = prev * current; break;\n"
+                    "                case '/': computation = current === 0 ? 'Error' : prev / current; break;\n"
+                    "                case '%': computation = prev % current; break;\n"
+                    "                default: return;\n"
+                    "            }\n"
+                    "            currentOperand = computation.toString(); operation = null; previousOperand = '';\n"
+                    "            updateDisplay();\n"
+                    "        }\n"
+                    "        function clearDisplay() { currentOperand = '0'; previousOperand = ''; operation = null; updateDisplay(); }\n"
+                    "        function deleteDigit() { currentOperand = currentOperand.toString().slice(0, -1) || '0'; updateDisplay(); }\n"
+                    "    </script>\n"
+                    "</body>\n"
+                    "</html>\n"
+                )
+            elif "todo" in desc:
+                symbol = "addTodo"
+                markers = ["<title>", "class=\"todo-app\"", "function addTodo", "function renderTodos"]
+                code = (
+                    "<!DOCTYPE html>\n"
+                    "<html lang=\"en\">\n"
+                    "<head>\n"
+                    "    <meta charset=\"UTF-8\">\n"
+                    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+                    f"    <title>{title}</title>\n"
+                    "    <style>\n"
+                    "        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }\n"
+                    "        body { background: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; color: #f8fafc; }\n"
+                    "        .todo-app { background: #1e293b; padding: 2rem; border-radius: 16px; width: 380px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }\n"
+                    "        h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #38bdf8; }\n"
+                    "        .input-group { display: flex; gap: 8px; margin-bottom: 1.5rem; }\n"
+                    "        input { flex: 1; padding: 10px 14px; background: #334155; border: 1px solid #475569; border-radius: 8px; color: #fff; outline: none; }\n"
+                    "        button { background: #38bdf8; color: #0f172a; font-weight: bold; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; }\n"
+                    "        ul { list-style: none; }\n"
+                    "        li { padding: 10px; background: #334155; border-radius: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }\n"
+                    "    </style>\n"
+                    "</head>\n"
+                    "<body>\n"
+                    "    <div class=\"todo-app\">\n"
+                    f"        <h1>{title}</h1>\n"
+                    "        <div class=\"input-group\">\n"
+                    "            <input type=\"text\" id=\"todoInput\" placeholder=\"Add a new task...\" />\n"
+                    "            <button onclick=\"addTodo()\">Add</button>\n"
+                    "        </div>\n"
+                    "        <ul id=\"todoList\"></ul>\n"
+                    "    </div>\n"
+                    "    <script>\n"
+                    "        let todos = [{id: 1, text: 'Task 1', done: false}];\n"
+                    "        function renderTodos() {\n"
+                    "            const list = document.getElementById('todoList');\n"
+                    "            list.innerHTML = todos.map(t => `<li><span>${t.text}</span> <button style='padding:4px 8px;' onclick='deleteTodo(${t.id})'>X</button></li>`).join('');\n"
+                    "        }\n"
+                    "        function addTodo() {\n"
+                    "            const input = document.getElementById('todoInput');\n"
+                    "            if (!input.value.trim()) return;\n"
+                    "            todos.push({id: Date.now(), text: input.value, done: false});\n"
+                    "            input.value = '';\n"
+                    "            renderTodos();\n"
+                    "        }\n"
+                    "        function deleteTodo(id) {\n"
+                    "            todos = todos.filter(t => t.id !== id);\n"
+                    "            renderTodos();\n"
+                    "        }\n"
+                    "        renderTodos();\n"
+                    "    </script>\n"
+                    "</body>\n"
+                    "</html>\n"
+                )
+            else:
+                symbol = "app"
+                markers = ["<title>", "<body>"]
+                code = (
+                    "<!DOCTYPE html>\n"
+                    "<html lang=\"en\">\n"
+                    "<head>\n"
+                    "    <meta charset=\"UTF-8\">\n"
+                    f"    <title>{title}</title>\n"
+                    "    <style>body { font-family: sans-serif; padding: 2rem; background: #0f172a; color: #fff; }</style>\n"
+                    "</head>\n"
+                    "<body>\n"
+                    f"    <h1>{title}</h1>\n"
+                    f"    <p>Interactive application generated by Chitti.</p>\n"
+                    "</body>\n"
+                    "</html>\n"
+                )
+            return code, markers, symbol, []
+
+        # -------------------------------------------------------------
         # Generic Default
         # -------------------------------------------------------------
-        symbol = "main"
-        markers = ["def main()"]
+        symbol = "solve"
+        markers = ["def solve", "def main"]
         code = (
             f"# {title} - Created by Chitti Agent\n\n"
+            f"def solve(*args, **kwargs):\n"
+            f"    \"\"\"Implementation for {title}.\"\"\"\n"
+            f"    print('Running {title} solution...')\n"
+            f"    return True\n\n\n"
             f"def main():\n"
-            f"    print('Executing {title} solution...')\n\n\n"
+            f"    result = solve()\n"
+            f"    print(f'Execution completed: {{result}}')\n\n\n"
             f"if __name__ == '__main__':\n"
             f"    main()\n"
         )

@@ -12,8 +12,13 @@ class CodeFileSpec:
     """Represents a single file in a generated project."""
     path: str
     content: str
+    filename: Optional[str] = None
     description: str = ""
     expected_markers: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        if not self.filename and self.path:
+            self.filename = self.path
 
 
 @dataclass
@@ -22,11 +27,12 @@ class ProgrammingTaskSpec:
     task_type: str = "CODE_CREATION"  # CODE_CREATION, PROJECT_CREATION, CODE_MODIFICATION, DEBUG_FIX
     language: str = "python"
     framework: Optional[str] = None
-    project_type: str = "single_file"  # "single_file" | "multi_file"
+    project_type: str = "single_file"  # "single_file" | "multi_file" | "web_app" | "gui_app"
     problem_description: str = ""
     requirements: List[str] = field(default_factory=list)
     filename: str = "main.py"
     files: List[CodeFileSpec] = field(default_factory=list)
+    ui_required: bool = False
     execution_requested: bool = False
     application: str = "Visual Studio Code"
     expected_markers: List[str] = field(default_factory=list)
@@ -47,6 +53,7 @@ class ProgrammingTaskSpec:
             "requirements": self.requirements,
             "filename": self.filename,
             "files": [{"path": f.path, "description": f.description} for f in self.files],
+            "ui_required": self.ui_required,
             "execution_requested": self.execution_requested,
             "application": self.application,
             "expected_markers": self.expected_markers,
