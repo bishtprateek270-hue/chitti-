@@ -344,11 +344,36 @@ def test_plan_and_execute_youtube_song(agent_manager):
         handled, msg, result = agent_manager.handle_command("play a Sonu Nigam song", lang="en")
         assert handled is True
         assert "youtube" in msg.lower()
+        assert "sonu nigam" in msg.lower()
         mock_open.assert_called()
 
         handled_hi, msg_hi, _ = agent_manager.handle_command("go to youtube and play a sonu nigam song", lang="hinglish")
         assert handled_hi is True
         assert "youtube" in msg_hi.lower()
+
+
+def test_plan_and_execute_youtube_shreya_ghosal_normalization(agent_manager):
+    with patch("webbrowser.open", return_value=True) as mock_open:
+        handled, msg, result = agent_manager.handle_command("play a shreya ghosal song", lang="en")
+        assert handled is True
+        assert "shreya ghoshal" in msg.lower()
+        mock_open.assert_called()
+
+
+def test_plan_and_execute_vscode_anagram_not_fibonacci(agent_manager, tmp_path):
+    handled, msg, result = agent_manager.handle_command(
+        "vs code open kro aur ek anagram ka python code banao",
+        lang="hinglish"
+    )
+    assert handled is True
+    assert "anagram" in msg.lower()
+    assert "fibonacci" not in msg.lower()
+
+    anagram_file = Path(agent_manager.workspace_dir) / "anagram.py"
+    assert anagram_file.exists()
+    content = anagram_file.read_text(encoding="utf-8")
+    assert "are_anagrams" in content
+    assert "fibonacci" not in content.lower()
 
 
 def test_plan_and_execute_vscode_fibonacci_hinglish(agent_manager, tmp_path):
@@ -357,12 +382,27 @@ def test_plan_and_execute_vscode_fibonacci_hinglish(agent_manager, tmp_path):
         lang="hinglish"
     )
     assert handled is True
-    assert "vs code" in msg.lower() or "fibonacci" in msg.lower()
+    assert "fibonacci" in msg.lower()
 
     fib_file = Path(agent_manager.workspace_dir) / "fibonacci.py"
     assert fib_file.exists()
     content = fib_file.read_text(encoding="utf-8")
     assert "def fibonacci" in content
+
+
+def test_honest_verification_failure_window(agent_manager):
+    """Verifies that non-existent windows fail verification and do NOT report false success."""
+    res = agent_manager.screen_analyzer.verify_window("NonExistentSuperFakeApp12345")
+    assert res.success is False
+    assert "not detected" in res.evidence or "not visible" in res.evidence
+
+
+def test_honest_verification_failure_file_content(agent_manager, tmp_path):
+    """Verifies that file content verification fails when expected keyword is missing."""
+    p = agent_manager.filesystem.create_file("test_fake.py", "def some_random_func(): pass")
+    ver_res = agent_manager.tools.execute_tool("verify_file_content", {"path": "test_fake.py", "expected_keyword": "are_anagrams"})
+    assert ver_res.success is False
+    assert "does not contain 'are_anagrams'" in ver_res.data.get("evidence", "")
 
 
 def test_plan_and_execute_folder_and_file_creation(agent_manager, tmp_path):

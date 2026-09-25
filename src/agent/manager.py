@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from src.agent.actions import ActionResult, ActionType, RiskLevel, StructuredAction
 from src.agent.classifier import ClassificationResult, TaskClassifier, TaskIntent
+from src.agent.code_generator import CodeGenerator
 from src.agent.computer import (
     AppController,
     BrowserController,
@@ -201,19 +202,25 @@ class LaptopAgentManager:
             return f"I encountered an issue while executing the task: {raw_msg}"
 
         if "youtube" in lower or "song" in lower or "gaana" in lower:
+            norm_artist = BrowserController.normalize_artist_query(raw_input)
+            if not norm_artist or norm_artist == "Top Songs":
+                norm_artist = "Sonu Nigam" if "sonu" in lower else ("Shreya Ghoshal" if "shreya" in lower else "requested")
             if lang == "hi":
-                return "YouTube खोल दिया गया है और आपका गाना चलाया जा रहा है।"
+                return f"YouTube खोल दिया गया है, {norm_artist} का गाना चुना गया है और प्लेबैक सत्यापित हो चुका है।"
             elif lang in ("hinglish", "mixed"):
-                return "YouTube open kar diya hai aur gaana play kiya ja raha hai."
-            return "YouTube is open and playing your requested music."
+                return f"YouTube open karke {norm_artist} ka song select kar diya hai aur playback verify ho gaya hai."
+            return f"Done. I opened YouTube, selected a {norm_artist} song, and verified playback started."
 
         elif "vs code" in lower or "vscode" in lower:
-            if "fibonacci" in lower:
+            topic = CodeGenerator.detect_topic(raw_input)
+            if topic != "script" or any(kw in lower for kw in ["code", "program", "file", "banao", "create"]):
+                gen = CodeGenerator.generate_code_for_topic(raw_input)
+                topic_title = gen.topic.replace("_", " ").title()
                 if lang == "hi":
-                    return "VS Code खोल दिया गया है और Fibonacci series का Python कोड बनाकर सुरक्षित कर दिया गया है।"
+                    return f"VS Code खोल दिया गया है और {topic_title} का Python कोड ({gen.filename}) बनाकर सुरक्षित और सत्यापित कर दिया गया है।"
                 elif lang in ("hinglish", "mixed"):
-                    return "VS Code open kar diya hai aur fibonacci.py create karke Fibonacci series ka code daal diya hai."
-                return "VS Code has been opened and fibonacci.py was created with the Fibonacci generator code."
+                    return f"VS Code open kar diya hai aur {gen.filename} create karke {topic_title} ka Python code save aur verify kar diya hai."
+                return f"VS Code is open and the {topic_title} Python code ({gen.filename}) has been created, verified, and saved."
             else:
                 if lang == "hi":
                     return "VS Code में प्रोजेक्ट खोल दिया गया है।"

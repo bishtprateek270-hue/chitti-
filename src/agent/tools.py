@@ -8,7 +8,6 @@ import os
 import subprocess
 import time
 import urllib.parse
-import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -42,6 +41,7 @@ class ToolExecutionResult:
     data: Dict[str, Any] = field(default_factory=dict)
     message: str = ""
     error: Optional[str] = None
+    verification: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -50,6 +50,7 @@ class ToolExecutionResult:
             "data": self.data,
             "message": self.message,
             "error": self.error,
+            "verification": self.verification,
         }
 
 
@@ -115,7 +116,7 @@ class ToolEngine:
         )
         self._register(
             "play_youtube",
-            "Opens YouTube and searches for or starts playing a requested song, artist, or video.",
+            "Resolves, opens, and starts playing a requested YouTube song, artist, or video.",
             {"query": {"type": "string", "description": "Song name, artist, or video to play"}},
             self._tool_play_youtube,
         )
@@ -138,6 +139,12 @@ class ToolEngine:
             "Brings a specific window to the foreground by title query.",
             {"title": {"type": "string", "description": "Window title substring"}},
             self._tool_focus_window,
+        )
+        self._register(
+            "verify_window",
+            "Verifies that an application or window is running and visible.",
+            {"title": {"type": "string", "description": "Window title substring"}},
+            self._tool_verify_window,
         )
 
         # 4. MOUSE & KEYBOARD TOOLS
@@ -194,6 +201,15 @@ class ToolEngine:
                 "content": {"type": "string", "description": "New file content"},
             },
             self._tool_write_file,
+        )
+        self._register(
+            "verify_file_content",
+            "Verifies that a file exists and contains expected keywords or code symbols.",
+            {
+                "path": {"type": "string", "description": "File path to check"},
+                "expected_keyword": {"type": "string", "description": "Expected function name or content keyword"},
+            },
+            self._tool_verify_file_content,
         )
         self._register(
             "create_directory",
@@ -265,10 +281,13 @@ class ToolEngine:
 
     def _tool_play_youtube(self, query: str) -> Dict[str, Any]:
         log_info(f"[TOOL] play_youtube -> {query}")
-        encoded = urllib.parse.quote(query.strip())
-        yt_url = f"https://www.youtube.com/results?search_query={encoded}"
-        ok = self.browser.open_url(yt_url)
-        return {"success": ok, "query": query, "url": yt_url, "message": f"Opening YouTube and searching for '{query}'"}
+        ok, msg, data = self.browser.search_and_play_youtube(query)
+        return {
+            "success": ok,
+            "query": query,
+            "message": msg,
+            **data,
+        }
 
     def _tool_take_screenshot(self, filename: Optional[str] = None) -> Dict[str, Any]:
         log_info("[TOOL] take_screenshot")
@@ -283,6 +302,10 @@ class ToolEngine:
     def _tool_focus_window(self, title: str) -> Dict[str, Any]:
         ok = self.computer.focus_window(title)
         return {"success": ok, "title": title, "message": f"Focused window matching '{title}'"}
+
+    def _tool_verify_window(self, title: str) -> Dict[str, Any]:
+        res = self.screen_analyzer.verify_window(title)
+        return {"success": res.success, "evidence": res.evidence, "target": title}
 
     def _tool_type_text(self, text: str) -> Dict[str, Any]:
         ok = self.computer.type_text(text)
@@ -312,6 +335,17 @@ class ToolEngine:
     def _tool_write_file(self, path: str, content: str) -> Dict[str, Any]:
         p = self.fs.write_file(path, content)
         return {"success": True, "path": p, "message": f"Wrote content to {p}"}
+
+    def _tool_verify_file_content(self, path: str, expected_keyword: str) -> Dict[str, Any]:
+        resolved = self.fs.resolve_path(path)
+        if not resolved.exists():
+            return {"success": False, "evidence": f"File '{path}' does not exist on disk.", "path": str(resolved)}
+        content = self.fs.read_file(str(resolved))
+        if expected_keyword.lower() in content.lower():
+            log_info(f"[VERIFY] File content verified: '{expected_keyword}' found in {path}")
+            return {"success": True, "evidence": f"File exists and contains '{expected_keyword}'.", "path": str(resolved)}
+        log_warn(f"[VERIFY] File content verification FAILED: '{expected_keyword}' not found in {path}")
+        return {"success": False, "evidence": f"File exists but does not contain '{expected_keyword}'.", "path": str(resolved)}
 
     def _tool_create_directory(self, path: str) -> Dict[str, Any]:
         p = self.fs.create_directory(path)
@@ -375,14 +409,3 @@ class ToolEngine:
                 error=str(e),
                 message=f"Failed to execute {tool_name}: {e}",
             )
-
-    def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        """Returns JSON schemas for all available tools for LLM prompting."""
-        schemas = []
-        for name, t in self.tools.items():
-            schemas.append({
-                "name": name,
-                "description": t.description,
-                "parameters": t.parameters,
-            })
-        return schemas

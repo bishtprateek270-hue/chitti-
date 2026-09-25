@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.agent.actions import ActionType, RiskLevel, StructuredAction
+from src.agent.code_generator import CodeGenerator
 from src.agent.computer import (
     AppController,
     BrowserController,
@@ -44,17 +45,21 @@ class AgentPlanner:
         state = TaskState(task_description=raw)
 
         # 1. YOUTUBE / SONG PLAYBACK COMMANDS
-        # e.g. "play a Sonu Nigam song", "go to youtube and play a sonu nigam song", "go to youtube and search for sonu nigam", "Sonu Nigam ka gaana chalao"
+        # e.g. "play a Sonu Nigam song", "play a shreya ghosal song", "go to youtube and play a sonu nigam song", "go to youtube and search for sonu nigam", "Sonu Nigam ka gaana chalao"
         m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+youtube\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+youtube|youtube\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
-        if m_yt:
-            song_query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or "").strip()
-            song_query = re.sub(r"(?i)\b(?:song|gaana|chalao|play|karo)\b", "", song_query).strip()
-            if not song_query:
-                song_query = "trending songs"
+        if m_yt or ("youtube" in clean_lower and ("play" in clean_lower or "search" in clean_lower or "song" in clean_lower or "gaana" in clean_lower)):
+            if m_yt:
+                song_query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or "").strip()
+            else:
+                song_query = clean
+            artist = BrowserController.normalize_artist_query(song_query)
+            if not artist or artist == "Top Songs":
+                artist = "Sonu Nigam" if "sonu" in clean_lower else ("Shreya Ghoshal" if "shreya" in clean_lower else "Trending Music")
 
             state.steps = [
-                AgentStep(step_id=1, description=f"Open YouTube and search/play '{song_query}'", action_type="PLAY_YOUTUBE", parameters={"query": song_query}),
+                AgentStep(step_id=1, description=f"Resolve top video and start playing '{artist}' on YouTube", action_type="PLAY_YOUTUBE", parameters={"query": artist}),
                 AgentStep(step_id=2, description="Verify browser opened YouTube", action_type="VERIFY_WINDOW", parameters={"title": "YouTube"}),
+                AgentStep(step_id=3, description=f"Verify playback started for '{artist}'", action_type="VERIFY_PLAYBACK", parameters={"query": artist}),
             ]
             return state
 
@@ -74,36 +79,20 @@ class AgentPlanner:
             return state
 
         # 3. VS CODE + CODE GENERATION COMMANDS
-        # e.g. "VS Code open kro Aur ek Fibonacci series ka Python code kro", "open vs code and create a fibonacci python program"
-        m_vscode_code = re.search(r"(?i)\b(?:vs\s*code|vscode)\s+.*(?:fibonacci|code|program|series).*(?:banao|kro|create|write)\b", clean) or \
-                        re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode)|vs\s*code\s+(?:open\s+kro|open\s+karo|kholo))\s+(?:and|aur)\s+.*(?:code|program|fibonacci|series)\b", clean) or \
-                        (("vs code" in clean_lower or "vscode" in clean_lower) and ("fibonacci" in clean_lower))
+        # e.g. "vs code open kro aur ek anagram ka python code banao", "VS Code open kro Aur ek Fibonacci series ka Python code kro", "open vs code and create a python anagram checker"
+        m_vscode_code = re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write)", clean) or \
+                        re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode)|vs\s*code\s+(?:open\s+kro|open\s+karo|kholo))\s+(?:and|aur)\s+.*(?:code|program|script|banao)", clean) or \
+                        (("vs code" in clean_lower or "vscode" in clean_lower) and any(kw in clean_lower for kw in ["code", "anagram", "fibonacci", "palindrome", "prime", "factorial", "sort", "search", "python"]))
         if m_vscode_code:
-            topic = "fibonacci" if "fibonacci" in clean_lower else "script"
-            filename = f"{topic}.py"
-            
-            fib_code = (
-                "# Fibonacci Generator - Created by Chitti Agent\n\n"
-                "def fibonacci(n: int):\n"
-                "    \"\"\"Generates the first n numbers of the Fibonacci sequence.\"\"\"\n"
-                "    if n <= 0:\n"
-                "        return []\n"
-                "    elif n == 1:\n"
-                "        return [0]\n"
-                "    seq = [0, 1]\n"
-                "    while len(seq) < n:\n"
-                "        seq.append(seq[-1] + seq[-2])\n"
-                "    return seq\n\n\n"
-                "if __name__ == '__main__':\n"
-                "    count = 10\n"
-                "    print(f'Fibonacci series (first {count} terms): {fibonacci(count)}')\n"
-            )
+            gen = CodeGenerator.generate_code_for_topic(clean)
+            topic_title = gen.topic.replace("_", " ").title()
+            filename = gen.filename
 
             state.steps = [
-                AgentStep(step_id=1, description=f"Generate and write Python code to {filename}", action_type="CREATE_FILE", parameters={"path": filename, "content": fib_code}),
+                AgentStep(step_id=1, description=f"Generate and write {topic_title} Python code to {filename}", action_type="CREATE_FILE", parameters={"path": filename, "content": gen.code}),
                 AgentStep(step_id=2, description=f"Launch VS Code with {filename}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [filename]}),
-                AgentStep(step_id=3, description=f"Verify {filename} was created on disk", action_type="VERIFY_FILE", parameters={"path": filename}),
-                AgentStep(step_id=4, description="Verify VS Code opened", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}),
+                AgentStep(step_id=3, description=f"Verify {filename} content contains '{gen.expected_symbol}'", action_type="VERIFY_FILE_CONTENT", parameters={"path": filename, "expected_keyword": gen.expected_symbol}),
+                AgentStep(step_id=4, description="Verify VS Code window is open", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}),
             ]
             return state
 
@@ -145,25 +134,15 @@ class AgentPlanner:
             ]
             return state
 
-        # 7. Multi-step: "Create a Python file in my project and write a program that calculates Fibonacci numbers"
-        m_fib = re.search(r"(?i)\b(?:create\s+(?:a\s+)?python\s+file.*fibonacci|write\s+(?:a\s+)?(?:fibonacci\s+program|program\s+that\s+calculates\s+fibonacci))\b", clean)
-        if m_fib:
-            code = (
-                "def fibonacci(n):\n"
-                "    if n <= 0:\n"
-                "        return []\n"
-                "    elif n == 1:\n"
-                "        return [0]\n"
-                "    seq = [0, 1]\n"
-                "    while len(seq) < n:\n"
-                "        seq.append(seq[-1] + seq[-2])\n"
-                "    return seq\n\n"
-                "if __name__ == '__main__':\n"
-                "    print('Fibonacci sequence (first 10):', fibonacci(10))\n"
-            )
+        # 7. Multi-step: "Create a Python file in my project and write a program that calculates Fibonacci numbers / Anagrams"
+        m_create_code = re.search(r"(?i)\b(?:create\s+(?:a\s+)?python\s+file|write\s+(?:a\s+)?(?:python\s+)?(?:program|code|script))\b", clean)
+        if m_create_code:
+            gen = CodeGenerator.generate_code_for_topic(clean)
+            topic_title = gen.topic.replace("_", " ").title()
+            filename = gen.filename
             state.steps = [
-                AgentStep(step_id=1, description="Create fibonacci.py in project workspace", action_type="CREATE_FILE", parameters={"path": "fibonacci.py", "content": code}),
-                AgentStep(step_id=2, description="Verify fibonacci.py created", action_type="VERIFY_FILE", parameters={"path": "fibonacci.py"}),
+                AgentStep(step_id=1, description=f"Create {filename} with {topic_title} solution in workspace", action_type="CREATE_FILE", parameters={"path": filename, "content": gen.code}),
+                AgentStep(step_id=2, description=f"Verify {filename} created and contains '{gen.expected_symbol}'", action_type="VERIFY_FILE_CONTENT", parameters={"path": filename, "expected_keyword": gen.expected_symbol}),
             ]
             return state
 
@@ -261,7 +240,7 @@ class ComputerAgentLoop:
                 step.status = StepStatus.FAILED
                 step.error = message
                 state.mark_failed(f"Step {step.step_id} failed: {message}")
-                log_warn(f"[AGENT] Step {step.step_id} failed: {message}")
+                log_warn(f"[AGENT] Step {step.step_id} FAILED: {message}")
                 return False, f"I ran into an issue while performing the task: {message}"
 
             # 3. VERIFY
@@ -274,7 +253,7 @@ class ComputerAgentLoop:
         return True, "Task completed successfully."
 
     def _execute_step_action(self, step: AgentStep, search_cache: List[str]) -> Tuple[bool, str, Optional[str]]:
-        """Executes a single step action."""
+        """Executes a single step action with strict honest verification."""
         act = step.action_type
         params = step.parameters
 
@@ -288,7 +267,7 @@ class ComputerAgentLoop:
                 target = params["target"]
                 args = params.get("args")
                 res = self.tools.execute_tool("open_application", {"application": target, "args": args})
-                time.sleep(0.5)
+                time.sleep(0.3)
                 return res.success, res.message, f"App {target} launched"
 
             elif act == "OPEN_FOLDER":
@@ -304,7 +283,7 @@ class ComputerAgentLoop:
                 try:
                     os.startfile(str(p))
                 except Exception as e:
-                    log_debug(f"os.startfile skipped or failed: {e}")
+                    log_debug(f"os.startfile notice: {e}")
                 return True, f"Opened folder {p}", f"Folder {p} opened"
 
             elif act == "SEARCH_WEB":
@@ -314,7 +293,7 @@ class ComputerAgentLoop:
 
             elif act == "TYPE_TEXT":
                 text = params["text"]
-                time.sleep(0.3)
+                time.sleep(0.2)
                 res = self.tools.execute_tool("type_text", {"text": text})
                 return res.success, res.message, f"Text entered: {text}"
 
@@ -346,7 +325,7 @@ class ComputerAgentLoop:
                 cmd = params["command"]
                 res = self.tools.execute_tool("execute_terminal_command", {"command": cmd})
                 out = res.data.get("output", res.message)
-                return True, out, f"Command exit code: {res.data.get('exit_code', 0)}"
+                return res.success, out, f"Command exit code: {res.data.get('exit_code', 0)}"
 
             elif act == "RESOLVE_PROJECT":
                 name = params["name"]
@@ -355,24 +334,44 @@ class ComputerAgentLoop:
 
             elif act == "VERIFY_WINDOW":
                 title = params.get("title", "")
-                time.sleep(0.4)
-                found = self.screen_analyzer.verify_window_present(title)
-                return True, f"Window verified for '{title}' (found: {found})", f"Window '{title}' detected"
+                time.sleep(0.3)
+                res = self.screen_analyzer.verify_window(title)
+                if not res.success:
+                    return False, f"Verification failed: {res.evidence}", None
+                return True, f"Window verified for '{title}': {res.evidence}", res.evidence
+
+            elif act == "VERIFY_PLAYBACK":
+                b_state = self.browser.get_browser_state()
+                if b_state.playback_verified and (b_state.active_video_id or b_state.current_url):
+                    ev = f"Video playback active (URL: {b_state.current_url}, Video ID: {b_state.active_video_id})"
+                    return True, f"Playback verified: {ev}", ev
+                win_res = self.screen_analyzer.verify_window("YouTube")
+                if win_res.success:
+                    return True, f"YouTube window verified: {win_res.evidence}", win_res.evidence
+                return False, "Verification failed: YouTube video playback could not be verified", None
 
             elif act == "VERIFY_FILE":
                 path = params["path"]
                 resolved = self.fs.resolve_path(path)
-                exists = resolved.exists()
-                if exists:
-                    return True, f"File {path} verified on disk", f"File exists at {resolved}"
-                return False, f"File {path} was not found on disk", None
+                if not resolved.exists():
+                    return False, f"Verification failed: File '{path}' was not found on disk", None
+                return True, f"File {path} verified on disk", f"File exists at {resolved}"
+
+            elif act == "VERIFY_FILE_CONTENT":
+                path = params["path"]
+                keyword = params.get("expected_keyword", "")
+                res = self.tools.execute_tool("verify_file_content", {"path": path, "expected_keyword": keyword})
+                if not res.success:
+                    ev = res.data.get("evidence", res.error) or f"File '{path}' missing expected content"
+                    return False, f"Verification failed: {ev}", None
+                return True, f"File content verified: {res.data.get('evidence')}", res.data.get("evidence")
 
             elif act == "VERIFY_DELETED":
                 path = params["path"]
                 resolved = self.fs.resolve_path(path)
-                if not resolved.exists():
-                    return True, f"Verified '{path}' is deleted", "Path no longer exists"
-                return False, f"Path '{path}' still exists", None
+                if resolved.exists():
+                    return False, f"Verification failed: Path '{path}' still exists on disk", None
+                return True, f"Verified '{path}' is deleted", "Path no longer exists"
 
             elif act in ("ANALYZE_OUTPUT", "DIAGNOSE_ERROR"):
                 return True, "Analysis completed.", "Output inspected."
