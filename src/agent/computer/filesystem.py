@@ -93,6 +93,10 @@ class FilesystemController:
         """Overwrites content in a file."""
         return self.create_file(file_path, content)
 
+    def modify_file(self, file_path: str, content: str) -> str:
+        """Modifies content in a file."""
+        return self.create_file(file_path, content)
+
     def append_file(self, file_path: str, content: str) -> str:
         """Appends content to an existing file."""
         target = self.resolve_path(file_path)

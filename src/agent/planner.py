@@ -1,10 +1,10 @@
 """
-Chitti Agent Planner & Computer-Use Loop.
-Implements the multi-step SEE -> UNDERSTAND -> PLAN -> ACT -> OBSERVE -> VERIFY loop.
-Supports general-purpose coding across arbitrary programming languages, multi-file projects,
-toolchain verification, compiler execution, and automated error recovery.
+Chitti Agent Planner & Multi-Step Execution Loop (Phase 6).
+Implements dynamic goal decomposition, dependency-aware step execution,
+evidence-based verification, automated failure recovery, and honest outcome reporting.
 """
 
+import json
 import os
 import re
 import time
@@ -12,7 +12,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from src.agent.actions import ActionType, RiskLevel, StructuredAction
+from src.agent.actions import ActionResult, ActionType, RiskLevel, StructuredAction
 from src.agent.code_generator import CodeGenerator
 from src.agent.code_spec import CodeFileSpec, ProgrammingTaskSpec
 from src.agent.code_validator import CodeValidator
@@ -26,15 +26,17 @@ from src.agent.computer import (
     TerminalRiskLevel,
 )
 from src.agent.projects import ProjectRegistry
-from src.agent.task_state import AgentStep, ExecutionFlag, StepStatus, TaskState, TaskStatus
+from src.agent.recovery import FailureRecoveryManager, RecoveryAction
+from src.agent.task_state import AgentStep, ExecutionFlag, StepStatus, TaskContext, TaskState, TaskStatus
 from src.agent.toolchain import ToolchainManager
 from src.agent.tools import ToolEngine
+from src.agent.verifier import SubtaskVerifier, VerificationOutcome
 from src.brain.llm import BaseLLM
 from src.utils.logging import log_debug, log_info, log_warn
 
 
 class AgentPlanner:
-    """Decomposes natural language requests into structured multi-step execution plans."""
+    """Dynamically decomposes natural language user goals into structured multi-step task plans."""
 
     def __init__(
         self,
@@ -46,8 +48,8 @@ class AgentPlanner:
         self.fs = filesystem or FilesystemController()
         self.llm = llm
 
-    def plan_task(self, user_text: str) -> Optional[TaskState]:
-        """Analyzes user request and constructs a multi-step task plan if it involves computer use."""
+    def plan_task(self, user_text: str, context: Optional[TaskContext] = None) -> Optional[TaskState]:
+        """Analyzes the user's goal and constructs a multi-step task plan with dependencies."""
         raw = user_text.strip()
         lower = raw.lower()
 
@@ -55,7 +57,9 @@ class AgentPlanner:
         clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", raw, flags=re.IGNORECASE).strip()
         clean_lower = clean.lower()
 
-        state = TaskState(task_description=raw)
+        state = TaskState(task_description=raw, goal=clean)
+        if context:
+            state.context = context
 
         # 1. YOUTUBE / SONG PLAYBACK COMMANDS
         m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+youtube\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+youtube|youtube\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
@@ -70,9 +74,10 @@ class AgentPlanner:
 
             state.steps = [
                 AgentStep(step_id=1, description=f"Resolve top video and start playing '{artist}' on YouTube", action_type="PLAY_YOUTUBE", parameters={"query": artist}),
-                AgentStep(step_id=2, description="Verify browser opened YouTube", action_type="VERIFY_WINDOW", parameters={"title": "YouTube"}),
-                AgentStep(step_id=3, description=f"Verify playback started for '{artist}'", action_type="VERIFY_PLAYBACK", parameters={"query": artist}),
+                AgentStep(step_id=2, description="Verify browser opened YouTube", action_type="VERIFY_WINDOW", parameters={"title": "YouTube"}, depends_on=[1]),
+                AgentStep(step_id=3, description=f"Verify playback started for '{artist}'", action_type="VERIFY_PLAYBACK", parameters={"query": artist}, depends_on=[2]),
             ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
         # 2. VS CODE + PROJECT OPENING COMMANDS
@@ -84,19 +89,19 @@ class AgentPlanner:
             proj_path = self.projects.get_project_path(proj_name) or str(Path.cwd().resolve())
             state.steps = [
                 AgentStep(step_id=1, description=f"Resolve project path for {proj_name}", action_type="RESOLVE_PROJECT", parameters={"name": proj_name, "path": proj_path}),
-                AgentStep(step_id=2, description=f"Launch VS Code with project {proj_name}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [proj_path]}),
-                AgentStep(step_id=3, description="Verify VS Code is open", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}),
+                AgentStep(step_id=2, description=f"Launch VS Code with project {proj_name}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [proj_path]}, depends_on=[1]),
+                AgentStep(step_id=3, description="Verify VS Code is open", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}, depends_on=[2]),
             ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
-        # 3. GENERAL-PURPOSE PROGRAMMING & CODING TASKS
-        # Handles any language (Python, C++, Java, JS, Rust, etc.), any problem, single-file or multi-file
+        # 3. GENERAL-PURPOSE PROGRAMMING & CODING TASKS (Single-file & Multi-file)
         is_coding_request = (
             bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|bana|karo)", clean)) or
-            bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker)", clean)) or
-            bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker)", clean)) or
-            bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement)\s+(?:a|an)?\s*(?:.*)?\s*(?:program|code|script|algorithm|class|api|model|page|app)\b", clean)) or
-            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
+            bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper)", clean)) or
+            bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper)", clean)) or
+            bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement)\s+(?:a|an)?\s*(?:.*)?\s*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper)\b", clean)) or
+            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm|project|tracker|scraper)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
         )
 
         if is_coding_request:
@@ -117,79 +122,124 @@ class AgentPlanner:
             topic_title = spec.problem_description.title()
             lang_title = spec.language.upper()
 
-            # Multi-step Plan Construction
-            state.steps = [
-                AgentStep(
-                    step_id=1,
-                    description=f"Generate and write {topic_title} {lang_title} code to {filename}",
+            steps: List[AgentStep] = []
+            curr_id = 1
+
+            # Step 1: Create main code file
+            steps.append(AgentStep(
+                step_id=curr_id,
+                description=f"Generate and write {topic_title} {lang_title} code to {filename}",
+                action_type="CREATE_FILE",
+                parameters={"path": abs_path, "content": main_code, "spec": spec},
+            ))
+            create_step_id = curr_id
+            curr_id += 1
+
+            # Additional project files if multi-file
+            for f in spec.files[1:]:
+                f_path = str(self.fs.resolve_path(f.filename).resolve())
+                steps.append(AgentStep(
+                    step_id=curr_id,
+                    description=f"Create project file {f.filename}",
                     action_type="CREATE_FILE",
-                    parameters={"path": abs_path, "content": main_code},
-                ),
-                AgentStep(
-                    step_id=2,
-                    description=f"Open {filename} in VS Code with absolute path",
-                    action_type="OPEN_APPLICATION",
-                    parameters={"target": "VS Code", "args": [abs_path]},
-                ),
-                AgentStep(
-                    step_id=3,
-                    description=f"Wait for VS Code editor and {filename}",
-                    action_type="WAIT_FOR_EDITOR",
-                    parameters={"application": "Visual Studio Code", "expected_file": filename, "timeout": 6.0},
-                ),
-                AgentStep(
-                    step_id=4,
-                    description="Capture screenshot of active editor",
-                    action_type="TAKE_SCREENSHOT",
-                    parameters={"filename": f"vscode_{Path(filename).stem}.png"},
-                ),
-                AgentStep(
-                    step_id=5,
-                    description=f"Verify {filename} editor content in VS Code",
-                    action_type="VERIFY_EDITOR_CONTENT",
-                    parameters={
-                        "application": "Visual Studio Code",
-                        "expected_file": abs_path,
-                        "expected_markers": spec.expected_markers,
-                    },
-                ),
-                AgentStep(
-                    step_id=6,
-                    description="Save file in VS Code editor",
-                    action_type="SAVE_EDITOR",
-                    parameters={"application": "Visual Studio Code"},
-                ),
-                AgentStep(
-                    step_id=7,
-                    description=f"Verify {filename} saved on disk with {spec.expected_symbol}",
-                    action_type="VERIFY_FILE_CONTENT",
-                    parameters={"path": abs_path, "expected_keyword": spec.expected_symbol},
-                ),
-            ]
+                    parameters={"path": f_path, "content": f.content},
+                    depends_on=[create_step_id],
+                ))
+                curr_id += 1
 
-            # If user explicitly requested execution ("run karo", "execute", etc.)
-            if spec.execution_requested:
-                state.steps.extend([
-                    AgentStep(
-                        step_id=8,
-                        description=f"Verify toolchain for {spec.language}",
-                        action_type="VERIFY_TOOLCHAIN",
-                        parameters={"language": spec.language},
-                    ),
-                    AgentStep(
-                        step_id=9,
-                        description=f"Compile and execute {filename}",
-                        action_type="COMPILE_AND_EXECUTE",
-                        parameters={"language": spec.language, "file": abs_path, "spec": spec},
-                    ),
-                    AgentStep(
-                        step_id=10,
-                        description="Verify successful execution output",
-                        action_type="VERIFY_EXECUTION",
-                        parameters={"file": abs_path},
-                    ),
-                ])
+            # Open in VS Code (if requested or by default for coding tasks)
+            open_vscode_id = curr_id
+            steps.append(AgentStep(
+                step_id=curr_id,
+                description=f"Open {filename} in VS Code with absolute path",
+                action_type="OPEN_APPLICATION",
+                parameters={"target": "VS Code", "args": [abs_path]},
+                depends_on=[create_step_id],
+            ))
+            curr_id += 1
 
+            steps.append(AgentStep(
+                step_id=curr_id,
+                description=f"Wait for VS Code editor and {filename}",
+                action_type="WAIT_FOR_EDITOR",
+                parameters={"application": "Visual Studio Code", "expected_file": filename, "timeout": 6.0},
+                depends_on=[open_vscode_id],
+            ))
+            curr_id += 1
+
+            steps.append(AgentStep(
+                step_id=curr_id,
+                description="Capture screenshot of active editor",
+                action_type="TAKE_SCREENSHOT",
+                parameters={"filename": f"vscode_{Path(filename).stem}.png"},
+                depends_on=[open_vscode_id],
+            ))
+            curr_id += 1
+
+            steps.append(AgentStep(
+                step_id=curr_id,
+                description=f"Verify {filename} editor content in VS Code",
+                action_type="VERIFY_EDITOR_CONTENT",
+                parameters={
+                    "application": "Visual Studio Code",
+                    "expected_file": abs_path,
+                    "expected_markers": spec.expected_markers,
+                },
+                depends_on=[open_vscode_id],
+            ))
+            curr_id += 1
+
+            steps.append(AgentStep(
+                step_id=curr_id,
+                description="Save file in VS Code editor",
+                action_type="SAVE_EDITOR",
+                parameters={"application": "Visual Studio Code"},
+                depends_on=[open_vscode_id],
+            ))
+            curr_id += 1
+
+            steps.append(AgentStep(
+                step_id=curr_id,
+                description=f"Verify {filename} saved on disk with {spec.expected_symbol}",
+                action_type="VERIFY_FILE_CONTENT",
+                parameters={"path": abs_path, "expected_keyword": spec.expected_symbol},
+                depends_on=[create_step_id],
+            ))
+            curr_id += 1
+
+            # Execution & verification steps
+            if spec.execution_requested or "run" in clean_lower or "test" in clean_lower:
+                toolchain_step_id = curr_id
+                steps.append(AgentStep(
+                    step_id=curr_id,
+                    description=f"Verify toolchain for {spec.language}",
+                    action_type="VERIFY_TOOLCHAIN",
+                    parameters={"language": spec.language},
+                    depends_on=[create_step_id],
+                ))
+                curr_id += 1
+
+                exec_step_id = curr_id
+                steps.append(AgentStep(
+                    step_id=curr_id,
+                    description=f"Compile and execute {filename}",
+                    action_type="COMPILE_AND_EXECUTE",
+                    parameters={"language": spec.language, "file": abs_path, "spec": spec},
+                    depends_on=[toolchain_step_id],
+                ))
+                curr_id += 1
+
+                steps.append(AgentStep(
+                    step_id=curr_id,
+                    description="Verify successful execution output",
+                    action_type="VERIFY_EXECUTION",
+                    parameters={"file": abs_path},
+                    depends_on=[exec_step_id],
+                ))
+                curr_id += 1
+
+            state.steps = steps
+            state.status = TaskStatus.PLAN_READY
             return state
 
         # 4. Multi-step: "Open Notepad and type <text>"
@@ -199,14 +249,15 @@ class AgentPlanner:
             text_to_type = m_notepad_type.group(1).strip()
             state.steps = [
                 AgentStep(step_id=1, description="Open Notepad", action_type="OPEN_APPLICATION", parameters={"target": "Notepad"}),
-                AgentStep(step_id=2, description=f"Type text '{text_to_type}'", action_type="TYPE_TEXT", parameters={"text": text_to_type}),
-                AgentStep(step_id=3, description="Verify Notepad active", action_type="VERIFY_WINDOW", parameters={"title": "Notepad"}),
+                AgentStep(step_id=2, description=f"Type text '{text_to_type}'", action_type="TYPE_TEXT", parameters={"text": text_to_type}, depends_on=[1]),
+                AgentStep(step_id=3, description="Verify Notepad active", action_type="VERIFY_WINDOW", parameters={"title": "Notepad"}, depends_on=[2]),
             ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
         # 5. Multi-step: "Create a folder called <name> on Desktop"
         m_desktop_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean) or \
-                           re.search(r"(?i)\bdesktop\s+(?:pe|par|me|mein)\s+(?:ek\s+)?([A-Za-z0-9_\-]+)\s+(?:naam\s+ka\s+)?folder\s+banao\b", clean)
+                            re.search(r"(?i)\bdesktop\s+(?:pe|par|me|mein)\s+(?:ek\s+)?([A-Za-z0-9_\-]+)\s+(?:naam\s+ka\s+)?folder\s+banao\b", clean)
         if m_desktop_folder:
             f_name = m_desktop_folder.group(1).strip()
             desktop_path = str((Path.home() / "Desktop" / f_name).resolve())
@@ -215,8 +266,9 @@ class AgentPlanner:
 
             state.steps = [
                 AgentStep(step_id=1, description=f"Create folder '{f_name}' on Desktop", action_type="CREATE_DIRECTORY", parameters={"path": desktop_path}),
-                AgentStep(step_id=2, description=f"Verify folder '{f_name}' created on Desktop", action_type="VERIFY_FILE", parameters={"path": desktop_path}),
+                AgentStep(step_id=2, description=f"Verify folder '{f_name}' created on Desktop", action_type="VERIFY_FILE", parameters={"path": desktop_path}, depends_on=[1]),
             ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
         # 6. Multi-step: "Open Chrome and search for <query>"
@@ -226,8 +278,9 @@ class AgentPlanner:
             query = m_search.group(1).strip()
             state.steps = [
                 AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
-                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}),
+                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}, depends_on=[1]),
             ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
         # 7. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
@@ -235,8 +288,9 @@ class AgentPlanner:
         if m_tests:
             state.steps = [
                 AgentStep(step_id=1, description="Execute tests via pytest", action_type="RUN_TERMINAL", parameters={"command": "python -m pytest tests/ -q", "timeout": 45}),
-                AgentStep(step_id=2, description="Analyze test outcome", action_type="ANALYZE_OUTPUT", parameters={}),
+                AgentStep(step_id=2, description="Analyze test outcome", action_type="ANALYZE_OUTPUT", parameters={}, depends_on=[1]),
             ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
         # 8. Multi-step: "Open the folder <name> and create <file>"
@@ -246,9 +300,10 @@ class AgentPlanner:
             file_name = m_folder_create_file.group(2).strip()
             state.steps = [
                 AgentStep(step_id=1, description=f"Open folder {folder_name}", action_type="OPEN_FOLDER", parameters={"target": folder_name}),
-                AgentStep(step_id=2, description=f"Create file {file_name} in folder {folder_name}", action_type="CREATE_FILE", parameters={"path": f"{folder_name}/{file_name}", "content": "Created by Chitti Agent"}),
-                AgentStep(step_id=3, description="Verify file created", action_type="VERIFY_FILE", parameters={"path": f"{folder_name}/{file_name}"}),
+                AgentStep(step_id=2, description=f"Create file {file_name} in folder {folder_name}", action_type="CREATE_FILE", parameters={"path": f"{folder_name}/{file_name}", "content": "Created by Chitti Agent"}, depends_on=[1]),
+                AgentStep(step_id=3, description="Verify file created", action_type="VERIFY_FILE", parameters={"path": f"{folder_name}/{file_name}"}, depends_on=[2]),
             ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
         # 9. Destructive Multi-step: "Delete <folder/file>"
@@ -258,15 +313,19 @@ class AgentPlanner:
             if target.lower() not in {"the", "this", "my"}:
                 state.steps = [
                     AgentStep(step_id=1, description=f"Delete folder '{target}'", action_type="DELETE_DIRECTORY", parameters={"path": target}, requires_confirmation=True),
-                    AgentStep(step_id=2, description=f"Verify folder '{target}' is deleted", action_type="VERIFY_DELETED", parameters={"path": target}),
+                    AgentStep(step_id=2, description=f"Verify folder '{target}' is deleted", action_type="VERIFY_DELETED", parameters={"path": target}, depends_on=[1]),
                 ]
+                state.status = TaskStatus.PLAN_READY
                 return state
 
         return None
 
 
 class ComputerAgentLoop:
-    """Executes multi-step plans through the SEE -> UNDERSTAND -> PLAN -> ACT -> OBSERVE -> VERIFY loop."""
+    """
+    Phase 6 Central Multi-Step Agent Execution Loop:
+    PLAN -> SELECT NEXT STEP -> SELECT TOOL -> EXECUTE -> OBSERVE -> VERIFY -> RECOVER / REPLAN
+    """
 
     def __init__(
         self,
@@ -290,8 +349,21 @@ class ComputerAgentLoop:
         self.projects = projects
         self.llm = llm
 
-    def execute_plan(self, state: TaskState, max_steps: int = 15) -> Tuple[bool, str]:
-        """Runs the agent execution loop over the plan steps."""
+        self.verifier = SubtaskVerifier(
+            tools=self.tools,
+            filesystem=self.fs,
+            screen_analyzer=self.screen_analyzer,
+            browser=self.browser,
+        )
+        self.recovery_mgr = FailureRecoveryManager(filesystem=self.fs, llm=self.llm)
+
+    def execute_plan(
+        self,
+        state: TaskState,
+        max_steps: int = 20,
+        progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    ) -> Tuple[bool, str]:
+        """Runs the agent execution loop over the plan steps with observation, verification, and recovery."""
         state.status = TaskStatus.EXECUTING
         log_info(f"[AGENT LOOP] Starting execution for task: '{state.task_description}' ({len(state.steps)} steps)")
 
@@ -299,19 +371,44 @@ class ComputerAgentLoop:
         last_search_results: List[str] = []
 
         while state.current_step_index < len(state.steps) and step_count < max_steps:
+            # Check for user cancellation
+            if state.is_cancelled:
+                state.status = TaskStatus.CANCELLED
+                log_warn("[AGENT LOOP] Task cancelled by user.")
+                return False, "Task execution was cancelled."
+
+            # Check for user pause
+            if state.is_paused:
+                state.status = TaskStatus.PAUSED
+                log_info("[AGENT LOOP] Task execution paused.")
+                return True, "Task execution is paused."
+
             step = state.current_step
             if not step:
                 break
 
             step_count += 1
+
+            # Dependency check
+            can_exec, dep_reason = state.can_execute_step(step)
+            if not can_exec:
+                step.mark_blocked(dep_reason or "Prerequisite failed.")
+                state.failed_steps.append(step)
+                log_warn(f"[AGENT LOOP] Step {step.step_id} blocked: {dep_reason}")
+                state.mark_failed(f"Step {step.step_id} blocked: {dep_reason}")
+                return False, f"Step '{step.description}' could not proceed: {dep_reason}"
+
             step.status = StepStatus.RUNNING
             log_info(f"[AGENT] [STEP {step.step_id}/{len(state.steps)}] {step.description}")
+            if progress_callback:
+                progress_callback(step.description, state.current_step_index + 1, len(state.steps))
 
-            # 1. Check for required confirmation
+            # 1. Risk Control / Confirmation Check
             if step.requires_confirmation:
-                state.status = TaskStatus.WAITING_CONFIRMATION
+                state.status = TaskStatus.WAITING_FOR_CONFIRMATION
                 state.pending_confirmation_step = step
-                msg = f"This action will modify or delete '{step.parameters.get('path', 'target')}'. Do you want me to continue?"
+                target_name = step.parameters.get("path") or step.parameters.get("target") or "specified files"
+                msg = f"This action will modify or delete '{target_name}'. Do you want me to continue?"
                 log_info(f"[AGENT] Action requires confirmation: {msg}")
                 return False, msg
 
@@ -322,15 +419,45 @@ class ComputerAgentLoop:
             if observation:
                 state.add_observation(observation)
 
-            if not success:
-                step.status = StepStatus.FAILED
-                step.error = message
-                state.mark_failed(f"Step {step.step_id} failed: {message}")
-                log_warn(f"[AGENT] Step {step.step_id} FAILED: {message}")
-                return False, f"I ran into an issue while performing the task: {message}"
-
             # 3. VERIFY
-            step.status = StepStatus.SUCCESS
+            act_res = ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=message)
+            v_outcome = self.verifier.verify_step(step, state, action_result=act_res)
+
+            if not success or not v_outcome.verified:
+                err_msg = v_outcome.evidence if not v_outcome.verified else message
+                step.mark_failed(err_msg)
+                state.add_error(f"Step {step.step_id} error: {err_msg}")
+                log_warn(f"[AGENT] Step {step.step_id} verification/execution failed: {err_msg}")
+
+                # 4. RECOVERY & REPLANNING
+                state.status = TaskStatus.RECOVERING
+                rec_plan = self.recovery_mgr.analyze_failure(step, err_msg, state)
+
+                if rec_plan.action == RecoveryAction.RETRY_STEP:
+                    log_info(f"[AGENT RECOVERY] Retrying step {step.step_id}: {rec_plan.reason}")
+                    continue  # Retry same step
+
+                elif rec_plan.action == RecoveryAction.REPAIR_CODE:
+                    log_info(f"[AGENT RECOVERY] Code repaired for step {step.step_id}. Retrying...")
+                    continue  # Retry step with repaired code
+
+                elif rec_plan.action == RecoveryAction.REPLAN_REMAINING and rec_plan.new_steps:
+                    state.status = TaskStatus.REPLANNING
+                    state.replan_count += 1
+                    log_info(f"[AGENT RECOVERY] Replanning remaining steps ({len(rec_plan.new_steps)} new steps)")
+                    # Replace current and upcoming steps with replanned sequence
+                    state.steps = state.steps[:state.current_step_index] + rec_plan.new_steps
+                    continue
+
+                else:
+                    # Abort honestly
+                    state.failed_steps.append(step)
+                    state.mark_failed(f"Step {step.step_id} failed: {err_msg}")
+                    return False, f"I ran into an issue while performing the task: {err_msg}"
+
+            # Step succeeded & verified
+            step.mark_success(message, observation)
+            state.completed_steps.append(step)
             log_info(f"[AGENT] Step {step.step_id} SUCCESS: {message}")
             state.current_step_index += 1
 
@@ -396,7 +523,6 @@ class ComputerAgentLoop:
                     state.set_flag(ExecutionFlag.TOOLCHAIN_VERIFIED, True)
                     return True, f"Toolchain for {lang} available ({bin_path})", f"Toolchain: {bin_path}"
                 else:
-                    # Honest report: toolchain not installed on this machine
                     state.set_flag(ExecutionFlag.TOOLCHAIN_VERIFIED, False)
                     log_warn(f"[TOOLCHAIN] Compiler/runtime for '{lang}' is not installed on this system.")
                     return True, f"Compiler/runtime for '{lang}' is not installed on this system. File created and saved, execution skipped.", "Toolchain unavailable"
@@ -406,13 +532,12 @@ class ComputerAgentLoop:
                 file_path = params["file"]
                 spec = params.get("spec")
 
-                # If toolchain is missing, skip execution step honestly
                 if not state.get_flag(ExecutionFlag.TOOLCHAIN_VERIFIED):
                     return True, f"Execution skipped because '{lang}' compiler/runtime is not installed.", "Skipped"
 
                 compile_cmd, run_cmd = ToolchainManager.build_execution_commands(lang, file_path)
 
-                # 1. Compilation step (if compiled language)
+                # Compilation step
                 if compile_cmd:
                     log_info(f"[COMPILER] Compiling {lang} source: {compile_cmd}")
                     comp_res = self.tools.execute_tool("execute_terminal_command", {"command": compile_cmd})
@@ -420,17 +545,16 @@ class ComputerAgentLoop:
                         err_out = comp_res.data.get("output", "Compilation error")
                         log_warn(f"[COMPILER] Build failed: {err_out}")
 
-                        # Automated debugging loop (up to 3 attempts)
+                        # Automated code repair
                         if spec and self.llm:
                             fixed_code = CodeGenerator.fix_code_after_error(spec, spec.files[0].content, err_out, self.llm)
                             self.fs.write_file(file_path, fixed_code)
-                            # Retry compilation
                             comp_res = self.tools.execute_tool("execute_terminal_command", {"command": compile_cmd})
 
                         if not comp_res.success or comp_res.data.get("exit_code", 0) != 0:
                             return False, f"Compilation failed: {comp_res.data.get('output')}", None
 
-                # 2. Execution step
+                # Execution step
                 log_info(f"[EXECUTE] Running binary/script: {run_cmd}")
                 run_res = self.tools.execute_tool("execute_terminal_command", {"command": run_cmd})
                 out = run_res.data.get("output", run_res.message)
@@ -481,6 +605,7 @@ class ComputerAgentLoop:
                 res = self.tools.execute_tool("create_file", {"path": path, "content": content})
                 if res.success:
                     state.set_flag(ExecutionFlag.FILE_CREATED, True)
+                    state.context.files_created.append(path)
                 return res.success, res.message, f"File created at {path}"
 
             elif act == "CREATE_DIRECTORY":
@@ -506,6 +631,7 @@ class ComputerAgentLoop:
                 res = self.tools.execute_tool("execute_terminal_command", {"command": cmd})
                 out = res.data.get("output", res.message)
                 state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
+                state.context.commands_executed.append(cmd)
                 if res.success and res.data.get("exit_code", 0) == 0:
                     state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
                 return res.success, out, f"Command exit code: {res.data.get('exit_code', 0)}"
@@ -513,6 +639,7 @@ class ComputerAgentLoop:
             elif act == "RESOLVE_PROJECT":
                 name = params["name"]
                 path = params.get("path") or self.projects.get_project_path(name)
+                state.context.active_project_path = path
                 return True, f"Resolved project {name} -> {path}", f"Path: {path}"
 
             elif act == "VERIFY_WINDOW":

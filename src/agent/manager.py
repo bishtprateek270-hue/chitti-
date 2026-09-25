@@ -1,7 +1,7 @@
 """
-Chitti Laptop Agent Manager Module.
-Coordinates command classification, multi-step planning, tool execution, safety validation,
-risk assessment, general-purpose coding agent, and confirmation handling for Windows laptop operations.
+Chitti Laptop Agent Manager Module (Phase 6).
+Coordinates multi-step agentic planning, dependency execution, failure recovery,
+risk assessment, cancellation handling, and short-term session context for laptop operations.
 """
 
 import re
@@ -23,7 +23,7 @@ from src.agent.executor import ActionExecutor
 from src.agent.parser import ActionParser
 from src.agent.planner import AgentPlanner, ComputerAgentLoop
 from src.agent.projects import ProjectRegistry
-from src.agent.task_state import ExecutionFlag, TaskState, TaskStatus
+from src.agent.task_state import ExecutionFlag, StepStatus, TaskContext, TaskState, TaskStatus
 from src.agent.tools import ToolEngine
 from src.agent.validator import ActionValidator
 from src.brain.llm import BaseLLM
@@ -32,7 +32,7 @@ from src.utils.logging import log_chitti, log_debug, log_error, log_info, log_wa
 
 
 class LaptopAgentManager:
-    """Coordinates safe laptop agent commands, computer control tools, and multi-step task execution."""
+    """Coordinates safe laptop agent commands, computer control tools, and multi-step agentic planning."""
 
     def __init__(
         self,
@@ -67,7 +67,7 @@ class LaptopAgentManager:
             projects=self.projects,
         )
 
-        # Single-step & Multi-step Planners
+        # Planners & Loop
         self.parser = ActionParser()
         self.validator = ActionValidator()
         self.executor = ActionExecutor()
@@ -84,9 +84,10 @@ class LaptopAgentManager:
             llm=self.llm,
         )
 
-        # State tracking
+        # State tracking & Short-term session context
         self.pending_destructive_action: Optional[StructuredAction] = None
         self.active_task_state: Optional[TaskState] = None
+        self.session_context: TaskContext = TaskContext(workspace=self.workspace_dir)
 
     def handle_command(self, user_text: str, lang: str = "en") -> Optional[Tuple[bool, str, Optional[ActionResult]]]:
         """
@@ -98,6 +99,19 @@ class LaptopAgentManager:
         """
         raw = user_text.strip()
         lower = raw.lower()
+
+        # 0. User Interruption / Cancellation
+        if re.search(r"^(?:stop|cancel|abort|pause|ruk\s*jao|chhod\s*do|band\s*karo|don'?t\s+do\s+that)$", lower):
+            if self.active_task_state and self.active_task_state.status in (TaskStatus.EXECUTING, TaskStatus.PLANNING, TaskStatus.WAITING_FOR_CONFIRMATION):
+                if "pause" in lower:
+                    self.active_task_state.pause()
+                    log_chitti("[AGENT] Task paused by user.")
+                    return True, "Task has been paused." if lang == "en" else "कार्य रोक दिया गया है।", None
+                else:
+                    self.active_task_state.cancel()
+                    self.pending_destructive_action = None
+                    log_chitti("[AGENT] Task cancelled by user.")
+                    return True, "Task cancelled." if lang == "en" else "कार्य रद्द कर दिया गया है।", None
 
         # 1. Handle Pending Confirmation State
         if self.pending_destructive_action is not None:
@@ -132,19 +146,20 @@ class LaptopAgentManager:
         # 2. Intent Classification Check
         class_res = TaskClassifier.classify(raw)
         if class_res.intent in (TaskIntent.GENERAL_KNOWLEDGE, TaskIntent.PERSONAL_QUERY):
-            # Pure knowledge or personal query - skip computer action
             return None
 
         # 3. Check for Multi-step Task Plan First
-        task_plan = self.planner.plan_task(raw)
+        task_plan = self.planner.plan_task(raw, context=self.session_context)
         if task_plan and task_plan.steps:
-            log_chitti(f"[AGENT] Task detected: COMPUTER_TASK ({len(task_plan.steps)} steps)")
+            log_chitti(f"[AGENT] Task detected: MULTI_STEP_PLAN ({len(task_plan.steps)} steps)")
             for s in task_plan.steps:
-                log_info(f"  - [{s.action_type}] {s.description}")
+                dep_info = f" (depends on: {s.depends_on})" if s.depends_on else ""
+                log_info(f"  - [Step {s.step_id}: {s.action_type}] {s.description}{dep_info}")
 
             self.active_task_state = task_plan
             success, msg = self.loop.execute_plan(task_plan)
-            if task_plan.status == TaskStatus.WAITING_CONFIRMATION:
+
+            if task_plan.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION):
                 self.pending_destructive_action = StructuredAction(
                     action=ActionType.DELETE_FOLDER if "DELETE_DIRECTORY" in (task_plan.current_step.action_type if task_plan.current_step else "") else ActionType.DELETE_FILE,
                     parameters=task_plan.current_step.parameters if task_plan.current_step else {},
@@ -158,12 +173,12 @@ class LaptopAgentManager:
             resp_formatted = self._format_multistep_response(raw, task_plan, success, msg, lang=lang)
             return success, resp_formatted, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=resp_formatted)
 
-        # 4. Check for Single-step Structured Action
+        # 4. Check for Single-step Structured Action (Fast Path)
         structured_action = self.parser.parse_command(raw)
         if not structured_action:
             return None
 
-        log_chitti(f"[AGENT] Intent detected: {structured_action.action.value}")
+        log_chitti(f"[AGENT] Single-step intent detected: {structured_action.action.value}")
         if structured_action.target:
             log_chitti(f"[AGENT] Target: {structured_action.target}")
         log_chitti(f"[AGENT] Risk: {structured_action.risk_level.value}")
@@ -216,7 +231,7 @@ class LaptopAgentManager:
                 return f"YouTube open karke {norm_artist} ka song select kar diya hai aur playback verify ho gaya hai."
             return f"Done. I opened YouTube, selected a {norm_artist} song, and verified playback started."
 
-        elif "vs code" in lower or "vscode" in lower or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho", "implement"]):
+        elif "vs code" in lower or "vscode" in lower or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho", "implement", "tracker", "scraper"]):
             spec = CodeGenerator.parse_programming_task(raw_input)
             topic_title = spec.problem_description.title()
             lang_name = spec.language.upper()
