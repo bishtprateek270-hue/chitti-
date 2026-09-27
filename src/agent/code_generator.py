@@ -543,21 +543,37 @@ class CodeGenerator:
     def _synthesize_web_app(
         cls, spec: ProgrammingTaskSpec
     ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
-        """Dynamically generates a modern, responsive, fully interactive Web Application for any requirement."""
-        title = spec.problem_description.strip().title() or "Modern Web Application"
+        """Dynamically generates an isolated, modern, responsive, fully interactive Web Application without cross-template contamination."""
         slug = cls._slugify_description(spec.problem_description)
-        entity_name = cls._to_pascal_case(slug).rstrip("s") or "Item"
+        req_text = " ".join(spec.requirements).lower()
 
+        # Route to domain-specific isolated dynamic synthesizer
+        if "calculator" in slug or "calc" in slug or "math" in slug or "arithmetic" in req_text:
+            return cls._synthesize_calculator_web_app(spec)
+        elif "quiz" in slug or "trivia" in slug or "question" in req_text:
+            return cls._synthesize_quiz_web_app(spec)
+        elif "weather" in slug or "forecast" in req_text or "temperature" in req_text:
+            return cls._synthesize_weather_web_app(spec)
+        elif "pomodoro" in slug or "timer" in slug or "stopwatch" in req_text or "countdown" in req_text:
+            return cls._synthesize_pomodoro_timer_web_app(spec)
+        elif "portfolio" in slug or "resume" in slug or "bio" in req_text:
+            return cls._synthesize_portfolio_web_app(spec)
+        elif "expense" in slug or "budget" in slug or "spending" in req_text or "finance" in slug:
+            return cls._synthesize_expense_tracker_web_app(spec)
+        elif "todo" in slug or "task" in slug:
+            return cls._synthesize_todo_web_app(spec)
+        else:
+            return cls._synthesize_custom_interactive_web_app(spec)
+
+    @classmethod
+    def _synthesize_calculator_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates an isolated, production-grade Interactive Calculator Web Application."""
+        title = spec.problem_description.strip().title() or "Interactive Calculator"
         symbol = "DOCTYPE"
-        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>"]
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "calculateResult", "appendNum", "calc-display"]
 
-        # Dynamic requirements-driven UI components
-        has_calc = any("calc" in r.lower() or "math" in r.lower() or "eval" in r.lower() for r in spec.requirements) or "calc" in slug
-        has_expense = "expense" in slug or "budget" in slug or "tracker" in slug or any("expense" in r.lower() or "amount" in r.lower() for r in spec.requirements)
-        has_quiz = "quiz" in slug or "trivia" in slug or any("question" in r.lower() for r in spec.requirements)
-        has_weather = "weather" in slug or any("weather" in r.lower() or "forecast" in r.lower() for r in spec.requirements)
-
-        # HTML code generation
         html_code = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -567,21 +583,19 @@ class CodeGenerator:
     <style>
         :root {{
             --bg-primary: #0f172a;
-            --bg-card: rgba(30, 41, 59, 0.85);
+            --bg-card: rgba(30, 41, 59, 0.9);
             --accent: #38bdf8;
             --accent-hover: #0ea5e9;
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --border: rgba(148, 163, 184, 0.2);
-            --danger: #ef4444;
-            --success: #22c55e;
-            --radius: 12px;
+            --radius: 16px;
         }}
         * {{
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }}
         body {{
             background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%);
@@ -590,417 +604,1048 @@ class CodeGenerator:
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 2.5rem 1rem;
+            justify-content: center;
+            padding: 1.5rem;
         }}
-        .container {{
+        .calculator {{
             width: 100%;
-            max-width: 680px;
+            max-width: 360px;
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.75rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }}
+        .header {{
+            text-align: center;
+            margin-bottom: 1.25rem;
+        }}
+        .header h1 {{
+            font-size: 1.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+        .display-panel {{
+            background: #090d16;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.25rem;
+            text-align: right;
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.25rem;
+            min-height: 70px;
+            overflow-x: auto;
+            word-break: break-all;
+        }}
+        .history {{
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            min-height: 1.2rem;
+            margin-bottom: 0.25rem;
+        }}
+        .grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.6rem;
+        }}
+        button {{
+            padding: 1rem 0;
+            font-size: 1.2rem;
+            font-weight: 600;
+            background: rgba(51, 65, 85, 0.7);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }}
+        button:hover {{
+            background: rgba(71, 85, 105, 0.9);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }}
+        button.op {{
+            background: rgba(56, 189, 248, 0.18);
+            color: var(--accent);
+        }}
+        button.equals {{
+            background: var(--accent);
+            color: #0f172a;
+            font-weight: 700;
+            grid-column: span 2;
+        }}
+        button.equals:hover {{
+            background: var(--accent-hover);
+        }}
+    </style>
+</head>
+<body>
+    <div class="calculator">
+        <div class="header">
+            <h1>{title}</h1>
+        </div>
+        <div class="display-panel">
+            <div id="calc-history" class="history"></div>
+            <div id="calc-display">0</div>
+        </div>
+        <div class="grid">
+            <button onclick="clearCalc()" class="op">C</button>
+            <button onclick="deleteDigit()" class="op">⌫</button>
+            <button onclick="appendOp('%')" class="op">%</button>
+            <button onclick="appendOp('/')" class="op">÷</button>
+
+            <button onclick="appendNum('7')">7</button>
+            <button onclick="appendNum('8')">8</button>
+            <button onclick="appendNum('9')">9</button>
+            <button onclick="appendOp('*')" class="op">×</button>
+
+            <button onclick="appendNum('4')">4</button>
+            <button onclick="appendNum('5')">5</button>
+            <button onclick="appendNum('6')">6</button>
+            <button onclick="appendOp('-')" class="op">−</button>
+
+            <button onclick="appendNum('1')">1</button>
+            <button onclick="appendNum('2')">2</button>
+            <button onclick="appendNum('3')">3</button>
+            <button onclick="appendOp('+')" class="op">+</button>
+
+            <button onclick="appendNum('0')">0</button>
+            <button onclick="appendNum('.')">.</button>
+            <button onclick="calculateResult()" class="equals">=</button>
+        </div>
+    </div>
+
+    <script>
+        let currentInput = "0";
+        let previousInput = "";
+        let currentOp = null;
+        let shouldResetDisplay = false;
+
+        function updateDisplay() {{
+            const displayEl = document.getElementById("calc-display");
+            const historyEl = document.getElementById("calc-history");
+            if (displayEl) displayEl.innerText = currentInput;
+            if (historyEl) {{
+                historyEl.innerText = currentOp ? `${{previousInput}} ${{currentOp}}` : "";
+            }}
+        }}
+
+        function appendNum(num) {{
+            if (currentInput === "0" || shouldResetDisplay) {{
+                currentInput = num === "." ? "0." : num;
+                shouldResetDisplay = false;
+            }} else {{
+                if (num === "." && currentInput.includes(".")) return;
+                currentInput += num;
+            }}
+            updateDisplay();
+        }}
+
+        function appendOp(op) {{
+            if (currentOp !== null && !shouldResetDisplay) {{
+                calculateResult();
+            }}
+            previousInput = currentInput;
+            currentOp = op;
+            shouldResetDisplay = true;
+            updateDisplay();
+        }}
+
+        function clearCalc() {{
+            currentInput = "0";
+            previousInput = "";
+            currentOp = null;
+            shouldResetDisplay = false;
+            updateDisplay();
+        }}
+
+        function deleteDigit() {{
+            if (currentInput.length === 1 || shouldResetDisplay) {{
+                currentInput = "0";
+            }} else {{
+                currentInput = currentInput.slice(0, -1);
+            }}
+            updateDisplay();
+        }}
+
+        function calculateResult() {{
+            if (!currentOp || shouldResetDisplay) return;
+            const prev = parseFloat(previousInput);
+            const curr = parseFloat(currentInput);
+            let result = 0;
+
+            switch (currentOp) {{
+                case "+": result = prev + curr; break;
+                case "-": result = prev - curr; break;
+                case "*": result = prev * curr; break;
+                case "/": result = curr === 0 ? "Error" : prev / curr; break;
+                case "%": result = prev % curr; break;
+                default: return;
+            }}
+
+            currentInput = String(result);
+            previousInput = "";
+            currentOp = null;
+            shouldResetDisplay = true;
+            updateDisplay();
+        }}
+
+        window.addEventListener("keydown", (e) => {{
+            if (e.key >= "0" && e.key <= "9") appendNum(e.key);
+            else if (e.key === ".") appendNum(".");
+            else if (["+", "-", "*", "/"].includes(e.key)) appendOp(e.key);
+            else if (e.key === "Enter" || e.key === "=") {{ e.preventDefault(); calculateResult(); }}
+            else if (e.key === "Backspace") deleteDigit();
+            else if (e.key === "Escape") clearCalc();
+        }});
+    </script>
+</body>
+</html>"""
+
+        files = [
+            CodeFileSpec(path=spec.filename, content=html_code, description=f"{title} Single Page Application", expected_markers=markers)
+        ]
+        return html_code, markers, symbol, files
+
+    @classmethod
+    def _synthesize_quiz_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates an isolated Interactive Quiz Web Application."""
+        title = spec.problem_description.strip().title() or "Interactive Quiz App"
+        symbol = "DOCTYPE"
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "selectOption", "nextQuestion"]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Chitti Web Studio</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.9);
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(148, 163, 184, 0.2);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --radius: 16px;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        body {{
+            background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }}
+        .quiz-container {{
+            width: 100%;
+            max-width: 580px;
             background: var(--bg-card);
             backdrop-filter: blur(16px);
             border: 1px solid var(--border);
             border-radius: var(--radius);
             padding: 2rem;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-            animation: fadeIn 0.4s ease-out;
         }}
-        @keyframes fadeIn {{
-            from {{ opacity: 0; transform: translateY(10px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
-        header {{
-            text-align: center;
-            margin-bottom: 1.8rem;
-        }}
-        header h1 {{
-            font-size: 1.85rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #38bdf8, #818cf8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.4rem;
-        }}
-        header p {{
-            color: var(--text-secondary);
-            font-size: 0.95rem;
-        }}
-        .stats-bar {{
-            display: flex;
-            justify-content: space-between;
+        .header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }}
+        .header h1 {{ font-size: 1.4rem; color: var(--accent); }}
+        .score-badge {{ background: rgba(56, 189, 248, 0.2); color: var(--accent); padding: 0.35rem 0.8rem; border-radius: 8px; font-weight: 600; font-size: 0.9rem; }}
+        .question-box {{ font-size: 1.15rem; font-weight: 600; margin-bottom: 1.5rem; min-height: 50px; }}
+        .options-list {{ display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }}
+        .option-btn {{
             background: rgba(15, 23, 42, 0.6);
-            padding: 0.75rem 1.25rem;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            font-size: 0.9rem;
             border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 0.9rem 1.25rem;
+            border-radius: 10px;
+            text-align: left;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s;
         }}
-        .stats-bar span strong {{
-            color: var(--accent);
+        .option-btn:hover:not([disabled]) {{ border-color: var(--accent); transform: translateX(4px); }}
+        .option-btn.correct {{ background: rgba(34, 197, 94, 0.25); border-color: var(--success); color: var(--success); }}
+        .option-btn.wrong {{ background: rgba(239, 68, 68, 0.25); border-color: var(--danger); color: var(--danger); }}
+        .controls {{ display: flex; justify-content: space-between; align-items: center; }}
+        .btn {{ background: var(--accent); color: #0f172a; font-weight: 700; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; transition: 0.2s; }}
+        .btn:hover {{ background: var(--accent-hover); }}
+    </style>
+</head>
+<body>
+    <div class="quiz-container">
+        <div class="header">
+            <h1>{title}</h1>
+            <div id="score-badge" class="score-badge">Score: 0</div>
+        </div>
+        <div id="quiz-content">
+            <div id="question-text" class="question-box">Loading question...</div>
+            <div id="options-container" class="options-list"></div>
+            <div class="controls">
+                <span id="progress-text" style="color: var(--text-secondary); font-size: 0.9rem;">Question 1/5</span>
+                <button id="next-btn" class="btn" onclick="nextQuestion()" style="display: none;">Next Question</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const questions = [
+            {{ q: "Which programming language was created by Guido van Rossum?", options: ["Python", "Java", "C++", "Rust"], answer: 0 }},
+            {{ q: "What is the primary purpose of an API?", options: ["Database storage", "Application communication", "Hardware cooling", "Screen rendering"], answer: 1 }},
+            {{ q: "What does HTML stand for?", options: ["Hyper Tool Multi Language", "Hypertext Markup Language", "Heavy Tech Machine Logic", "High Text Media Layer"], answer: 1 }},
+            {{ q: "Which data structure operates on LIFO (Last In First Out)?", options: ["Queue", "Stack", "Array", "Binary Tree"], answer: 1 }},
+            {{ q: "What is the time complexity of binary search on sorted array?", options: ["O(n)", "O(1)", "O(log n)", "O(n^2)"], answer: 2 }}
+        ];
+
+        let currentIndex = 0;
+        let score = 0;
+
+        function loadQuestion() {{
+            const q = questions[currentIndex];
+            document.getElementById("question-text").innerText = `${{currentIndex + 1}}. ${{q.q}}`;
+            document.getElementById("progress-text").innerText = `Question ${{currentIndex + 1}} of ${{questions.length}}`;
+            document.getElementById("next-btn").style.display = "none";
+
+            const container = document.getElementById("options-container");
+            container.innerHTML = "";
+
+            q.options.forEach((opt, idx) => {{
+                const btn = document.createElement("button");
+                btn.className = "option-btn";
+                btn.innerText = opt;
+                btn.onclick = () => selectOption(idx, btn);
+                container.appendChild(btn);
+            }});
         }}
-        .input-group {{
+
+        function selectOption(idx, btn) {{
+            const q = questions[currentIndex];
+            const allBtns = document.querySelectorAll(".option-btn");
+            allBtns.forEach(b => b.disabled = true);
+
+            if (idx === q.answer) {{
+                btn.classList.add("correct");
+                score += 10;
+                document.getElementById("score-badge").innerText = `Score: ${{score}}`;
+            }} else {{
+                btn.classList.add("wrong");
+                allBtns[q.answer].classList.add("correct");
+            }}
+
+            document.getElementById("next-btn").style.display = "block";
+        }}
+
+        function nextQuestion() {{
+            currentIndex++;
+            if (currentIndex < questions.length) {{
+                loadQuestion();
+            }} else {{
+                document.getElementById("quiz-content").innerHTML = `
+                    <div style="text-align: center; padding: 2rem 0;">
+                        <h2 style="font-size: 1.8rem; color: var(--accent); margin-bottom: 0.75rem;">Quiz Completed!</h2>
+                        <p style="font-size: 1.2rem; margin-bottom: 1.5rem;">Your final score is: <strong>${{score}} / ${{questions.length * 10}}</strong></p>
+                        <button class="btn" onclick="location.reload()">Restart Quiz</button>
+                    </div>
+                `;
+            }}
+        }}
+
+        document.addEventListener("DOMContentLoaded", loadQuestion);
+    </script>
+</body>
+</html>"""
+
+        files = [
+            CodeFileSpec(path=spec.filename, content=html_code, description=f"{title} Single Page Application", expected_markers=markers)
+        ]
+        return html_code, markers, symbol, files
+
+    @classmethod
+    def _synthesize_weather_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates an isolated Interactive Weather Dashboard Web Application."""
+        title = spec.problem_description.strip().title() or "Weather Dashboard"
+        symbol = "DOCTYPE"
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "searchCity", "weather-card"]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Chitti Web Studio</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.9);
+            --accent: #38bdf8;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(148, 163, 184, 0.2);
+            --radius: 16px;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        body {{
+            background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%);
+            color: var(--text-primary);
+            min-height: 100vh;
             display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
         }}
-        input[type="text"], input[type="number"], select {{
+        .dashboard {{
+            width: 100%;
+            max-width: 620px;
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 2rem;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+        }}
+        .search-bar {{ display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }}
+        input {{
             flex: 1;
-            padding: 0.75rem 1rem;
+            padding: 0.8rem 1rem;
             border-radius: 8px;
             border: 1px solid var(--border);
             background: rgba(15, 23, 42, 0.7);
             color: var(--text-primary);
-            font-size: 0.95rem;
+            font-size: 1rem;
             outline: none;
-            transition: border-color 0.2s;
         }}
-        input:focus, select:focus {{
-            border-color: var(--accent);
-        }}
-        button.btn {{
-            background: var(--accent);
-            color: #0f172a;
-            font-weight: 600;
-            padding: 0.75rem 1.25rem;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }}
-        button.btn:hover {{
-            background: var(--accent-hover);
-            transform: translateY(-1px);
-        }}
-        .grid-controls {{
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 0.5rem;
+        .btn {{ background: var(--accent); color: #0f172a; font-weight: 700; border: none; padding: 0.8rem 1.25rem; border-radius: 8px; cursor: pointer; }}
+        .weather-card {{
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
             margin-bottom: 1.5rem;
         }}
-        .grid-controls button {{
-            padding: 1rem;
-            font-size: 1.15rem;
-            font-weight: 600;
-            background: rgba(51, 65, 85, 0.7);
+        .city-name {{ font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; }}
+        .temp {{ font-size: 3rem; font-weight: 800; color: var(--accent); margin: 0.5rem 0; }}
+        .condition {{ color: var(--text-secondary); font-size: 1.1rem; }}
+        .metrics-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; text-align: center; }}
+        .metric-box {{ background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border); padding: 0.8rem; border-radius: 8px; }}
+        .metric-box span {{ display: block; font-size: 0.8rem; color: var(--text-secondary); }}
+        .metric-box strong {{ font-size: 1.1rem; color: var(--text-primary); }}
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="search-bar">
+            <input type="text" id="city-input" placeholder="Enter city name (e.g. London, Tokyo, New York, Delhi)..." onkeydown="if(event.key==='Enter') searchCity()" />
+            <button class="btn" onclick="searchCity()">Search</button>
+        </div>
+        <div class="weather-card">
+            <div id="city-name" class="city-name">Delhi, India</div>
+            <div id="condition" class="condition">Sunny & Clear</div>
+            <div id="temp" class="temp">28°C</div>
+            <div class="metrics-grid">
+                <div class="metric-box"><span>Humidity</span><strong id="humidity">45%</strong></div>
+                <div class="metric-box"><span>Wind Speed</span><strong id="wind">12 km/h</strong></div>
+                <div class="metric-box"><span>Pressure</span><strong id="pressure">1013 hPa</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const weatherDatabase = {{
+            "delhi": {{ name: "Delhi, India", temp: "28°C", cond: "Sunny & Clear", hum: "45%", wind: "12 km/h", pres: "1013 hPa" }},
+            "london": {{ name: "London, UK", temp: "16°C", cond: "Light Rain & Overcast", hum: "78%", wind: "18 km/h", pres: "1008 hPa" }},
+            "tokyo": {{ name: "Tokyo, Japan", temp: "21°C", cond: "Partly Cloudy", hum: "60%", wind: "10 km/h", pres: "1016 hPa" }},
+            "new york": {{ name: "New York, USA", temp: "19°C", cond: "Clear Sky", hum: "52%", wind: "15 km/h", pres: "1015 hPa" }}
+        }};
+
+        function searchCity() {{
+            const input = document.getElementById("city-input");
+            const q = (input ? input.value : "").toLowerCase().trim();
+            if (!q) return;
+
+            const data = weatherDatabase[q] || {{
+                name: q.charAt(0).toUpperCase() + q.slice(1),
+                temp: `${{Math.floor(Math.random() * 15) + 15}}°C`,
+                cond: "Mild Breeze & Clear",
+                hum: `${{Math.floor(Math.random() * 40) + 40}}%`,
+                wind: `${{Math.floor(Math.random() * 15) + 5}} km/h`,
+                pres: "1012 hPa"
+            }};
+
+            document.getElementById("city-name").innerText = data.name;
+            document.getElementById("temp").innerText = data.temp;
+            document.getElementById("condition").innerText = data.cond;
+            document.getElementById("humidity").innerText = data.hum;
+            document.getElementById("wind").innerText = data.wind;
+            document.getElementById("pressure").innerText = data.pres;
+        }}
+    </script>
+</body>
+</html>"""
+
+        files = [
+            CodeFileSpec(path=spec.filename, content=html_code, description=f"{title} Single Page Application", expected_markers=markers)
+        ]
+        return html_code, markers, symbol, files
+
+    @classmethod
+    def _synthesize_pomodoro_timer_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates an isolated Pomodoro Timer Web Application."""
+        title = spec.problem_description.strip().title() or "Pomodoro Timer"
+        symbol = "DOCTYPE"
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "toggleTimer", "timer-display"]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Chitti Web Studio</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.9);
+            --accent: #38bdf8;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(148, 163, 184, 0.2);
+            --radius: 16px;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        body {{
+            background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%);
             color: var(--text-primary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.15s;
-        }}
-        .grid-controls button:hover {{
-            background: rgba(71, 85, 105, 0.9);
-            border-color: var(--accent);
-        }}
-        .grid-controls button.op {{
-            background: rgba(56, 189, 248, 0.2);
-            color: var(--accent);
-        }}
-        .item-list {{
-            list-style: none;
-            display: flex;
-            flex-direction: column;
-            gap: 0.6rem;
-            max-height: 320px;
-            overflow-y: auto;
-        }}
-        .item-row {{
+            min-height: 100vh;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            padding: 0.8rem 1rem;
-            background: rgba(15, 23, 42, 0.5);
+            justify-content: center;
+            padding: 1.5rem;
+        }}
+        .timer-card {{
+            width: 100%;
+            max-width: 440px;
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
             border: 1px solid var(--border);
-            border-radius: 8px;
-            transition: transform 0.15s;
-        }}
-        .item-row:hover {{
-            transform: translateX(4px);
-            border-color: var(--accent);
-        }}
-        .item-row.completed span.text {{
-            text-decoration: line-through;
-            color: var(--text-secondary);
-        }}
-        .btn-del {{
-            background: transparent;
-            color: var(--danger);
-            border: none;
-            cursor: pointer;
-            font-size: 1.1rem;
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-        }}
-        .btn-del:hover {{
-            background: rgba(239, 68, 68, 0.15);
-        }}
-        .display-panel {{
-            background: #090d16;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 1.25rem;
-            text-align: right;
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--accent);
-            margin-bottom: 1rem;
-            letter-spacing: 1px;
-            min-height: 60px;
-            overflow-x: auto;
-        }}
-        footer {{
-            margin-top: 1.5rem;
+            border-radius: var(--radius);
+            padding: 2.5rem;
             text-align: center;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
         }}
+        .modes {{ display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 2rem; }}
+        .mode-btn {{
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }}
+        .mode-btn.active {{ background: var(--accent); color: #0f172a; border-color: var(--accent); }}
+        .timer-display {{ font-size: 4.5rem; font-weight: 800; color: var(--accent); margin-bottom: 2rem; font-variant-numeric: tabular-nums; }}
+        .controls {{ display: flex; justify-content: center; gap: 1rem; }}
+        .btn {{ background: var(--accent); color: #0f172a; font-weight: 700; border: none; padding: 0.8rem 1.8rem; border-radius: 8px; font-size: 1.1rem; cursor: pointer; }}
+        .btn-reset {{ background: rgba(51, 65, 85, 0.7); color: var(--text-primary); }}
+    </style>
+</head>
+<body>
+    <div class="timer-card">
+        <h1 style="font-size: 1.4rem; margin-bottom: 1.5rem;">{title}</h1>
+        <div class="modes">
+            <button class="mode-btn active" onclick="setMode(25, this)">Pomodoro</button>
+            <button class="mode-btn" onclick="setMode(5, this)">Short Break</button>
+            <button class="mode-btn" onclick="setMode(15, this)">Long Break</button>
+        </div>
+        <div id="timer-display" class="timer-display">25:00</div>
+        <div class="controls">
+            <button id="toggle-btn" class="btn" onclick="toggleTimer()">Start</button>
+            <button class="btn btn-reset" onclick="resetTimer()">Reset</button>
+        </div>
+    </div>
+
+    <script>
+        let duration = 25 * 60;
+        let timeLeft = duration;
+        let timerId = null;
+
+        function updateDisplay() {{
+            const mins = Math.floor(timeLeft / 60);
+            const secs = timeLeft % 60;
+            document.getElementById("timer-display").innerText = `${{String(mins).padStart(2, '0')}}:${{String(secs).padStart(2, '0')}}`;
+        }}
+
+        function setMode(mins, btn) {{
+            clearInterval(timerId);
+            timerId = null;
+            document.getElementById("toggle-btn").innerText = "Start";
+            document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            duration = mins * 60;
+            timeLeft = duration;
+            updateDisplay();
+        }}
+
+        function toggleTimer() {{
+            if (timerId) {{
+                clearInterval(timerId);
+                timerId = null;
+                document.getElementById("toggle-btn").innerText = "Start";
+            }} else {{
+                timerId = setInterval(() => {{
+                    if (timeLeft > 0) {{
+                        timeLeft--;
+                        updateDisplay();
+                    }} else {{
+                        clearInterval(timerId);
+                        timerId = null;
+                        document.getElementById("toggle-btn").innerText = "Start";
+                        alert("Timer finished!");
+                    }}
+                }}, 1000);
+                document.getElementById("toggle-btn").innerText = "Pause";
+            }}
+        }}
+
+        function resetTimer() {{
+            clearInterval(timerId);
+            timerId = null;
+            timeLeft = duration;
+            document.getElementById("toggle-btn").innerText = "Start";
+            updateDisplay();
+        }}
+    </script>
+</body>
+</html>"""
+
+        files = [
+            CodeFileSpec(path=spec.filename, content=html_code, description=f"{title} Single Page Application", expected_markers=markers)
+        ]
+        return html_code, markers, symbol, files
+
+    @classmethod
+    def _synthesize_portfolio_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates an isolated Portfolio Website."""
+        title = spec.problem_description.strip().title() or "Developer Portfolio"
+        symbol = "DOCTYPE"
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "portfolio-hero", "projects-grid"]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Chitti Web Studio</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.9);
+            --accent: #38bdf8;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(148, 163, 184, 0.2);
+            --radius: 12px;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        body {{ background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%); color: var(--text-primary); line-height: 1.6; padding: 2rem 1rem; }}
+        .container {{ max-width: 800px; margin: 0 auto; }}
+        .hero {{ text-align: center; padding: 3rem 1rem; margin-bottom: 2rem; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); }}
+        .hero h1 {{ font-size: 2.2rem; color: var(--accent); margin-bottom: 0.5rem; }}
+        .hero p {{ color: var(--text-secondary); font-size: 1.1rem; }}
+        .section-title {{ font-size: 1.4rem; margin: 2rem 0 1rem; border-bottom: 2px solid var(--accent); display: inline-block; padding-bottom: 0.25rem; }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }}
+        .card {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; transition: transform 0.2s; }}
+        .card:hover {{ transform: translateY(-4px); border-color: var(--accent); }}
+        .card h3 {{ color: var(--accent); margin-bottom: 0.4rem; }}
+        .skills-list {{ display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }}
+        .skill-tag {{ background: rgba(56, 189, 248, 0.15); color: var(--accent); padding: 0.3rem 0.8rem; border-radius: 6px; font-size: 0.85rem; }}
     </style>
 </head>
 <body>
     <div class="container">
-        <header>
+        <div class="hero">
             <h1>{title}</h1>
-            <p>{spec.requirements[0] if spec.requirements else "Created dynamically by Chitti Universal Agent"}</p>
-        </header>
+            <p>Software Engineer & Full Stack AI Developer</p>
+            <div class="skills-list" style="justify-content: center;">
+                <span class="skill-tag">Python</span>
+                <span class="skill-tag">JavaScript / React</span>
+                <span class="skill-tag">FastAPI</span>
+                <span class="skill-tag">C++</span>
+                <span class="skill-tag">Machine Learning</span>
+            </div>
+        </div>
 
-        <div class="stats-bar">
-            <span>Status: <strong>Active</strong></span>
-            <span id="stat-count">Items: <strong>0</strong></span>
-            <span id="stat-aux">Updated: <strong>Just now</strong></span>
+        <h2 class="section-title">Featured Projects</h2>
+        <div class="grid">
+            <div class="card">
+                <h3>Chitti AI Desktop Companion</h3>
+                <p>Personal multimodal robot assistant with voice, vision, memory, and autonomous project building.</p>
+            </div>
+            <div class="card">
+                <h3>Autonomous Code Agent</h3>
+                <p>Multi-step plan-build-verify software synthesis engine across arbitrary languages.</p>
+            </div>
+            <div class="card">
+                <h3>Vision Perception Engine</h3>
+                <p>Real-time face recognition and object detection streaming pipeline.</p>
+            </div>
         </div>
-"""
+    </div>
+</body>
+</html>"""
 
-        if has_calc:
-            html_code += """        <div id="calc-display" class="display-panel">0</div>
-        <div class="grid-controls">
-            <button onclick="clearCalc()" class="op">C</button>
-            <button onclick="appendOp('/')" class="op">÷</button>
-            <button onclick="appendOp('*')" class="op">×</button>
-            <button onclick="deleteDigit()" class="op">⌫</button>
-            <button onclick="appendNum('7')">7</button>
-            <button onclick="appendNum('8')">8</button>
-            <button onclick="appendNum('9')">9</button>
-            <button onclick="appendOp('-')" class="op">−</button>
-            <button onclick="appendNum('4')">4</button>
-            <button onclick="appendNum('5')">5</button>
-            <button onclick="appendNum('6')">6</button>
-            <button onclick="appendOp('+')" class="op">+</button>
-            <button onclick="appendNum('1')">1</button>
-            <button onclick="appendNum('2')">2</button>
-            <button onclick="appendNum('3')">3</button>
-            <button onclick="calculateResult()" class="op" style="grid-row: span 2; background: var(--accent); color: #0f172a; font-weight: 700;">=</button>
-            <button onclick="appendNum('0')" style="grid-column: span 2;">0</button>
-            <button onclick="appendNum('.')">.</button>
+        files = [
+            CodeFileSpec(path=spec.filename, content=html_code, description=f"{title} Single Page Application", expected_markers=markers)
+        ]
+        return html_code, markers, symbol, files
+
+    @classmethod
+    def _synthesize_expense_tracker_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates an isolated Expense Tracker Web Application."""
+        title = spec.problem_description.strip().title() or "Expense Tracker"
+        symbol = "DOCTYPE"
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "addExpense", "deleteExpense", "total-spent"]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Chitti Web Studio</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.9);
+            --accent: #38bdf8;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(148, 163, 184, 0.2);
+            --danger: #ef4444;
+            --radius: 12px;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        body {{ background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%); color: var(--text-primary); min-height: 100vh; display: flex; justify-content: center; padding: 2rem 1rem; }}
+        .container {{ width: 100%; max-width: 640px; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); padding: 2rem; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }}
+        .header {{ text-align: center; margin-bottom: 1.5rem; }}
+        .header h1 {{ font-size: 1.6rem; color: var(--accent); }}
+        .summary-card {{ background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); padding: 1.25rem; border-radius: 10px; text-align: center; margin-bottom: 1.5rem; }}
+        .summary-card h2 {{ font-size: 2.2rem; color: var(--accent); margin-top: 0.25rem; }}
+        .form-row {{ display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }}
+        input, select {{ padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: rgba(15, 23, 42, 0.7); color: var(--text-primary); outline: none; }}
+        .btn {{ background: var(--accent); color: #0f172a; font-weight: 700; border: none; padding: 0.75rem 1.25rem; border-radius: 8px; cursor: pointer; }}
+        .expense-list {{ list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }}
+        .expense-item {{ display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); padding: 0.8rem 1rem; border-radius: 8px; }}
+        .btn-del {{ background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{title}</h1>
         </div>
-"""
-        if has_calc:
-            html_code += """        <div id="calc-display" class="display-panel">0</div>
-        <div class="grid-controls">
-            <button onclick="clearCalc()" class="op">C</button>
-            <button onclick="appendOp('/')" class="op">÷</button>
-            <button onclick="appendOp('*')" class="op">×</button>
-            <button onclick="deleteDigit()" class="op">⌫</button>
-            <button onclick="appendNum('7')">7</button>
-            <button onclick="appendNum('8')">8</button>
-            <button onclick="appendNum('9')">9</button>
-            <button onclick="appendOp('-')" class="op">−</button>
-            <button onclick="appendNum('4')">4</button>
-            <button onclick="appendNum('5')">5</button>
-            <button onclick="appendNum('6')">6</button>
-            <button onclick="appendOp('+')" class="op">+</button>
-            <button onclick="appendNum('1')">1</button>
-            <button onclick="appendNum('2')">2</button>
-            <button onclick="appendNum('3')">3</button>
-            <button onclick="calculateResult()" class="op" style="grid-row: span 2; background: var(--accent); color: #0f172a; font-weight: 700;">=</button>
-            <button onclick="appendNum('0')" style="grid-column: span 2;">0</button>
-            <button onclick="appendNum('.')">.</button>
+        <div class="summary-card">
+            <span style="color: var(--text-secondary);">Total Spending</span>
+            <h2 id="total-spent">$0.00</h2>
         </div>
-"""
-        else:
-            html_code += f"""        <div class="input-group" style="margin-bottom: 0.75rem;">
-            <input type="text" id="search-input" placeholder="🔍 Search {entity_name.lower()} entries or categories..." oninput="filterItems(this.value)" />
-        </div>
-        <div class="input-group">
-            <input type="text" id="item-title" placeholder="{title} entry (e.g. description, name, title)..." onkeydown="if(event.key==='Enter') addItem()" />
-            <input type="number" id="item-amount" placeholder="Value / Amount" style="max-width: 140px;" />
-            <select id="item-cat" style="max-width: 150px;">
-                <option value="General">General</option>
-                <option value="Work">Work</option>
-                <option value="Personal">Personal</option>
-                <option value="Finance">Finance</option>
-                <option value="Health">Health</option>
+        <div class="form-row">
+            <input type="text" id="exp-desc" placeholder="Expense description..." style="flex: 2;" onkeydown="if(event.key==='Enter') addExpense()" />
+            <input type="number" id="exp-amount" placeholder="Amount" style="flex: 1;" />
+            <select id="exp-cat">
+                <option value="Food">Food</option>
+                <option value="Transport">Transport</option>
+                <option value="Bills">Bills</option>
+                <option value="Shopping">Shopping</option>
             </select>
-            <button class="btn" id="btn-add" onclick="addItem()">Add {entity_name}</button>
+            <button class="btn" onclick="addExpense()">Add</button>
         </div>
-        <ul class="item-list" id="items-container"></ul>
-"""
+        <ul id="expense-list" class="expense-list"></ul>
+    </div>
 
-        html_code += f"""        <footer>
-            <span>Powered by Chitti Phase 6 General-Purpose Architecture</span>
-        </footer>
+    <script>
+        let expenses = JSON.parse(localStorage.getItem("chitti_expenses_data") || "[]");
+
+        function saveAndRender() {{
+            localStorage.setItem("chitti_expenses_data", JSON.stringify(expenses));
+            const list = document.getElementById("expense-list");
+            list.innerHTML = "";
+            let total = 0;
+
+            expenses.forEach((exp, idx) => {{
+                total += exp.amount;
+                const li = document.createElement("li");
+                li.className = "expense-item";
+                li.innerHTML = `
+                    <div>
+                        <strong>${{exp.desc}}</strong>
+                        <span style="margin-left: 0.5rem; font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${{exp.cat}}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span style="font-weight: 700; color: var(--accent);">$${{exp.amount.toFixed(2)}}</span>
+                        <button class="btn-del" onclick="deleteExpense(${{idx}})">✕</button>
+                    </div>
+                `;
+                list.appendChild(li);
+            }});
+
+            document.getElementById("total-spent").innerText = `$${{total.toFixed(2)}}`;
+        }}
+
+        function addExpense() {{
+            const desc = document.getElementById("exp-desc").value.trim();
+            const amount = parseFloat(document.getElementById("exp-amount").value);
+            const cat = document.getElementById("exp-cat").value;
+            if (!desc || isNaN(amount) || amount <= 0) return;
+
+            expenses.unshift({{ desc, amount, cat, timestamp: Date.now() }});
+            document.getElementById("exp-desc").value = "";
+            document.getElementById("exp-amount").value = "";
+            saveAndRender();
+        }}
+
+        function deleteExpense(idx) {{
+            expenses.splice(idx, 1);
+            saveAndRender();
+        }}
+
+        document.addEventListener("DOMContentLoaded", saveAndRender);
+    </script>
+</body>
+</html>"""
+
+        files = [
+            CodeFileSpec(path=spec.filename, content=html_code, description=f"{title} Single Page Application", expected_markers=markers)
+        ]
+        return html_code, markers, symbol, files
+
+    @classmethod
+    def _synthesize_todo_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates an isolated Todo / Task Manager Web Application."""
+        title = spec.problem_description.strip().title() or "Todo Application"
+        symbol = "DOCTYPE"
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "addTodo", "toggleTodo", "deleteTodo"]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Chitti Web Studio</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.9);
+            --accent: #38bdf8;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(148, 163, 184, 0.2);
+            --danger: #ef4444;
+            --radius: 12px;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        body {{ background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%); color: var(--text-primary); min-height: 100vh; display: flex; justify-content: center; padding: 2.5rem 1rem; }}
+        .container {{ width: 100%; max-width: 580px; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); padding: 2rem; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }}
+        .header {{ text-align: center; margin-bottom: 1.5rem; }}
+        .header h1 {{ font-size: 1.6rem; color: var(--accent); }}
+        .input-row {{ display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }}
+        input[type="text"] {{ flex: 1; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: rgba(15, 23, 42, 0.7); color: var(--text-primary); outline: none; }}
+        .btn {{ background: var(--accent); color: #0f172a; font-weight: 700; border: none; padding: 0.75rem 1.25rem; border-radius: 8px; cursor: pointer; }}
+        .todo-list {{ list-style: none; display: flex; flex-direction: column; gap: 0.5rem; max-height: 350px; overflow-y: auto; }}
+        .todo-item {{ display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); padding: 0.8rem 1rem; border-radius: 8px; }}
+        .todo-item.done span {{ text-decoration: line-through; color: var(--text-secondary); }}
+        .btn-del {{ background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{title}</h1>
+        </div>
+        <div class="input-row">
+            <input type="text" id="todo-input" placeholder="What needs to be done?" onkeydown="if(event.key==='Enter') addTodo()" />
+            <button class="btn" onclick="addTodo()">Add Task</button>
+        </div>
+        <ul id="todo-list" class="todo-list"></ul>
+    </div>
+
+    <script>
+        let todos = JSON.parse(localStorage.getItem("chitti_todos_data") || "[]");
+
+        function saveAndRender() {{
+            localStorage.setItem("chitti_todos_data", JSON.stringify(todos));
+            const list = document.getElementById("todo-list");
+            list.innerHTML = "";
+
+            if (todos.length === 0) {{
+                list.innerHTML = `<li style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No tasks yet. Add one above!</li>`;
+                return;
+            }}
+
+            todos.forEach((t, idx) => {{
+                const li = document.createElement("li");
+                li.className = "todo-item" + (t.done ? " done" : "");
+                li.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <input type="checkbox" ${{t.done ? "checked" : ""}} onchange="toggleTodo(${{idx}})" />
+                        <span>${{t.text}}</span>
+                    </div>
+                    <button class="btn-del" onclick="deleteTodo(${{idx}})">✕</button>
+                `;
+                list.appendChild(li);
+            }});
+        }}
+
+        function addTodo() {{
+            const inp = document.getElementById("todo-input");
+            const text = inp.value.trim();
+            if (!text) return;
+            todos.unshift({{ text, done: false, timestamp: Date.now() }});
+            inp.value = "";
+            saveAndRender();
+        }}
+
+        function toggleTodo(idx) {{
+            todos[idx].done = !todos[idx].done;
+            saveAndRender();
+        }}
+
+        function deleteTodo(idx) {{
+            todos.splice(idx, 1);
+            saveAndRender();
+        }}
+
+        document.addEventListener("DOMContentLoaded", saveAndRender);
+    </script>
+</body>
+</html>"""
+
+        files = [
+            CodeFileSpec(path=spec.filename, content=html_code, description=f"{title} Single Page Application", expected_markers=markers)
+        ]
+        return html_code, markers, symbol, files
+
+    @classmethod
+    def _synthesize_custom_interactive_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates a tailored interactive Web Application with searchable records and persistence for custom managers/trackers."""
+        title = spec.problem_description.strip().title() or "Interactive Application"
+        slug = cls._slugify_description(spec.problem_description)
+        symbol = "DOCTYPE"
+        markers = ["<!DOCTYPE html>", "<html", "<style>", "<script>", "addItem", "filterItems", "localStorage"]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Chitti Web Studio</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.9);
+            --accent: #38bdf8;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(148, 163, 184, 0.2);
+            --danger: #ef4444;
+            --radius: 12px;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+        body {{ background: radial-gradient(circle at top right, #1e1b4b, #0f172a 70%); color: var(--text-primary); min-height: 100vh; display: flex; justify-content: center; padding: 2.5rem 1rem; }}
+        .container {{ width: 100%; max-width: 620px; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); padding: 2rem; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }}
+        .header {{ text-align: center; margin-bottom: 1.5rem; }}
+        .header h1 {{ font-size: 1.6rem; color: var(--accent); }}
+        .search-bar {{ margin-bottom: 1rem; }}
+        .input-row {{ display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }}
+        input[type="text"] {{ flex: 1; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: rgba(15, 23, 42, 0.7); color: var(--text-primary); outline: none; }}
+        .btn {{ background: var(--accent); color: #0f172a; font-weight: 700; border: none; padding: 0.75rem 1.25rem; border-radius: 8px; cursor: pointer; }}
+        .items-list {{ list-style: none; display: flex; flex-direction: column; gap: 0.5rem; max-height: 350px; overflow-y: auto; }}
+        .item-card {{ display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); padding: 0.8rem 1rem; border-radius: 8px; }}
+        .btn-del {{ background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{title}</h1>
+            <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 0.25rem;">{spec.requirements[0] if spec.requirements else "Interactive Web Studio"}</p>
+        </div>
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="Search entries..." oninput="filterItems()" />
+        </div>
+        <div class="input-row">
+            <input type="text" id="custom-input" placeholder="Enter new item or record..." onkeydown="if(event.key==='Enter') addItem()" />
+            <button class="btn" onclick="addItem()">Add Entry</button>
+        </div>
+        <ul id="items-list" class="items-list"></ul>
     </div>
 
     <script>
         const STORAGE_KEY = "chitti_app_{slug}_data";
-        let state = {{
-            items: JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"),
-            searchQuery: "",
-            calcBuffer: "0"
-        }};
+        let entries = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 
-        function saveState() {{
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
-            updateStats();
-        }}
+        function filterItems() {{
+            const q = (document.getElementById("search-input").value || "").toLowerCase().trim();
+            const list = document.getElementById("items-list");
+            list.innerHTML = "";
 
-        function updateStats() {{
-            const statCount = document.getElementById("stat-count");
-            const statAux = document.getElementById("stat-aux");
-            if (statCount) {{
-                const activeCount = state.items.filter(i => !i.completed).length;
-                statCount.innerHTML = `Active: <strong>${{activeCount}}</strong> / Total: <strong>${{state.items.length}}</strong>`;
-            }}
-            if (statAux) {{
-                const totalVal = state.items.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
-                statAux.innerHTML = totalVal > 0 ? `Total: <strong>${{totalVal.toLocaleString()}}</strong>` : `System: <strong>Ready</strong>`;
-            }}
-        }}
-
-        function filterItems(query) {{
-            state.searchQuery = (query || "").toLowerCase().trim();
-            renderItems();
-        }}
-
-        // General List & CRUD Logic
-        function renderItems() {{
-            const container = document.getElementById("items-container");
-            if (!container) return;
-            container.innerHTML = "";
-
-            const visibleItems = state.items.filter(it => {{
-                if (!state.searchQuery) return true;
-                const matchTitle = it.title && it.title.toLowerCase().includes(state.searchQuery);
-                const matchCat = it.category && it.category.toLowerCase().includes(state.searchQuery);
-                return matchTitle || matchCat;
-            }});
-
-            if (visibleItems.length === 0) {{
-                container.innerHTML = `<li style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No matching entries found. Add one above!</li>`;
+            const filtered = entries.filter(e => e.text.toLowerCase().includes(q));
+            if (filtered.length === 0) {{
+                list.innerHTML = `<li style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No matching entries found.</li>`;
                 return;
             }}
 
-            visibleItems.forEach((it) => {{
-                const originalIdx = state.items.indexOf(it);
+            filtered.forEach((e, idx) => {{
                 const li = document.createElement("li");
-                li.className = "item-row" + (it.completed ? " completed" : "");
+                li.className = "item-card";
                 li.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
-                        <input type="checkbox" ${{it.completed ? "checked" : ""}} onchange="toggleItem(${{originalIdx}})" />
-                        <span class="text">${{it.title}}</span>
-                        ${{it.amount ? `<span style="color: var(--accent); font-weight: 600;">(${{it.amount}})</span>` : ""}}
-                        ${{it.category ? `<span style="font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${{it.category}}</span>` : ""}}
-                    </div>
-                    <button class="btn-del" onclick="deleteItem(${{originalIdx}})" title="Delete">✕</button>
+                    <div style="font-size: 1rem; color: var(--text-primary);">${{e.text}}</div>
+                    <button class="btn-del" onclick="deleteItem(${{idx}})">✕</button>
                 `;
-                container.appendChild(li);
+                list.appendChild(li);
             }});
         }}
 
         function addItem() {{
-            const inp = document.getElementById("item-title") || document.getElementById("item-input");
-            const amtInp = document.getElementById("item-amount");
-            const catInp = document.getElementById("item-cat");
-            if (!inp || !inp.value.trim()) return;
+            const inp = document.getElementById("custom-input");
+            const val = inp.value.trim();
+            if (!val) return;
 
-            const newItem = {{
-                id: Date.now(),
-                title: inp.value.trim(),
-                amount: amtInp && amtInp.value ? amtInp.value.trim() : null,
-                category: catInp ? catInp.value : "General",
-                completed: false,
-                timestamp: new Date().toISOString()
-            }};
-
-            state.items.unshift(newItem);
+            entries.unshift({{ id: Date.now(), text: val }});
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
             inp.value = "";
-            if (amtInp) amtInp.value = "";
-            saveState();
-            renderItems();
-        }}
-
-        function toggleItem(idx) {{
-            if (state.items[idx]) {{
-                state.items[idx].completed = !state.items[idx].completed;
-                saveState();
-                renderItems();
-            }}
+            filterItems();
         }}
 
         function deleteItem(idx) {{
-            if (idx >= 0 && idx < state.items.length) {{
-                state.items.splice(idx, 1);
-                saveState();
-                renderItems();
-            }}
+            entries.splice(idx, 1);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+            filterItems();
         }}
 
-        // Calculator Logic
-        function updateCalcDisplay() {{
-            const el = document.getElementById("calc-display");
-            if (el) el.innerText = state.calcBuffer || "0";
-        }}
-
-        function appendNum(n) {{
-            if (state.calcBuffer === "0" && n !== ".") {{
-                state.calcBuffer = n;
-            }} else {{
-                state.calcBuffer += n;
-            }}
-            updateCalcDisplay();
-        }}
-
-        function appendOp(op) {{
-            const last = state.calcBuffer.slice(-1);
-            if (["+", "-", "*", "/"].includes(last)) {{
-                state.calcBuffer = state.calcBuffer.slice(0, -1) + op;
-            }} else {{
-                state.calcBuffer += op;
-            }}
-            updateCalcDisplay();
-        }}
-
-        function deleteDigit() {{
-            state.calcBuffer = state.calcBuffer.slice(0, -1) || "0";
-            updateCalcDisplay();
-        }}
-
-        function clearCalc() {{
-            state.calcBuffer = "0";
-            updateCalcDisplay();
-        }}
-
-        function calculateResult() {{
-            try {{
-                // Safe calculation
-                const sanitized = state.calcBuffer.replace(/[^0-9+\\-*\\/.]/g, '');
-                const res = Function(`'use strict'; return (${{sanitized}})`)();
-                state.calcBuffer = String(res);
-            }} catch (e) {{
-                state.calcBuffer = "Error";
-            }}
-            updateCalcDisplay();
-        }}
-
-        document.addEventListener("DOMContentLoaded", () => {{
-            // Seed initial sample data if empty
-            if (state.items.length === 0) {{
-                state.items = [
-                    {{ id: 1, title: "Explore {title} capabilities", completed: true, timestamp: new Date().toISOString() }},
-                    {{ id: 2, title: "Test interactive UI actions and features", completed: false, timestamp: new Date().toISOString() }}
-                ];
-                saveState();
-            }}
-            renderItems();
-            updateStats();
-        }});
+        document.addEventListener("DOMContentLoaded", filterItems);
     </script>
 </body>
 </html>"""

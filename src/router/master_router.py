@@ -114,11 +114,15 @@ class MasterRouter:
         (r"(?i)\b(?:run\s+(?:my\s+)?(?:existing\s+)?([a-zA-Z0-9_\-]+)\s+project|run\s+my\s+project|is\s+project\s+ko\s+run\s+karo)\b", MasterRoute.PROJECT_EXECUTION),
     ]
 
-    # 6. Phase 5 Direct OS / Application / Browser Tasks
+    # 6. Phase 5 Direct OS / Application / Browser & Communication Tasks
     COMPUTER_TASK_PATTERNS = [
-        (r"(?i)\b(?:search\s+(?:for\s+)?.*on\s+(?:google|chrome|browser|bing)|open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+.*)\b", MasterRoute.BROWSER_TASK),
+        # Messaging / Communication / Web App Tasks
+        (r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send\s+message)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg))\b", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|x\.com|github|wikipedia|amazon|flipkart|netflix|spotify|chatgpt)\b.*(?:kholo|open|chalao|visit|message|send|search|browse)", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|browser|web)\b", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:search\s+(?:for\s+)?.*on\s+(?:google|chrome|browser|bing|youtube|web)|open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+.*)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)(?:\s+in\s+browser)?\b", MasterRoute.BROWSER_TASK),
-        (r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|go\s+to\s+youtube\s+and\s+play|youtube\s+pe.*chalao|gaana\s+chalao)\b", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|go\s+to\s+youtube\s+and\s+play|youtube\s+(?:pe|par).*chalao|gaana\s+chalao|search\s+youtube\s+for)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot|screenshot\s+(?:le\s+lo|kheecho)\b", MasterRoute.SYSTEM_TASK),
         (r"(?i)\b(?:increase|decrease|mute|unmute)\s+volume|volume\s+(?:kam|badhao|mute)\b", MasterRoute.SYSTEM_TASK),
         (r"(?i)\b(?:create|make|delete|remove|rename|move)\s+(?:folder|directory|file)\b", MasterRoute.FILE_OPERATION),
@@ -145,15 +149,33 @@ class MasterRouter:
     ]
 
     @classmethod
+    def _normalize_text(cls, text: str) -> str:
+        """Corrects common typographical errors in action verbs and application names."""
+        normalized = text
+        # Common verb typos
+        normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn)\b", "open", normalized)
+        normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch)\b", "launch", normalized)
+        normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg)\b", "message", normalized)
+        normalized = re.sub(r"(?i)\b(?:serach|sreach)\b", "search", normalized)
+        # Common app name typos
+        normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp)\b", "whatsapp", normalized)
+        normalized = re.sub(r"(?i)\b(?:vscdoe|vscde)\b", "vscode", normalized)
+        normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube)\b", "youtube", normalized)
+        normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm)\b", "chrome", normalized)
+        normalized = re.sub(r"(?i)\b(?:notepd|notepadd)\b", "notepad", normalized)
+        return normalized
+
+    @classmethod
     def classify_request(cls, user_text: str) -> MasterRouteDecision:
         """
         Classifies the incoming user text into a structured MasterRouteDecision.
         """
         raw = user_text.strip()
-        lower = raw.lower()
+        normalized_raw = cls._normalize_text(raw)
+        lower = normalized_raw.lower()
 
         # Clean invocation prefix
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", normalized_raw, flags=re.IGNORECASE).strip()
         clean_lower = clean.lower()
 
         # 1. Check for Explicit Memory Storage / Update Commands
@@ -206,7 +228,7 @@ class MasterRouter:
                     metadata={"execution_requested": bool(re.search(r"(?i)\b(?:run|test|execute)\b", clean))},
                 )
 
-        # 5. Check for Dedicated Computer Control / OS Tasks (Phase 5)
+        # 5. Check for Dedicated Computer Control / OS / Browser / Messaging Tasks (Phase 5)
         for pat, comp_route in cls.COMPUTER_TASK_PATTERNS:
             if re.search(pat, clean):
                 return cls._make_decision(
@@ -230,7 +252,7 @@ class MasterRouter:
         # 7. Check for Project Creation (Phase 6 Agent)
         is_project_signal = (
             any(re.search(pat, clean) for pat in cls.PROJECT_CREATION_PATTERNS)
-            or bool(re.search(r"(?i)\b(?:create|build|make|develop|implement)\s+(?:a\s+|an\s+)?(?:[a-zA-Z0-9_\-\s]+?\s+)?(?:app|project|application|tool|system|dashboard|tracker|website|api|game|interface)\b", clean))
+            or bool(re.search(r"(?i)\b(?:create|build|make|develop|implement)\s+(?:a\s+|an\s+)?(?:[a-zA-Z0-9_\-\s]+?\s+)?(?:app|project|application|tool|system|dashboard|tracker|website|api|game|interface|quiz|calculator|timer)\b", clean))
             or bool(re.search(r"(?i)\b(?:python|cpp|c\+\+|java|javascript|typescript|rust|go|react|html|css|flask|fastapi|express|django|node)\b.*(?:banao|likho|create|write|implement|build|develop|app|project|code|program|script|system|tracker|calculator|dashboard|api|website)", clean))
         )
 
@@ -263,7 +285,7 @@ class MasterRouter:
                 },
             )
 
-        # 7. Check for Casual Greeting / Small Talk / Name Call
+        # 8. Check for Casual Greeting / Small Talk / Name Call
         if not clean or any(re.search(pat, raw) for pat in cls.CHAT_GREETING_PATTERNS) or clean_lower in ("hello", "hi", "hey", "namaste", "sup", "yo", "chitti", "hey chitti"):
             return cls._make_decision(
                 route=MasterRoute.CHAT,
@@ -275,7 +297,7 @@ class MasterRouter:
                 explanation="Casual greeting or conversational chat",
             )
 
-        # 8. Check for General Knowledge Question ("what is the capital of France", "where is Mount Everest", "how many...")
+        # 9. Check for General Knowledge Question ("what is the capital of France", "where is Mount Everest", "how many...")
         if (
             re.search(r"(?i)^(?:what\s+is\s+the\s+capital|where\s+is|when\s+was|how\s+many|which\s+is|why\s+is\s+the\s+sky)\b", clean)
             or re.search(r"(?i)\b(?:capital\s+of|highest\s+mountain|continents|president\s+of|prime\s+minister\s+of)\b", clean)
@@ -290,7 +312,7 @@ class MasterRouter:
                 explanation="General world knowledge or factual inquiry",
             )
 
-        # 9. Check for Pure Technical Inquiries (No computer action, pure brain LLM answer)
+        # 10. Check for Pure Technical Inquiries (No computer action, pure brain LLM answer)
         if is_informational:
             return cls._make_decision(
                 route=MasterRoute.TECHNICAL_KNOWLEDGE,
@@ -302,7 +324,7 @@ class MasterRouter:
                 explanation="User asking technical explanation or programming concept",
             )
 
-        # 10. General Knowledge Question Fallback ("what is X", "who is X")
+        # 11. General Knowledge Question Fallback ("what is X", "who is X")
         if re.search(r"(?i)^(?:what\s+is|who\s+is|where\s+is|when\s+was|how\s+many|which\s+is|why\s+is)\b", clean):
             return cls._make_decision(
                 route=MasterRoute.GENERAL_KNOWLEDGE,
@@ -312,6 +334,30 @@ class MasterRouter:
                 requires_phase5=False,
                 requires_phase6=False,
                 explanation="General world knowledge or factual inquiry",
+            )
+
+        # 12. Action Intent Safety Net: If the request contains explicit action verbs/directives
+        # targeting applications, web, messaging, or files, ensure it is NOT dropped to UNKNOWN chat!
+        action_verb_match = re.search(r"(?i)\b(?:open|launch|kholo|chalao|bhejo|send|message|search|play|create|build|delete|remove|close|run|type|write|likho|banao)\b", clean)
+        if action_verb_match and not re.search(r"(?i)^(?:what|who|where|when|why|how)\b", clean):
+            if any(w in clean_lower for w in ["web", "browser", "chrome", "edge", "youtube", "whatsapp", "message", "search", "google", "site", "url"]):
+                return cls._make_decision(
+                    route=MasterRoute.BROWSER_TASK,
+                    confidence=0.88,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=False,
+                    explanation="Action intent detected targeting browser or communication subsystem",
+                )
+            return cls._make_decision(
+                route=MasterRoute.COMPUTER_TASK,
+                confidence=0.85,
+                requires_memory=False,
+                requires_computer=True,
+                requires_phase5=True,
+                requires_phase6=False,
+                explanation="Action intent detected targeting computer control subsystem",
             )
 
         # Default fallback to Conversational Brain
@@ -356,6 +402,7 @@ class MasterRouter:
     def log_decision(cls, decision: MasterRouteDecision) -> None:
         """Emits structured logging according to the required specification."""
         log_chitti(f"[CHITTI] [MASTER ROUTER] Route: {decision.route.value}")
+        log_chitti(f"[CHITTI] [MASTER ROUTER] Confidence: {decision.confidence:.2f}")
         
         mem_status = "ENABLED" if decision.requires_memory else "SKIPPED"
         log_chitti(f"[CHITTI] [MASTER ROUTER] Memory retrieval: {mem_status}")

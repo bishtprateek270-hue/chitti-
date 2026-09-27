@@ -6,6 +6,7 @@ Manages persistent SQLite storage of registered face identities and their 128-d 
 import json
 import sqlite3
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -15,6 +16,17 @@ from src.utils.logging import log_debug, log_warning
 
 def get_utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass
+class FaceRecord:
+    """Represents a registered person's profile from the database."""
+    id: int
+    name: str
+    sample_count: int
+    created_at: str
+    updated_at: str
+    metadata: Dict[str, Any]
 
 
 class FaceDatabase:
@@ -145,6 +157,33 @@ class FaceDatabase:
                 cursor.execute("SELECT name FROM registered_faces ORDER BY name ASC")
                 rows = cursor.fetchall()
                 return [r["name"] for r in rows]
+
+    def list_all_faces(self) -> List[FaceRecord]:
+        """Returns list of FaceRecord objects for all registered individuals."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name, sample_count, created_at, updated_at, metadata FROM registered_faces ORDER BY name ASC")
+                rows = cursor.fetchall()
+                records = []
+                for r in rows:
+                    meta = {}
+                    if r["metadata"]:
+                        try:
+                            meta = json.loads(r["metadata"])
+                        except Exception:
+                            meta = {}
+                    records.append(
+                        FaceRecord(
+                            id=r["id"],
+                            name=r["name"],
+                            sample_count=r["sample_count"],
+                            created_at=r["created_at"],
+                            updated_at=r["updated_at"],
+                            metadata=meta,
+                        )
+                    )
+                return records
 
     def delete_face(self, name: str) -> bool:
         """Deletes a registered person by name."""

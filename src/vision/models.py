@@ -27,6 +27,11 @@ class RecognizedPerson:
     person_id: Optional[int] = None
     similarity: float = 0.0
 
+    @property
+    def identity(self) -> str:
+        """Compatibility property matching name."""
+        return self.name
+
 
 @dataclass
 class DetectedObject:
@@ -34,6 +39,11 @@ class DetectedObject:
     class_name: str
     confidence: float
     bbox: Tuple[int, int, int, int]  # (x, y, width, height)
+
+    @property
+    def label(self) -> str:
+        """Compatibility property matching class_name."""
+        return self.class_name
 
 
 @dataclass

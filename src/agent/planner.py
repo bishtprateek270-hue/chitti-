@@ -127,7 +127,38 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 5. Multi-step: "Open Chrome and search for <query>"
+        # 5. Multi-step: Browser Messaging & Communication (WhatsApp, Telegram, Slack, Gmail)
+        m_msg = re.search(r"(?i)\b(?:open\s+(?:whatsapp|watsapp|telegram|slack|web\s+browser)?\s*(?:on\s+web\s+browser|web)?\s*(?:and|aur)?\s*(?:message|msg|send(?:\s+a)?\s+message)\s+([\"']?[^\"']+?[\"']?)\s+to\s+([a-zA-Z0-9_\-\s]+))\b", clean) or \
+                re.search(r"(?i)\b(?:(?:message|send\s+message|send)\s+([\"']?[^\"']+?[\"']?)\s+to\s+([a-zA-Z0-9_\-\s]+)\s+(?:on|via)\s+(?:whatsapp|watsapp|telegram|slack|web))\b", clean) or \
+                re.search(r"(?i)\b(?:(?:whatsapp|watsapp)\s+(?:par|pe)?\s*([a-zA-Z0-9_\-]+)\s+ko\s+([\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|send\s+karo|message\s+kar))\b", clean) or \
+                re.search(r"(?i)\b(?:([a-zA-Z0-9_\-]+)\s+ko\s+([\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|message\s+kar))\b", clean)
+        if m_msg:
+            # Extract contact and message text
+            g1 = (m_msg.group(1) or "").strip().strip("\"'")
+            g2 = (m_msg.group(2) or "").strip().strip("\"'")
+            
+            # Determine which group is contact vs message
+            if any(w in g1.lower() for w in ["hi", "hello", "hey", "namaste", "good", "how", "what", "meet", "doc", "link"]):
+                msg_text, contact_name = g1, g2
+            else:
+                contact_name, msg_text = g1, g2
+
+            contact_name = contact_name.strip() or "Contact"
+            msg_text = msg_text.strip() or "Hello"
+
+            state.steps = [
+                AgentStep(step_id=1, description="Open WhatsApp Web in browser", action_type="OPEN_URL", parameters={"url": "https://web.whatsapp.com"}),
+                AgentStep(step_id=2, description="Wait for WhatsApp Web to load and verify authentication state", action_type="VERIFY_PAGE_LOADED", parameters={"url": "https://web.whatsapp.com"}, depends_on=[1]),
+                AgentStep(step_id=3, description=f"Search for contact '{contact_name}'", action_type="SEARCH_CONTACT", parameters={"contact": contact_name}, depends_on=[2]),
+                AgentStep(step_id=4, description=f"Select conversation with '{contact_name}'", action_type="SELECT_CONVERSATION", parameters={"contact": contact_name}, depends_on=[3]),
+                AgentStep(step_id=5, description=f"Type message '{msg_text}'", action_type="TYPE_TEXT", parameters={"text": msg_text}, depends_on=[4]),
+                AgentStep(step_id=6, description=f"Send message to '{contact_name}'", action_type="SEND_MESSAGE", parameters={"contact": contact_name, "text": msg_text}, depends_on=[5]),
+                AgentStep(step_id=7, description=f"Verify message '{msg_text}' appears in conversation", action_type="VERIFY_MESSAGE_SENT", parameters={"contact": contact_name, "text": msg_text}, depends_on=[6]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 6. Multi-step: "Open Chrome and search for <query>"
         m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
                    re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser))\b", clean)
         if m_search:
@@ -135,6 +166,32 @@ class AgentPlanner:
             state.steps = [
                 AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
                 AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 7. Multi-step: Direct Web Navigation "open <service/site>" (e.g. open whatsapp, open reddit, open github)
+        m_web_nav = re.search(r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(whatsapp\s+web|whatsapp|reddit|github|twitter|x\.com|wikipedia|amazon|gmail|chatgpt|netflix|spotify)\b", clean)
+        if m_web_nav:
+            service = m_web_nav.group(1).lower()
+            url_map = {
+                "whatsapp web": "https://web.whatsapp.com",
+                "whatsapp": "https://web.whatsapp.com",
+                "reddit": "https://reddit.com",
+                "github": "https://github.com",
+                "twitter": "https://twitter.com",
+                "x.com": "https://x.com",
+                "wikipedia": "https://wikipedia.org",
+                "amazon": "https://amazon.com",
+                "gmail": "https://mail.google.com",
+                "chatgpt": "https://chatgpt.com",
+                "netflix": "https://netflix.com",
+                "spotify": "https://open.spotify.com",
+            }
+            target_url = url_map.get(service, f"https://{service}.com")
+            state.steps = [
+                AgentStep(step_id=1, description=f"Open {service.title()} ({target_url}) in browser", action_type="OPEN_URL", parameters={"url": target_url}),
+                AgentStep(step_id=2, description=f"Verify {service.title()} loaded in browser", action_type="VERIFY_PAGE_LOADED", parameters={"url": target_url}, depends_on=[1]),
             ]
             state.status = TaskStatus.PLAN_READY
             return state

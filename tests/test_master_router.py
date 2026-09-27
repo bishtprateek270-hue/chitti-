@@ -226,3 +226,133 @@ def test_conversational_questions_do_not_output_actionable_error(
     assistant.process_user_input("tell me about yourself")
     assert len(spoken) > 0
     assert "Not an actionable task" not in spoken[-1]
+
+
+# ==============================================================================
+# 3. NEW BROWSER MESSAGING, TYPO TOLERANCE & MULTI-STEP PLANNING TESTS
+# ==============================================================================
+
+def test_master_route_whatsapp_and_messaging():
+    """Verifies that messaging and WhatsApp requests are correctly classified as actions, including typos."""
+    prompts = [
+        "open whatsapp on web browser and message hi to ayush",
+        "open whatsapp web and message hi to ayush",
+        "opem whatsapp",
+        "open watsapp",
+        "whatsapp kholo",
+        "whatsapp web kholo",
+        "ayush ko hi message kar",
+        "whatsapp par ayush ko hi bhejo",
+        "search youtube for sonu nigam",
+    ]
+    for p in prompts:
+        res = MasterRouter.classify_request(p)
+        assert res.route in (MasterRoute.BROWSER_TASK, MasterRoute.COMPUTER_TASK), f"Failed for prompt: {p}"
+        assert res.requires_computer is True
+        assert res.requires_memory is False
+
+
+def test_agent_planner_whatsapp_multistep_plan():
+    """Verifies that AgentPlanner decomposes WhatsApp messaging requests into realistic multi-step plans."""
+    from src.agent.planner import AgentPlanner
+    from src.agent.projects import ProjectRegistry
+
+    registry = MagicMock(spec=ProjectRegistry)
+    planner = AgentPlanner(project_registry=registry)
+
+    state = planner.plan_task("open whatsapp on web browser and message hi to ayush")
+    assert state is not None
+    assert len(state.steps) >= 5
+    
+    actions = [s.action_type for s in state.steps]
+    assert "OPEN_URL" in actions
+    assert "VERIFY_PAGE_LOADED" in actions
+    assert "SEARCH_CONTACT" in actions
+    assert "SELECT_CONVERSATION" in actions
+    assert "SEND_MESSAGE" in actions
+    assert "VERIFY_MESSAGE_SENT" in actions
+
+
+# ==============================================================================
+# 4. PROJECT CODE GENERATION ISOLATION TESTS (NO TEMPLATE CROSS-CONTAMINATION)
+# ==============================================================================
+
+def test_calculator_code_generation_has_no_todo_items():
+    """Verifies that calculator web app generation contains ZERO todo/expense items or categories."""
+    from src.agent.code_generator import CodeGenerator
+
+    spec = CodeGenerator.generate_code_for_topic("create a calculator with a good UI and run it")
+    code = spec.files[0].content
+
+    # Must contain real calculator elements
+    assert "calc-display" in code
+    assert "appendNum" in code or "calculateResult" in code or "clearCalc" in code
+    assert "grid" in code.lower()
+
+    # Must NOT contain cross-contaminated Todo or Expense items
+    assert "renderItems" not in code
+    assert "addItem" not in code
+    assert "toggleItem" not in code
+    assert "deleteItem" not in code
+    assert "category" not in code.lower()
+    assert "searchQuery" not in code
+
+
+def test_quiz_code_generation_is_domain_isolated():
+    """Verifies that quiz app generation contains question engine and no todo items."""
+    from src.agent.code_generator import CodeGenerator
+
+    spec = CodeGenerator.generate_code_for_topic("create a simple quiz application with score tracking and UI")
+    code = spec.files[0].content
+
+    assert "score" in code.lower()
+    assert "question" in code.lower()
+    assert "renderItems" not in code
+    assert "addItem" not in code
+
+
+def test_weather_code_generation_is_domain_isolated():
+    """Verifies that weather dashboard contains city search and temperature metrics without todo items."""
+    from src.agent.code_generator import CodeGenerator
+
+    spec = CodeGenerator.generate_code_for_topic("create a weather dashboard with clean UI")
+    code = spec.files[0].content
+
+    assert "weather" in code.lower()
+    assert "temp" in code.lower()
+    assert "humidity" in code.lower()
+    assert "renderItems" not in code
+
+
+# ==============================================================================
+# 5. PHASE 3 FACE REGISTRATION & DATABASE REGRESSION TESTS
+# ==============================================================================
+
+def test_phase3_face_database_and_vision_manager_apis(tmp_path):
+    """Verifies that FaceDatabase.list_all_faces and VisionManager.register_face_interactive work properly."""
+    from src.vision.face_database import FaceDatabase
+    from src.vision.vision_manager import VisionManager
+    from src.vision.models import RecognizedPerson, DetectedObject
+
+    # 1. Models compatibility properties
+    p = RecognizedPerson(name="Prateek", confidence=0.98, is_known=True, bbox=(10, 10, 100, 100))
+    assert p.identity == "Prateek"
+
+    obj = DetectedObject(class_name="laptop", confidence=0.95, bbox=(20, 20, 200, 200))
+    assert obj.label == "laptop"
+
+    # 2. FaceDatabase list_all_faces
+    db_file = tmp_path / "faces.db"
+    db = FaceDatabase(db_path=str(db_file))
+    db.register_or_update_face("Prateek", [0.1] * 128, sample_count=5)
+
+    faces = db.list_all_faces()
+    assert len(faces) == 1
+    assert faces[0].name == "Prateek"
+    assert faces[0].sample_count == 5
+
+    # 3. VisionManager register_face_interactive method exists and is callable
+    vm = VisionManager(face_db=db)
+    assert hasattr(vm, "register_face_interactive")
+    assert callable(vm.register_face_interactive)
+

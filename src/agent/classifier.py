@@ -101,12 +101,15 @@ class TaskClassifier:
 
     # 6. Computer Control & Application Patterns
     COMPUTER_CONTROL_PATTERNS = [
+        r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send\s+message)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg))\b",
+        r"(?i)\b(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|x\.com|github|wikipedia|amazon|flipkart|netflix|spotify|chatgpt)\b.*(?:kholo|open|chalao|visit|message|send|search|browse)",
+        r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|browser|web)\b",
         r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell)\b",
         r"(?i)\b(?:open|launch|kholo|chalao|show)\s+(?:the\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:folder|directory)\b",
         r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:downloads|documents|desktop|pictures|music|videos)\b",
         r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)(?:\s+in\s+browser)?\b",
         r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot\b",
-        r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|youtube\s+pe.*chalao|gaana\s+chalao)\b",
+        r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|youtube\s+pe.*chalao|gaana\s+chalao|search\s+youtube\s+for)\b",
         r"(?i)\b(?:search\s+(?:for\s+)?.*on\s+(?:google|chrome|browser|bing))\b",
         r"(?i)\b(?:type\s+.*into\s+notepad|open\s+notepad\s+and\s+type)\b",
         r"(?i)\b(?:create\s+(?:a\s+)?folder\s+.*on\s+desktop|delete\s+(?:folder|file)\s+)\b",
@@ -114,11 +117,26 @@ class TaskClassifier:
     ]
 
     @classmethod
+    def _normalize_text(cls, text: str) -> str:
+        """Corrects common typographical errors in action verbs and application names."""
+        normalized = text
+        normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn)\b", "open", normalized)
+        normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch)\b", "launch", normalized)
+        normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg)\b", "message", normalized)
+        normalized = re.sub(r"(?i)\b(?:serach|sreach)\b", "search", normalized)
+        normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp)\b", "whatsapp", normalized)
+        normalized = re.sub(r"(?i)\b(?:vscdoe|vscde)\b", "vscode", normalized)
+        normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube)\b", "youtube", normalized)
+        normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm)\b", "chrome", normalized)
+        normalized = re.sub(r"(?i)\b(?:notepd|notepadd)\b", "notepad", normalized)
+        return normalized
+
+    @classmethod
     def classify(cls, user_text: str) -> ClassificationResult:
         """
         Classifies the user input into clear semantic intent categories and extracts project metadata.
         """
-        raw = user_text.strip()
+        raw = cls._normalize_text(user_text.strip())
         lower = raw.lower()
 
         # 1. Check for Personal & Identity Queries
@@ -153,9 +171,9 @@ class TaskClassifier:
                 execution_requested=True,
             )
 
-        # 4. Check for Dedicated Computer Control / App Launch / YouTube
+        # 4. Check for Dedicated Computer Control / App Launch / Browser / Messaging
         if any(re.search(pat, raw) for pat in cls.COMPUTER_CONTROL_PATTERNS):
-            if "youtube" in lower or "song" in lower or "gaana" in lower:
+            if any(w in lower for w in ["whatsapp", "youtube", "song", "gaana", "browser", "chrome", "web", "gmail", "message", "telegram", "slack"]):
                 intent = TaskIntent.BROWSER_TASK
             elif "folder" in lower or "file" in lower or "desktop" in lower or "delete" in lower:
                 intent = TaskIntent.FILE_OPERATION

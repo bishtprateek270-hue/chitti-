@@ -293,6 +293,10 @@ class VisionManager:
         print(f"\n[VISION] Successfully registered '{clean_name}' (ID: {person_id}) with {len(collected_embeddings)} samples.", flush=True)
         return True, f"I have successfully registered {clean_name} in my face database."
 
+    def register_face_interactive(self, name: str, num_samples: int = 5) -> Tuple[bool, str]:
+        """Interactive face registration method wrapping register_person."""
+        return self.register_person(name=name, num_samples=num_samples)
+
     def delete_person(self, name: str) -> Tuple[bool, str]:
         """Deletes a registered person from the face database."""
         clean_name = name.strip()
