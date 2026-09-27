@@ -33,6 +33,7 @@ from src.language.normalizer import LanguageNormalizer
 from src.language.translator import Translator
 from src.language.language_models import IntentCategory
 from src.agent.manager import LaptopAgentManager
+from src.router.master_router import MasterRouter, MasterRoute, MasterRouteDecision
 
 
 BANNER = r"""
@@ -219,8 +220,15 @@ class ChittiController:
             self.speak(resp)
             return
 
+        # 1.5. Unified Top-Level Master Routing Layer
+        master_decision = MasterRouter.classify_request(user_text)
+        if master_decision.route == MasterRoute.UNKNOWN and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+            alt_decision = MasterRouter.classify_request(parsed_intent.normalized_text)
+            if alt_decision.route != MasterRoute.UNKNOWN:
+                master_decision = alt_decision
+
         # 2. Check for Dedicated Translation Request
-        if parsed_intent.intent_category == IntentCategory.TRANSLATION.value:
+        if master_decision.route == MasterRoute.TRANSLATION_TASK or parsed_intent.intent_category == IntentCategory.TRANSLATION.value:
             target_lang = parsed_intent.parameters.get("target_language", "en")
             text_to_translate = parsed_intent.parameters.get("text", "")
             if not text_to_translate:
@@ -237,14 +245,14 @@ class ChittiController:
             self.speak(trans_res.translated_text)
             return
 
-        # 2.5. Check for Controlled Laptop Agent Actions (Phase 5)
-        if self.agent is not None:
+        # 2.5. Check for Actionable Laptop Agent Actions (Phase 5 / Phase 6)
+        if self.agent is not None and (master_decision.requires_computer or master_decision.requires_phase5 or master_decision.requires_phase6):
             try:
                 agent_result = self.agent.handle_command(user_text, lang=active_lang)
-                if agent_result is None and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                if (agent_result is None or not agent_result[0]) and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
                     agent_result = self.agent.handle_command(parsed_intent.normalized_text, lang=active_lang)
 
-                if agent_result is not None:
+                if agent_result is not None and agent_result[0]:
                     success, resp_msg, act_res = agent_result
                     self.history.add_user_message(user_text)
                     self.history.add_assistant_message(resp_msg)
@@ -278,7 +286,7 @@ class ChittiController:
                 log_warning(f"Face command processing failed: {e}")
 
         # 4. Check for Direct Identity / Creator / Occupation Query (Phase 4A)
-        if self.memory is not None:
+        if self.memory is not None and master_decision.route in (MasterRoute.PERSONAL_MEMORY, MasterRoute.SELF_IDENTITY):
             try:
                 direct_id_resp = self.memory.resolve_identity_query(user_text, lang=active_lang)
                 if (direct_id_resp is None or not isinstance(direct_id_resp, str)) and parsed_intent.normalized_text != user_text:
@@ -296,7 +304,7 @@ class ChittiController:
                 log_warning(f"Identity resolution failed: {e}")
 
         # 5. Check for Explicit Memory Command & Fact Statement (multilingual: "yaad rakhna ki...", "remember that...", "my name is...", "forget...")
-        if self.memory is not None:
+        if self.memory is not None and (master_decision.route == MasterRoute.EXPLICIT_MEMORY or master_decision.requires_memory):
             try:
                 mem_result = self.memory.handle_interaction(user_text, lang=active_lang)
                 if mem_result is None and parsed_intent.normalized_text != user_text:
@@ -324,7 +332,8 @@ class ChittiController:
         recognized_names_seen = []
 
         is_vis = (
-            parsed_intent.intent_category == IntentCategory.VISION_QUERY.value
+            master_decision.route == MasterRoute.VISION_TASK
+            or parsed_intent.intent_category == IntentCategory.VISION_QUERY.value
             or (self.vision is not None and self.vision.is_vision_query(user_text))
             or (self.vision is not None and self.vision.is_vision_query(parsed_intent.normalized_text))
         )
@@ -342,40 +351,29 @@ class ChittiController:
 
         self.history.set_vision_context(vision_context)
 
-        # 7. Retrieve relevant long-term memories (Intent-First Semantic Routing)
+        # 7. Retrieve relevant long-term memories (Governed by Master Router)
         relevant_memories = []
-        if self.memory is not None:
+        if self.memory is not None and master_decision.requires_memory:
             try:
-                # Classify query intent using MemoryRouter
-                route_decision = self.memory.router.classify_intent(user_text)
-                if not route_decision.should_retrieve_memory and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
-                    route_decision = self.memory.router.classify_intent(parsed_intent.normalized_text)
+                # Query memories using both raw text and normalized English text
+                relevant_memories = self.memory.recall(user_text, top_k=self.config.memory.top_k)
+                if parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                    norm_mems = self.memory.recall(parsed_intent.normalized_text, top_k=self.config.memory.top_k)
+                    for nm in norm_mems:
+                        if nm.id not in [m.id for m in relevant_memories]:
+                            relevant_memories.append(nm)
 
-                if route_decision.should_retrieve_memory:
-                    log_chitti(f"[MEMORY ROUTER] Intent: {route_decision.intent.value}")
-                    log_chitti("[MEMORY ROUTER] Long-term retrieval: ENABLED")
-
-                    # Query memories using both raw text and normalized English text
-                    relevant_memories = self.memory.recall(user_text, top_k=self.config.memory.top_k)
-                    if parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
-                        norm_mems = self.memory.recall(parsed_intent.normalized_text, top_k=self.config.memory.top_k)
-                        for nm in norm_mems:
-                            if nm.id not in [m.id for m in relevant_memories]:
-                                relevant_memories.append(nm)
-
-                    # If a recognized person was detected in vision, also fetch memories about them
-                    for person_name in recognized_names_seen:
-                        person_mems = self.memory.recall(person_name, top_k=2)
-                        for pm in person_mems:
-                            if pm.id not in [m.id for m in relevant_memories]:
-                                relevant_memories.append(pm)
-                else:
-                    log_chitti(f"[MEMORY ROUTER] Intent: {route_decision.intent.value}")
-                    log_chitti("[MEMORY ROUTER] Long-term retrieval: SKIPPED")
-                    relevant_memories = []
+                # If a recognized person was detected in vision, also fetch memories about them
+                for person_name in recognized_names_seen:
+                    person_mems = self.memory.recall(person_name, top_k=2)
+                    for pm in person_mems:
+                        if pm.id not in [m.id for m in relevant_memories]:
+                            relevant_memories.append(pm)
             except Exception as e:
                 log_warning(f"Memory retrieval routing failed: {e}")
                 relevant_memories = []
+        else:
+            relevant_memories = []
 
         self.history.set_relevant_memories(relevant_memories)
 

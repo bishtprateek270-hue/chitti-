@@ -155,7 +155,7 @@ class LaptopAgentManager:
             TaskIntent.PREFERENCE_MEMORY,
             TaskIntent.EXPLICIT_MEMORY,
         ):
-            return False, "Not an actionable task", None
+            return False, "", None
 
         # Project request detected logging
         if class_res.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.BUILD_PROJECT, TaskIntent.MODIFY_PROJECT):
@@ -194,7 +194,7 @@ class LaptopAgentManager:
         # 4. Check for Single-step Structured Action (Fast Path)
         structured_action = self.parser.parse_command(raw)
         if not structured_action:
-            return False, "Not an actionable task", None
+            return False, "", None
 
         log_chitti(f"[AGENT] Single-step intent detected: {structured_action.action.value}")
         if structured_action.target:
