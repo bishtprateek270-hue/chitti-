@@ -189,8 +189,8 @@ class ServerProcessManager:
             port = cls.find_free_port(5000)
             return "flask", f"python {target_file}", port
 
-        # 3. Static Web Project (HTML/CSS/JS)
-        if filename and filename.endswith((".html", ".htm")):
+        # 3. Static Web Project (HTML/CSS/JS / standalone JSX/TSX)
+        if (filename and filename.endswith((".html", ".htm", ".jsx", ".tsx", ".js", ".mjs"))) or "<!doctype html" in file_content.lower() or "<html" in file_content.lower():
             port = cls.find_free_port(8080)
             return "static_html", f"python -m http.server {port}", port
 
@@ -215,7 +215,10 @@ class ServerProcessManager:
         fw = framework or auto_fw
         cmd = command or auto_cmd
         port = auto_port
-        url = f"http://localhost:{port}"
+        if (auto_fw == "static_html" or not (Path(cwd) / "package.json").exists()) and target_file and target_file.lower() not in ("index.html", "index.htm"):
+            url = f"http://localhost:{port}/{target_file}"
+        else:
+            url = f"http://localhost:{port}"
 
         log_info(f"[SERVER] Launching {fw} server: '{cmd}' in {cwd} (Port: {port})")
 

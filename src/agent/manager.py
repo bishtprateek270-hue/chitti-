@@ -145,8 +145,25 @@ class LaptopAgentManager:
 
         # 2. Intent Classification Check
         class_res = TaskClassifier.classify(raw)
-        if class_res.intent in (TaskIntent.GENERAL_KNOWLEDGE, TaskIntent.PERSONAL_QUERY):
-            return None
+        if not class_res.is_actionable_task and class_res.intent in (
+            TaskIntent.GENERAL_CONVERSATION,
+            TaskIntent.GENERAL_KNOWLEDGE,
+            TaskIntent.TECHNICAL_QUERY,
+            TaskIntent.PERSONAL_MEMORY,
+            TaskIntent.RELATIONSHIP_MEMORY,
+            TaskIntent.PROJECT_MEMORY,
+            TaskIntent.PREFERENCE_MEMORY,
+            TaskIntent.EXPLICIT_MEMORY,
+        ):
+            return False, "Not an actionable task", None
+
+        # Project request detected logging
+        if class_res.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.BUILD_PROJECT, TaskIntent.MODIFY_PROJECT):
+            log_chitti(f"[CHITTI] [TASK ROUTER] Intent: {class_res.intent.value}")
+            log_chitti("[CHITTI] [TASK ROUTER] Project request detected")
+            log_chitti("[CHITTI] [TASK ROUTER] Phase 6 agent activated")
+        elif class_res.is_actionable_task:
+            log_chitti(f"[CHITTI] [TASK ROUTER] Intent: {class_res.intent.value}")
 
         # 3. Check for Multi-step Task Plan First
         task_plan = self.planner.plan_task(raw, context=self.session_context)
@@ -177,7 +194,7 @@ class LaptopAgentManager:
         # 4. Check for Single-step Structured Action (Fast Path)
         structured_action = self.parser.parse_command(raw)
         if not structured_action:
-            return None
+            return False, "Not an actionable task", None
 
         log_chitti(f"[AGENT] Single-step intent detected: {structured_action.action.value}")
         if structured_action.target:

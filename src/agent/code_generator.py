@@ -302,12 +302,12 @@ class CodeGenerator:
             build_cmd = f"rustc {filename} -o {slug}.exe"
             run_cmd = f".\\{slug}.exe"
             test_cmd = run_cmd
-        elif detected_lang in ("javascript", "node"):
+        elif detected_lang in ("javascript", "node") and not filename.endswith((".jsx", ".html")):
             run_cmd = f"node {filename}"
             test_cmd = f"node {filename}"
             build_cmd = None
-        elif detected_lang in ("html", "htm"):
-            run_cmd = f"open {filename} in browser"
+        elif detected_lang in ("html", "htm", "react", "vue", "frontend", "web") or filename.endswith((".html", ".htm", ".jsx", ".tsx")):
+            run_cmd = None
             test_cmd = None
             build_cmd = None
         else:

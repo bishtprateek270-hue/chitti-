@@ -27,6 +27,7 @@ from src.agent.computer import (
     TerminalController,
     TerminalRiskLevel,
 )
+from src.agent.classifier import TaskClassifier, TaskIntent
 from src.agent.projects import ProjectRegistry
 from src.agent.recovery import FailureRecoveryManager, RecoveryAction
 from src.agent.task_state import AgentStep, ExecutionFlag, StepStatus, TaskContext, TaskState, TaskStatus
@@ -34,7 +35,7 @@ from src.agent.toolchain import ToolchainManager
 from src.agent.tools import ToolEngine
 from src.agent.verifier import SubtaskVerifier, VerificationOutcome
 from src.brain.llm import BaseLLM
-from src.utils.logging import log_debug, log_info, log_warn
+from src.utils.logging import log_chitti, log_debug, log_info, log_warn
 
 
 class AgentPlanner:
@@ -97,17 +98,96 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 3. GENERAL-PURPOSE PROGRAMMING & CODING TASKS (Single-file & Multi-file)
+        # 3. Multi-step: "Open Notepad and type <text>"
+        m_notepad_type = re.search(r"(?i)\bopen\s+notepad\s+(?:and|aur)\s+type\s+(.*)", clean) or \
+                         re.search(r"(?i)\bnotepad\s+(?:kholo|open\s+karo)\s+aur\s+(?:type\s+karo\s+|likho\s+)(.*)", clean)
+        if m_notepad_type:
+            text_to_type = m_notepad_type.group(1).strip()
+            state.steps = [
+                AgentStep(step_id=1, description="Open Notepad", action_type="OPEN_APPLICATION", parameters={"target": "Notepad"}),
+                AgentStep(step_id=2, description=f"Type text '{text_to_type}'", action_type="TYPE_TEXT", parameters={"text": text_to_type}, depends_on=[1]),
+                AgentStep(step_id=3, description="Verify Notepad active", action_type="VERIFY_WINDOW", parameters={"title": "Notepad"}, depends_on=[2]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 4. Multi-step: "Create a folder called <name> on Desktop"
+        m_desktop_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean) or \
+                            re.search(r"(?i)\bdesktop\s+(?:pe|par|me|mein)\s+(?:ek\s+)?([A-Za-z0-9_\-]+)\s+(?:naam\s+ka\s+)?folder\s+banao\b", clean)
+        if m_desktop_folder:
+            f_name = m_desktop_folder.group(1).strip()
+            desktop_path = str((Path.home() / "Desktop" / f_name).resolve())
+            if not Path.home().joinpath("Desktop").exists() and Path.home().joinpath("OneDrive", "Desktop").exists():
+                desktop_path = str((Path.home() / "OneDrive" / "Desktop" / f_name).resolve())
+
+            state.steps = [
+                AgentStep(step_id=1, description=f"Create folder '{f_name}' on Desktop", action_type="CREATE_DIRECTORY", parameters={"path": desktop_path}),
+                AgentStep(step_id=2, description=f"Verify folder '{f_name}' created on Desktop", action_type="VERIFY_FILE", parameters={"path": desktop_path}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 5. Multi-step: "Open Chrome and search for <query>"
+        m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
+                   re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser))\b", clean)
+        if m_search:
+            query = m_search.group(1).strip()
+            state.steps = [
+                AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
+                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 6. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
+        m_tests = re.search(r"(?i)\b(?:run\s+(?:the\s+)?tests?|run\s+pytest|run\s+(?:the\s+)?project|test\s+chalao|is\s+program\s+ko\s+run\s+karo)\b", clean)
+        if m_tests:
+            state.steps = [
+                AgentStep(step_id=1, description="Execute tests via pytest", action_type="RUN_TERMINAL", parameters={"command": "python -m pytest tests/ -q", "timeout": 45}),
+                AgentStep(step_id=2, description="Analyze test outcome", action_type="ANALYZE_OUTPUT", parameters={}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 7. Multi-step: "Open the folder <name> and create <file>"
+        m_folder_create_file = re.search(r"(?i)\bopen\s+(?:the\s+)?folder\s+([A-Za-z0-9_\-]+)\s+(?:and|aur)\s+create\s+([A-Za-z0-9_\-\.]+)\b", clean)
+        if m_folder_create_file:
+            folder_name = m_folder_create_file.group(1).strip()
+            file_name = m_folder_create_file.group(2).strip()
+            state.steps = [
+                AgentStep(step_id=1, description=f"Open folder {folder_name}", action_type="OPEN_FOLDER", parameters={"target": folder_name}),
+                AgentStep(step_id=2, description=f"Create file {file_name} in folder {folder_name}", action_type="CREATE_FILE", parameters={"path": f"{folder_name}/{file_name}", "content": "Created by Chitti Agent"}, depends_on=[1]),
+                AgentStep(step_id=3, description="Verify file created", action_type="VERIFY_FILE", parameters={"path": f"{folder_name}/{file_name}"}, depends_on=[2]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 8. Destructive Multi-step: "Delete <folder/file>"
+        m_del_folder = re.search(r"(?i)\bdelete\s+(?:folder\s+)?([A-Za-z0-9_\-\.]+)\b", clean)
+        if m_del_folder:
+            target = m_del_folder.group(1).strip()
+            if target.lower() not in {"the", "this", "my"}:
+                state.steps = [
+                    AgentStep(step_id=1, description=f"Delete folder '{target}'", action_type="DELETE_DIRECTORY", parameters={"path": target}, requires_confirmation=True),
+                    AgentStep(step_id=2, description=f"Verify folder '{target}' is deleted", action_type="VERIFY_DELETED", parameters={"path": target}, depends_on=[1]),
+                ]
+                state.status = TaskStatus.PLAN_READY
+                return state
+
+        # 9. GENERAL-PURPOSE PROGRAMMING & CODING TASKS (Single-file & Multi-file)
+        task_class = TaskClassifier.classify(clean)
         is_coding_request = (
-            bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|bana|karo)", clean)) or
-            bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer)", clean)) or
-            bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer)", clean)) or
-            bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement|develop)\s+.*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper|dashboard|calculator|timer|file|solution)\b", clean)) or
-            bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm|project|tracker|scraper|dashboard|timer)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
+            task_class.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.MODIFY_PROJECT, TaskIntent.BUILD_PROJECT)
+            or (task_class.is_actionable_task and task_class.intent not in (TaskIntent.COMPUTER_TASK, TaskIntent.BROWSER_TASK, TaskIntent.FILE_OPERATION))
+            or bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|bana|karo)", clean))
+            or bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql|flask|fastapi|express|django|node)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
+            or bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
+            or bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement|develop)\s+.*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper|dashboard|calculator|timer|file|solution|todo|system|website|portal|bot|crawler|interface|game)", clean))
+            or bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm|project|tracker|scraper|dashboard|timer|todo|system|website)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
         )
 
-
         if is_coding_request:
+            log_chitti("[CHITTI] [AGENT] Requirements extracted")
             spec = CodeGenerator.generate_code_for_topic(clean, llm=self.llm)
             state.set_flag(ExecutionFlag.TASK_UNDERSTOOD, True)
             state.set_flag(ExecutionFlag.CODE_GENERATED, True)
@@ -415,83 +495,8 @@ class AgentPlanner:
 
             state.steps = steps
             state.status = TaskStatus.PLAN_READY
+            log_chitti("[CHITTI] [AGENT] Project plan created")
             return state
-
-        # 4. Multi-step: "Open Notepad and type <text>"
-        m_notepad_type = re.search(r"(?i)\bopen\s+notepad\s+(?:and|aur)\s+type\s+(.*)", clean) or \
-                         re.search(r"(?i)\bnotepad\s+(?:kholo|open\s+karo)\s+aur\s+(?:type\s+karo\s+|likho\s+)(.*)", clean)
-        if m_notepad_type:
-            text_to_type = m_notepad_type.group(1).strip()
-            state.steps = [
-                AgentStep(step_id=1, description="Open Notepad", action_type="OPEN_APPLICATION", parameters={"target": "Notepad"}),
-                AgentStep(step_id=2, description=f"Type text '{text_to_type}'", action_type="TYPE_TEXT", parameters={"text": text_to_type}, depends_on=[1]),
-                AgentStep(step_id=3, description="Verify Notepad active", action_type="VERIFY_WINDOW", parameters={"title": "Notepad"}, depends_on=[2]),
-            ]
-            state.status = TaskStatus.PLAN_READY
-            return state
-
-        # 5. Multi-step: "Create a folder called <name> on Desktop"
-        m_desktop_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean) or \
-                            re.search(r"(?i)\bdesktop\s+(?:pe|par|me|mein)\s+(?:ek\s+)?([A-Za-z0-9_\-]+)\s+(?:naam\s+ka\s+)?folder\s+banao\b", clean)
-        if m_desktop_folder:
-            f_name = m_desktop_folder.group(1).strip()
-            desktop_path = str((Path.home() / "Desktop" / f_name).resolve())
-            if not Path.home().joinpath("Desktop").exists() and Path.home().joinpath("OneDrive", "Desktop").exists():
-                desktop_path = str((Path.home() / "OneDrive" / "Desktop" / f_name).resolve())
-
-            state.steps = [
-                AgentStep(step_id=1, description=f"Create folder '{f_name}' on Desktop", action_type="CREATE_DIRECTORY", parameters={"path": desktop_path}),
-                AgentStep(step_id=2, description=f"Verify folder '{f_name}' created on Desktop", action_type="VERIFY_FILE", parameters={"path": desktop_path}, depends_on=[1]),
-            ]
-            state.status = TaskStatus.PLAN_READY
-            return state
-
-        # 6. Multi-step: "Open Chrome and search for <query>"
-        m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
-                   re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser))\b", clean)
-        if m_search:
-            query = m_search.group(1).strip()
-            state.steps = [
-                AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
-                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}, depends_on=[1]),
-            ]
-            state.status = TaskStatus.PLAN_READY
-            return state
-
-        # 7. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
-        m_tests = re.search(r"(?i)\b(?:run\s+(?:the\s+)?tests?|run\s+pytest|run\s+(?:the\s+)?project|test\s+chalao|is\s+program\s+ko\s+run\s+karo)\b", clean)
-        if m_tests:
-            state.steps = [
-                AgentStep(step_id=1, description="Execute tests via pytest", action_type="RUN_TERMINAL", parameters={"command": "python -m pytest tests/ -q", "timeout": 45}),
-                AgentStep(step_id=2, description="Analyze test outcome", action_type="ANALYZE_OUTPUT", parameters={}, depends_on=[1]),
-            ]
-            state.status = TaskStatus.PLAN_READY
-            return state
-
-        # 8. Multi-step: "Open the folder <name> and create <file>"
-        m_folder_create_file = re.search(r"(?i)\bopen\s+(?:the\s+)?folder\s+([A-Za-z0-9_\-]+)\s+(?:and|aur)\s+create\s+([A-Za-z0-9_\-\.]+)\b", clean)
-        if m_folder_create_file:
-            folder_name = m_folder_create_file.group(1).strip()
-            file_name = m_folder_create_file.group(2).strip()
-            state.steps = [
-                AgentStep(step_id=1, description=f"Open folder {folder_name}", action_type="OPEN_FOLDER", parameters={"target": folder_name}),
-                AgentStep(step_id=2, description=f"Create file {file_name} in folder {folder_name}", action_type="CREATE_FILE", parameters={"path": f"{folder_name}/{file_name}", "content": "Created by Chitti Agent"}, depends_on=[1]),
-                AgentStep(step_id=3, description="Verify file created", action_type="VERIFY_FILE", parameters={"path": f"{folder_name}/{file_name}"}, depends_on=[2]),
-            ]
-            state.status = TaskStatus.PLAN_READY
-            return state
-
-        # 9. Destructive Multi-step: "Delete <folder/file>"
-        m_del_folder = re.search(r"(?i)\bdelete\s+(?:folder\s+)?([A-Za-z0-9_\-\.]+)\b", clean)
-        if m_del_folder:
-            target = m_del_folder.group(1).strip()
-            if target.lower() not in {"the", "this", "my"}:
-                state.steps = [
-                    AgentStep(step_id=1, description=f"Delete folder '{target}'", action_type="DELETE_DIRECTORY", parameters={"path": target}, requires_confirmation=True),
-                    AgentStep(step_id=2, description=f"Verify folder '{target}' is deleted", action_type="VERIFY_DELETED", parameters={"path": target}, depends_on=[1]),
-                ]
-                state.status = TaskStatus.PLAN_READY
-                return state
 
         return None
 
