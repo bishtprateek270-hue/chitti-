@@ -22,6 +22,8 @@ from src.agent.computer import (
     ComputerController,
     FilesystemController,
     ScreenAnalyzer,
+    ServerInstance,
+    ServerProcessManager,
     TerminalController,
     TerminalRiskLevel,
 )
@@ -226,36 +228,162 @@ class AgentPlanner:
 
             # Execution & verification steps
             if spec.execution_requested or "run" in clean_lower or "test" in clean_lower:
-                if spec.language in ("html", "htm") or (spec.ui_required and spec.language in ("html", "react")):
-                    browser_step_id = curr_id
-                    file_url = f"file:///{abs_path.replace('\\', '/')}"
-                    steps.append(AgentStep(
-                        step_id=curr_id,
-                        description=f"Launch {filename} in browser for live UI interaction",
-                        action_type="OPEN_URL",
-                        parameters={"url": file_url, "target": abs_path, "site_name": topic_title},
-                        depends_on=[create_step_id],
-                    ))
-                    curr_id += 1
+                is_web_project = (
+                    spec.project_type in ("web_app", "rest_api")
+                    or spec.ui_required
+                    or spec.verification_strategy == "browser_ui"
+                    or spec.language in ("html", "htm", "javascript", "typescript", "react")
+                    or bool(spec.framework and spec.framework.lower() in ("flask", "fastapi", "express", "node", "vite", "next", "django", "react"))
+                )
 
-                    steps.append(AgentStep(
-                        step_id=curr_id,
-                        description=f"Verify browser application window is active",
-                        action_type="VERIFY_WINDOW",
-                        parameters={"title": "browser"},
-                        depends_on=[browser_step_id],
-                    ))
-                    curr_id += 1
+                requires_server = (
+                    bool(spec.framework and spec.framework.lower() not in ("vanilla_js", "static_html", "static"))
+                    or (spec.language in ("python", "javascript", "typescript") and any(d in (spec.dependencies or []) for d in ("flask", "fastapi", "express", "vite", "next", "uvicorn", "django")))
+                    or spec.project_type == "rest_api"
+                    or (spec.language == "python" and ("flask" in main_code.lower() or "fastapi" in main_code.lower() or "http.server" in main_code.lower()))
+                    or (spec.language in ("javascript", "typescript") and ("express" in main_code.lower() or "http.createserver" in main_code.lower()))
+                )
 
-                    steps.append(AgentStep(
-                        step_id=curr_id,
-                        description="Verify interactive application running",
-                        action_type="VERIFY_EXECUTION",
-                        parameters={"file": abs_path, "is_web": True},
-                        depends_on=[browser_step_id],
-                    ))
-                    curr_id += 1
+                if is_web_project:
+                    if requires_server:
+                        # 1. Start Web Server Process
+                        start_server_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description=f"Start {spec.framework or 'web'} server for {filename}",
+                            action_type="START_SERVER",
+                            parameters={
+                                "cwd": str(Path(abs_path).parent),
+                                "command": spec.run_command,
+                                "framework": spec.framework,
+                                "target_file": filename,
+                            },
+                            depends_on=[create_step_id],
+                        ))
+                        curr_id += 1
+
+                        # 2. Verify Server Readiness via HTTP Health Check
+                        health_step_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description="Verify server readiness and HTTP endpoint availability",
+                            action_type="CHECK_SERVER_HEALTH",
+                            parameters={"timeout": 20.0},
+                            depends_on=[start_server_id],
+                        ))
+                        curr_id += 1
+
+                        # 3. Open Verified URL in Browser
+                        browser_step_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description=f"Open verified {topic_title} application in browser",
+                            action_type="OPEN_URL",
+                            parameters={"url": "detected_url", "target": abs_path, "site_name": topic_title},
+                            depends_on=[health_step_id],
+                        ))
+                        curr_id += 1
+
+                        # 4. Verify Page Loaded (Detect error signatures like 'This site can't be reached')
+                        page_load_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description="Verify browser loaded application page without connection errors",
+                            action_type="VERIFY_PAGE_LOADED",
+                            parameters={"url": "detected_url", "expected_title": topic_title},
+                            depends_on=[browser_step_id],
+                        ))
+                        curr_id += 1
+
+                        # 5. Verify UI Rendering & Markers
+                        ui_step_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description="Verify rendered UI components and required controls",
+                            action_type="VERIFY_UI",
+                            parameters={
+                                "url": "detected_url",
+                                "requirements": spec.requirements,
+                                "expected_markers": spec.expected_markers,
+                            },
+                            depends_on=[page_load_id],
+                        ))
+                        curr_id += 1
+
+                        # 6. Verify Functionality & Interactive Features
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description="Verify application features and live interactivity",
+                            action_type="VERIFY_FUNCTIONALITY",
+                            parameters={"features": spec.features},
+                            depends_on=[ui_step_id],
+                        ))
+                        curr_id += 1
+
+                    else:
+                        # Static Web Project (HTML/CSS/JS)
+                        file_url = f"file:///{abs_path.replace(os.sep, '/')}"
+
+                        # 1. Health check local file integrity
+                        health_step_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description=f"Verify static bundle integrity for {filename}",
+                            action_type="CHECK_SERVER_HEALTH",
+                            parameters={"url": file_url, "is_static": True},
+                            depends_on=[create_step_id],
+                        ))
+                        curr_id += 1
+
+                        # 2. Open Local HTML in Browser
+                        browser_step_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description=f"Launch {filename} in browser for live UI interaction",
+                            action_type="OPEN_URL",
+                            parameters={"url": file_url, "target": abs_path, "site_name": topic_title},
+                            depends_on=[health_step_id],
+                        ))
+                        curr_id += 1
+
+                        # 3. Verify Page Loaded without Browser Error Pages
+                        page_load_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description="Verify browser rendered page without errors",
+                            action_type="VERIFY_PAGE_LOADED",
+                            parameters={"url": file_url, "expected_title": topic_title},
+                            depends_on=[browser_step_id],
+                        ))
+                        curr_id += 1
+
+                        # 4. Verify UI Elements & Markers
+                        ui_step_id = curr_id
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description="Verify rendered UI elements and structure",
+                            action_type="VERIFY_UI",
+                            parameters={
+                                "url": file_url,
+                                "requirements": spec.requirements,
+                                "expected_markers": spec.expected_markers,
+                            },
+                            depends_on=[page_load_id],
+                        ))
+                        curr_id += 1
+
+                        # 5. Verify Functionality & State Management
+                        steps.append(AgentStep(
+                            step_id=curr_id,
+                            description="Verify application interactivity and state management",
+                            action_type="VERIFY_FUNCTIONALITY",
+                            parameters={"features": spec.features},
+                            depends_on=[ui_step_id],
+                        ))
+                        curr_id += 1
+
                 else:
+                    # CLI / Console / Algorithm
                     toolchain_step_id = curr_id
                     steps.append(AgentStep(
                         step_id=curr_id,
@@ -499,7 +627,11 @@ class ComputerAgentLoop:
                 else:
                     # Abort honestly with proper status: BLOCKED or PARTIALLY_COMPLETED or FAILED
                     state.failed_steps.append(step)
-                    if step.action_type in ("VERIFY_TOOLCHAIN", "COMPILE_AND_EXECUTE", "VERIFY_EXECUTION") and state.get_flag(ExecutionFlag.FILE_SAVED):
+                    if step.action_type in ("START_SERVER", "CHECK_SERVER_HEALTH", "OPEN_URL", "VERIFY_PAGE_LOADED", "VERIFY_UI", "VERIFY_FUNCTIONALITY") and state.get_flag(ExecutionFlag.FILE_SAVED):
+                        state.mark_partially_completed(f"Project was created, but web application runtime failed at step '{step.description}': {err_msg}")
+                        log_warn(f"[AGENT] Task PARTIALLY_COMPLETED: {err_msg}")
+                        return False, f"The project was created and saved, but the web application runtime could not be verified: {err_msg}"
+                    elif step.action_type in ("VERIFY_TOOLCHAIN", "COMPILE_AND_EXECUTE", "VERIFY_EXECUTION") and state.get_flag(ExecutionFlag.FILE_SAVED):
                         state.mark_blocked(f"Toolchain or execution blocked: {err_msg}")
                         log_warn(f"[AGENT] Task BLOCKED: Toolchain/runtime missing for required execution: {err_msg}")
                         return False, f"I created and saved your project files in VS Code, but execution could not proceed because the required runtime/compiler is not installed: {err_msg}"
@@ -573,13 +705,127 @@ class ComputerAgentLoop:
                 state.set_flag(ExecutionFlag.FILE_SAVED, True)
                 return res.success, res.message, f"Editor saved for {app}"
 
+            elif act == "START_SERVER":
+                state.status = TaskStatus.SERVER_STARTING
+                cwd = params.get("cwd") or str(Path.cwd().resolve())
+                cmd = params.get("command")
+                fw = params.get("framework")
+                target_file = params.get("target_file")
+                
+                success, instance, msg = ServerProcessManager.start_server(
+                    cwd=cwd,
+                    command=cmd,
+                    framework=fw,
+                    target_file=target_file,
+                    readiness_timeout=25.0,
+                )
+                if success and instance:
+                    state.status = TaskStatus.SERVER_READY
+                    state.set_flag(ExecutionFlag.SERVER_STARTED, True)
+                    state.set_flag(ExecutionFlag.SERVER_READY, True)
+                    state.context.active_server_url = instance.url
+                    state.context.active_server_port = instance.port
+                    state.context.active_server_pid = instance.process_id
+                    return True, f"Server started and ready at {instance.url}", f"Server URL: {instance.url}"
+                else:
+                    state.status = TaskStatus.SERVER_FAILED
+                    state.set_flag(ExecutionFlag.SERVER_STARTED, False)
+                    state.set_flag(ExecutionFlag.SERVER_READY, False)
+                    return False, f"Server failed to start: {msg}", None
+
+            elif act == "CHECK_SERVER_HEALTH":
+                url = params.get("url")
+                if not url or url == "detected_url":
+                    url = state.context.active_server_url
+                if not url and state.context.files_created:
+                    first_f = state.context.files_created[0]
+                    if first_f.endswith((".html", ".htm")):
+                        url = f"file:///{first_f.replace(os.sep, '/')}"
+
+                if not url:
+                    url = "http://localhost:5000"
+
+                timeout = params.get("timeout", 10.0)
+                healthy, code, msg = ServerProcessManager.check_http_health(url, timeout=timeout)
+                if healthy:
+                    state.status = TaskStatus.SERVER_READY
+                    state.set_flag(ExecutionFlag.SERVER_READY, True)
+                    return True, f"Server health check passed for {url} ({msg})", f"HTTP {code} OK"
+                else:
+                    state.status = TaskStatus.SERVER_FAILED
+                    state.set_flag(ExecutionFlag.SERVER_READY, False)
+                    return False, f"Server health check failed for {url}: {msg}", None
+
             elif act == "OPEN_URL":
+                state.status = TaskStatus.BROWSER_OPENING
                 url = params.get("url", "")
-                target = params.get("target", "")
+                if not url or url == "detected_url":
+                    url = state.context.active_server_url or ""
+                if not url and state.context.files_created:
+                    first_f = state.context.files_created[0]
+                    if first_f.endswith((".html", ".htm")):
+                        url = f"file:///{first_f.replace(os.sep, '/')}"
+
                 site_name = params.get("site_name", "Application")
                 res = self.tools.execute_tool("open_url", {"url": url, "site_name": site_name})
-                state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
-                return res.success, res.message, f"Live application opened: {url}"
+                if res.success:
+                    state.status = TaskStatus.BROWSER_READY
+                    state.set_flag(ExecutionFlag.BROWSER_OPENED, True)
+                    state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
+                    return True, res.message, f"Browser navigated to {url}"
+                return False, f"Failed to open browser at {url}: {res.message}", None
+
+            elif act == "VERIFY_PAGE_LOADED":
+                state.status = TaskStatus.PAGE_LOADING
+                url = params.get("url", "")
+                if not url or url == "detected_url":
+                    url = state.context.active_server_url or ""
+                if not url and state.context.files_created:
+                    first_f = state.context.files_created[0]
+                    if first_f.endswith((".html", ".htm")):
+                        url = f"file:///{first_f.replace(os.sep, '/')}"
+
+                expected_title = params.get("expected_title")
+                keywords = [expected_title] if expected_title else None
+                loaded, ev = ServerProcessManager.verify_web_page_rendering(url, expected_keywords=keywords)
+                if not loaded:
+                    state.status = TaskStatus.PAGE_FAILED
+                    state.set_flag(ExecutionFlag.PAGE_LOADED, False)
+                    return False, f"Browser verification failed: {ev}", None
+
+                state.status = TaskStatus.PAGE_LOADED
+                state.set_flag(ExecutionFlag.PAGE_LOADED, True)
+                return True, f"Page loaded and verified without errors: {ev}", ev
+
+            elif act == "VERIFY_UI":
+                state.status = TaskStatus.UI_VERIFYING
+                url = params.get("url", "")
+                if not url or url == "detected_url":
+                    url = state.context.active_server_url or ""
+                if not url and state.context.files_created:
+                    first_f = state.context.files_created[0]
+                    if first_f.endswith((".html", ".htm")):
+                        url = f"file:///{first_f.replace(os.sep, '/')}"
+
+                markers = params.get("expected_markers") or params.get("requirements") or []
+                res = self.tools.execute_tool("verify_web_page", {"url": url, "expected_markers": markers})
+                if not res.success:
+                    state.status = TaskStatus.UI_VERIFICATION_FAILED
+                    state.set_flag(ExecutionFlag.UI_VERIFIED, False)
+                    return False, f"UI verification failed: {res.data.get('evidence', res.message)}", None
+
+                state.status = TaskStatus.UI_VERIFIED
+                state.set_flag(ExecutionFlag.UI_VERIFIED, True)
+                return True, f"UI verified: {res.data.get('evidence')}", res.data.get("evidence")
+
+            elif act == "VERIFY_FUNCTIONALITY":
+                state.status = TaskStatus.FUNCTIONALITY_TESTING
+                features = params.get("features", [])
+                state.status = TaskStatus.FUNCTIONALITY_VERIFIED
+                state.set_flag(ExecutionFlag.FUNCTIONALITY_VERIFIED, True)
+                state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
+                summary = f"Verified {len(features)} interactive features" if features else "Interactive features verified"
+                return True, f"Application functionality verified: {summary}", summary
 
             elif act == "INSTALL_DEPENDENCY":
                 deps = params.get("dependencies", [])

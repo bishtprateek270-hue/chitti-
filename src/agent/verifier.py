@@ -120,11 +120,56 @@ class SubtaskVerifier:
                 return VerificationOutcome(True, f"YouTube window verified: {win_res.evidence}")
             return VerificationOutcome(False, "YouTube playback could not be confirmed.")
 
-        # 5. CODE EXECUTION & TERMINAL
+        # 5. WEB SERVER & BROWSER APPLICATION VERIFICATION
+        elif act == "START_SERVER":
+            if action_result and action_result.success:
+                state.set_flag(ExecutionFlag.SERVER_STARTED, True)
+                state.set_flag(ExecutionFlag.SERVER_READY, True)
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else "Server failed to start.")
+
+        elif act == "CHECK_SERVER_HEALTH":
+            if action_result and action_result.success:
+                state.set_flag(ExecutionFlag.SERVER_READY, True)
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else "Server health check failed.")
+
+        elif act == "OPEN_URL":
+            if action_result and action_result.success:
+                state.set_flag(ExecutionFlag.BROWSER_OPENED, True)
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else "Failed to open URL in browser.")
+
+        elif act == "VERIFY_PAGE_LOADED":
+            if action_result and action_result.success:
+                state.set_flag(ExecutionFlag.PAGE_LOADED, True)
+                return VerificationOutcome(True, action_result.message)
+            state.set_flag(ExecutionFlag.PAGE_LOADED, False)
+            return VerificationOutcome(False, action_result.message if action_result else "Browser page failed to load.")
+
+        elif act == "VERIFY_UI":
+            if action_result and action_result.success:
+                state.set_flag(ExecutionFlag.UI_VERIFIED, True)
+                return VerificationOutcome(True, action_result.message)
+            state.set_flag(ExecutionFlag.UI_VERIFIED, False)
+            return VerificationOutcome(False, action_result.message if action_result else "UI verification failed.")
+
+        elif act == "VERIFY_FUNCTIONALITY":
+            if action_result and action_result.success:
+                state.set_flag(ExecutionFlag.FUNCTIONALITY_VERIFIED, True)
+                state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else "Functionality verification failed.")
+
+        # 6. CODE EXECUTION & TERMINAL
         elif act in ("RUN_TERMINAL", "COMPILE_AND_EXECUTE", "VERIFY_EXECUTION"):
             is_web = params.get("is_web", False)
             if is_web:
-                return VerificationOutcome(True, "Web application active in browser.")
+                if state.get_flag(ExecutionFlag.PAGE_LOADED) and state.get_flag(ExecutionFlag.UI_VERIFIED):
+                    return VerificationOutcome(True, "Web application active and verified in browser.")
+                elif state.get_flag(ExecutionFlag.PAGE_LOADED):
+                    return VerificationOutcome(True, "Web application active in browser.")
+                return VerificationOutcome(False, "Web application is not reachable in browser.")
             if not state.get_flag(ExecutionFlag.TOOLCHAIN_VERIFIED):
                 return VerificationOutcome(False, "Toolchain is not installed on this system. Execution cannot proceed.")
             if action_result and action_result.success:

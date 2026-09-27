@@ -67,11 +67,16 @@ class BrowserController:
 
         return clean.title() if clean else "Top Songs"
 
-    def open_url(self, url: str, browser: Optional[str] = None) -> bool:
+    def open_url(self, url: str, browser: Optional[str] = None, site_name: Optional[str] = None) -> bool:
         """Opens a URL in the user's default browser or specified executable."""
         target_url = url.strip()
-        if not target_url.startswith(("http://", "https://")):
-            target_url = f"https://{target_url}"
+        if not target_url.startswith(("http://", "https://", "file:///")):
+            if target_url.startswith("file:/"):
+                target_url = target_url.replace("file:/", "file:///")
+            elif target_url.startswith("/") or re.match(r"^[a-zA-Z]:[/\\]", target_url):
+                target_url = f"file:///{target_url.replace('\\', '/')}"
+            else:
+                target_url = f"https://{target_url}"
 
         try:
             if browser:
@@ -92,6 +97,11 @@ class BrowserController:
         except Exception as e:
             log_warn(f"[BROWSER] Failed to open URL {target_url}: {e}")
             return False
+
+    def verify_page_loaded(self, url: str, expected_keywords: Optional[List[str]] = None) -> Tuple[bool, str]:
+        """Verifies that the target page loaded without browser error pages (e.g. Connection Refused)."""
+        from src.agent.computer.server_runtime import ServerProcessManager
+        return ServerProcessManager.verify_web_page_rendering(url, expected_keywords=expected_keywords)
 
     def search_web(self, query: str, engine: str = "google") -> bool:
         """Searches the web for a given query string."""

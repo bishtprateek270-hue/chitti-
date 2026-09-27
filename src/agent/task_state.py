@@ -21,6 +21,27 @@ class TaskStatus(str, enum.Enum):
     FILES_GENERATED = "FILES_GENERATED"
     VALIDATING = "VALIDATING"
     DEPENDENCIES_READY = "DEPENDENCIES_READY"
+    # Web Server Lifecycle States
+    SERVER_STARTING = "SERVER_STARTING"
+    SERVER_READY = "SERVER_READY"
+    SERVER_FAILED = "SERVER_FAILED"
+    SERVER_STOPPED = "SERVER_STOPPED"
+
+    # Browser & Page Lifecycle States
+    BROWSER_OPENING = "BROWSER_OPENING"
+    BROWSER_READY = "BROWSER_READY"
+    PAGE_LOADING = "PAGE_LOADING"
+    PAGE_LOADED = "PAGE_LOADED"
+    PAGE_FAILED = "PAGE_FAILED"
+
+    # UI & Functional Verification States
+    UI_VERIFYING = "UI_VERIFYING"
+    UI_VERIFIED = "UI_VERIFIED"
+    UI_VERIFICATION_FAILED = "UI_VERIFICATION_FAILED"
+    FUNCTIONALITY_TESTING = "FUNCTIONALITY_TESTING"
+    FUNCTIONALITY_VERIFIED = "FUNCTIONALITY_VERIFIED"
+    FUNCTIONALITY_FAILED = "FUNCTIONALITY_FAILED"
+
     RUNNING = "RUNNING"
     EXECUTING = "EXECUTING"  # Alias/general execution state
     OBSERVING = "OBSERVING"
@@ -57,6 +78,12 @@ class ExecutionFlag(str, enum.Enum):
     EDITOR_CONTENT_VERIFIED = "EDITOR_CONTENT_VERIFIED"
     FILE_SAVED = "FILE_SAVED"
     TOOLCHAIN_VERIFIED = "TOOLCHAIN_VERIFIED"
+    SERVER_STARTED = "SERVER_STARTED"
+    SERVER_READY = "SERVER_READY"
+    BROWSER_OPENED = "BROWSER_OPENED"
+    PAGE_LOADED = "PAGE_LOADED"
+    UI_VERIFIED = "UI_VERIFIED"
+    FUNCTIONALITY_VERIFIED = "FUNCTIONALITY_VERIFIED"
     CODE_EXECUTED = "CODE_EXECUTED"
     EXECUTION_VERIFIED = "EXECUTION_VERIFIED"
 
@@ -106,6 +133,9 @@ class TaskContext:
     last_output: Optional[str] = None
     active_application: Optional[str] = None
     active_project_path: Optional[str] = None
+    active_server_url: Optional[str] = None
+    active_server_port: Optional[int] = None
+    active_server_pid: Optional[int] = None
     custom_state: Dict[str, Any] = field(default_factory=dict)
 
 

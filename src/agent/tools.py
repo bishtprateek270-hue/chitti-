@@ -303,7 +303,7 @@ class ToolEngine:
             self._tool_search_files,
         )
 
-        # 6. TERMINAL TOOLS
+        # 6. TERMINAL & SERVER RUNTIME TOOLS
         self._register(
             "execute_terminal_command",
             "Runs a terminal / PowerShell command and captures stdout/stderr/exit code.",
@@ -313,10 +313,62 @@ class ToolEngine:
             },
             self._tool_execute_terminal,
         )
+        self._register(
+            "start_web_server",
+            "Starts a development web server (Flask, FastAPI, Node/Express, Vite, static) in background and verifies readiness.",
+            {
+                "cwd": {"type": "string", "description": "Working directory of the project"},
+                "command": {"type": "string", "description": "Explicit startup command", "optional": True},
+                "framework": {"type": "string", "description": "Target framework", "optional": True},
+                "target_file": {"type": "string", "description": "Main application file", "optional": True},
+            },
+            self._tool_start_web_server,
+        )
+        self._register(
+            "check_server_health",
+            "Probes an HTTP endpoint or local file for availability.",
+            {
+                "url": {"type": "string", "description": "URL or file URL to check"},
+                "timeout": {"type": "number", "description": "Timeout in seconds", "optional": True},
+            },
+            self._tool_check_server_health,
+        )
+        self._register(
+            "verify_web_page",
+            "Verifies that a browser page loaded without browser error pages (e.g. ERR_CONNECTION_REFUSED).",
+            {
+                "url": {"type": "string", "description": "Target URL to verify"},
+                "expected_keywords": {"type": "array", "description": "Expected content markers", "optional": True},
+            },
+            self._tool_verify_web_page,
+        )
 
     # ---------------------------------------------------------
     # TOOL HANDLERS
     # ---------------------------------------------------------
+
+    def _tool_start_web_server(self, cwd: str, command: Optional[str] = None, framework: Optional[str] = None, target_file: Optional[str] = None) -> Dict[str, Any]:
+        from src.agent.computer.server_runtime import ServerProcessManager
+        ok, inst, msg = ServerProcessManager.start_server(cwd=cwd, command=command, framework=framework, target_file=target_file)
+        return {
+            "success": ok,
+            "url": inst.url if inst else None,
+            "port": inst.port if inst else None,
+            "pid": inst.process_id if inst else None,
+            "message": msg,
+            "error": None if ok else msg,
+        }
+
+    def _tool_check_server_health(self, url: str, timeout: float = 3.0) -> Dict[str, Any]:
+        from src.agent.computer.server_runtime import ServerProcessManager
+        ok, code, msg = ServerProcessManager.check_http_health(url, timeout=timeout)
+        return {"success": ok, "status_code": code, "message": msg, "error": None if ok else msg}
+
+    def _tool_verify_web_page(self, url: str, expected_keywords: Optional[List[str]] = None, expected_markers: Optional[List[str]] = None, **kwargs) -> Dict[str, Any]:
+        from src.agent.computer.server_runtime import ServerProcessManager
+        keywords = expected_keywords or expected_markers or []
+        ok, msg = ServerProcessManager.verify_web_page_rendering(url, expected_keywords=keywords)
+        return {"success": ok, "evidence": msg, "message": msg, "error": None if ok else msg}
 
     def _tool_open_application(self, application: str, args: Optional[List[str]] = None) -> Dict[str, Any]:
         log_info(f"[TOOL] open_application -> {application}")
