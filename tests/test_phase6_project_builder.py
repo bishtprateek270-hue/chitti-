@@ -286,3 +286,41 @@ def test_task_cancellation(workspace_tmp):
     assert handled is True
     assert mgr.active_task_state.status == TaskStatus.CANCELLED
     assert "cancelled" in resp.lower()
+
+
+def test_case_recipe_manager_searchable_interface():
+    """Test Section 20 Example: 'Create a small recipe manager with a searchable interface and run it.'"""
+    prompt = "Create a small recipe manager with a searchable interface and run it."
+    spec = CodeGenerator.parse_programming_task(prompt)
+    
+    assert spec.ui_required is True
+    assert spec.execution_requested is True
+    assert "recipe" in spec.filename or "manager" in spec.filename
+    assert any("search" in r.lower() or "filter" in r.lower() for r in spec.requirements or spec.features)
+    assert spec.data_storage == "localStorage"
+    assert spec.technology_choice_reason != ""
+    
+    # Generate code and validate
+    spec = CodeGenerator.generate_solution(spec)
+    content = spec.files[0].content
+    val = CodeValidator.validate_code(content, language=spec.language)
+    assert val.valid is True
+    assert "filterItems" in content or "search" in content.lower()
+    assert "addItem" in content
+    assert "localStorage" in content
+    assert "TODO" not in content
+
+
+def test_project_specification_metadata():
+    """Verifies ProjectSpecification structure and translation."""
+    prompt = "Build a student management system in Python and run it"
+    spec = CodeGenerator.parse_programming_task(prompt)
+    proj_spec = spec.to_project_spec()
+    
+    assert proj_spec.project_name != ""
+    assert proj_spec.language == "python"
+    assert proj_spec.execution_requested is True
+    assert len(proj_spec.requirements) > 0
+    assert len(proj_spec.features) > 0
+    assert proj_spec.run_command == "python student_manager.py"
+

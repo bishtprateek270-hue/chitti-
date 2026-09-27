@@ -142,13 +142,25 @@ class CodeGenerator:
                     explicit_lang = "java"
                 break
 
-        # 4. Resolve Final Language Decision
+        # 4. Resolve Final Language Decision (Priority 1: Explicit Language, Priority 2: Framework, Priority 3: Suitable Technology)
         if explicit_lang:
             detected_lang = explicit_lang
-        elif ui_required:
-            detected_lang = "html"  # Web application is optimal for UI tasks
+            tech_reason = f"User explicitly requested language '{explicit_lang}'"
+        elif detected_framework:
+            detected_lang = "javascript" if detected_framework in ("express", "react") else ("java" if detected_framework == "spring_boot" else "python")
+            tech_reason = f"Inferred language '{detected_lang}' from specified framework '{detected_framework}'"
+        elif ui_required or "web" in lower or "dashboard" in lower or "portfolio" in lower:
+            detected_lang = "html"
+            tech_reason = "Selected HTML/CSS/JS Single Page Application for interactive modern UI with instant local browser execution"
+        elif "ml" in lower or "machine learning" in lower or "predict" in lower:
+            detected_lang = "python"
+            tech_reason = "Selected Python for machine learning and analytical data processing"
+        elif "api" in lower or "rest" in lower:
+            detected_lang = "python"
+            tech_reason = "Selected Python for lightweight REST API backend"
         else:
-            detected_lang = "python"  # Default general-purpose language
+            detected_lang = "python"
+            tech_reason = "Selected Python as standard general-purpose runtime"
 
         # 5. Detect Execution & Run Intent
         execution_requested = bool(
@@ -198,34 +210,57 @@ class CodeGenerator:
         else:
             project_type = "single_file"
 
-        # 9. Extract Dynamic Requirements List
+        # 9. Extract Dynamic Requirements & Features List
         requirements = [clean_desc or "Core functionality"]
+        features = []
         if ui_required or project_type == "web_app":
             requirements.extend([
                 "Modern responsive interface with dynamic styling",
                 "Interactive controls, event handlers and state management",
                 "Visual feedback and formatted results display"
             ])
+            features.extend(["Responsive Glassmorphic UI", "Interactive Controls", "Persistent Storage", "Live State Updates"])
+
         if project_type == "management_system":
             requirements.extend(["Record modeling with attributes", "CRUD operations (Add, View, Update, Delete)", "Data persistence and search"])
+            features.extend(["Data Entity Modeling", "CRUD Operations", "Search & Filtering", "Persistent Records"])
+
         if project_type == "rest_api":
             requirements.extend(["RESTful route handlers (GET, POST, PUT, DELETE)", "JSON request/response schemas", "Error handling and status codes"])
+            features.extend(["REST Endpoints", "JSON Payloads", "HTTP Error Handling"])
+
         if project_type == "ml_project":
             requirements.extend(["Data preprocessing and feature engineering", "Model training and prediction pipeline", "Evaluation metrics and reporting"])
+            features.extend(["Synthetic Data Pipeline", "Model Fitting", "Evaluation Metrics"])
 
         # Check for specific functional keywords in user text
         if re.search(r"(?i)\b(?:add|create|insert)\b", raw):
             requirements.append("Add item/record functionality")
+            features.append("Item Creation")
         if re.search(r"(?i)\b(?:delete|remove)\b", raw):
             requirements.append("Delete/remove functionality")
+            features.append("Item Removal")
         if re.search(r"(?i)\b(?:complete|done|status|toggle)\b", raw):
             requirements.append("Status toggling / completion marking")
+            features.append("Status Toggle")
         if re.search(r"(?i)\b(?:search|filter|find)\b", raw):
             requirements.append("Search and filtering capability")
+            features.append("Instant Search & Filter")
         if re.search(r"(?i)\b(?:dark\s+mode|theme)\b", raw):
             requirements.append("Theme customization support")
+            features.append("Theme Customization")
 
-        # 10. Determine Dependencies
+        # 10. Determine Data Storage Strategy
+        if project_type == "web_app":
+            data_storage = "localStorage"
+        elif project_type == "management_system":
+            data_storage = "json_file" if detected_lang in ("python", "py") else "in_memory"
+        elif project_type == "rest_api":
+            data_storage = "in_memory_records"
+        else:
+            data_storage = "in_memory"
+
+        # 11. Determine Dependencies
         dependencies = []
         if detected_framework == "flask":
             dependencies.append("flask")
@@ -236,7 +271,7 @@ class CodeGenerator:
         elif project_type == "ml_project" and detected_lang == "python":
             dependencies.extend(["numpy", "scikit-learn"])
 
-        # 11. Determine Verification Strategy
+        # 12. Determine Verification Strategy
         if project_type == "web_app":
             verification_strategy = "browser_ui"
         elif project_type == "rest_api":
@@ -246,10 +281,41 @@ class CodeGenerator:
         else:
             verification_strategy = "cli_output"
 
-        # 12. Determine Dynamic Filename & Entry Point
+        # 13. Determine Dynamic Filename & Entry Point
         filename = cls._derive_filename(clean_desc, detected_lang, detected_framework, ui_required=(ui_required or project_type == "web_app"))
 
-        # 13. Construct Task Spec
+        # 14. Determine Run, Test & Build Commands
+        if detected_lang in ("python", "py"):
+            run_cmd = f"python {filename}"
+            test_cmd = f"python {filename}"
+            build_cmd = None
+        elif detected_lang in ("cpp", "c++"):
+            build_cmd = f"g++ {filename} -o {slug}.exe"
+            run_cmd = f".\\{slug}.exe"
+            test_cmd = run_cmd
+        elif detected_lang in ("java",):
+            stem = Path(filename).stem
+            build_cmd = f"javac {filename}"
+            run_cmd = f"java {stem}"
+            test_cmd = run_cmd
+        elif detected_lang in ("rust", "rs"):
+            build_cmd = f"rustc {filename} -o {slug}.exe"
+            run_cmd = f".\\{slug}.exe"
+            test_cmd = run_cmd
+        elif detected_lang in ("javascript", "node"):
+            run_cmd = f"node {filename}"
+            test_cmd = f"node {filename}"
+            build_cmd = None
+        elif detected_lang in ("html", "htm"):
+            run_cmd = f"open {filename} in browser"
+            test_cmd = None
+            build_cmd = None
+        else:
+            run_cmd = f"python {filename}"
+            test_cmd = None
+            build_cmd = None
+
+        # 15. Construct Task Spec
         spec = ProgrammingTaskSpec(
             task_type="CODE_MODIFICATION" if is_existing_project else ("PROJECT_CREATION" if project_type in ("web_app", "rest_api", "management_system") else "CODE_CREATION"),
             project_name=project_name,
@@ -258,13 +324,22 @@ class CodeGenerator:
             project_type=project_type,
             problem_description=clean_desc or "Software Project",
             requirements=requirements,
+            features=features,
+            data_storage=data_storage,
             filename=filename,
             dependencies=dependencies,
             ui_required=ui_required or (project_type == "web_app"),
             execution_requested=execution_requested,
             application="Visual Studio Code",
             entry_point=filename,
+            run_cmd=run_cmd,
+            run_command=run_cmd,
+            test_cmd=test_cmd,
+            test_command=test_cmd,
+            build_cmd=build_cmd,
+            build_command=build_cmd,
             verification_strategy=verification_strategy,
+            technology_choice_reason=tech_reason,
             is_existing_project=is_existing_project,
             raw_input=raw,
         )
@@ -716,23 +791,43 @@ class CodeGenerator:
             <button onclick="appendNum('.')">.</button>
         </div>
 """
-        elif has_expense:
-            html_code += f"""        <div class="input-group">
-            <input type="text" id="item-title" placeholder="Expense description (e.g. Groceries)..." />
-            <input type="number" id="item-amount" placeholder="Amount (₹/$)" style="max-width: 130px;" />
-            <select id="item-cat" style="max-width: 140px;">
-                <option value="Food">Food</option>
-                <option value="Transport">Transport</option>
-                <option value="Utilities">Utilities</option>
-                <option value="Other">Other</option>
-            </select>
-            <button class="btn" id="btn-add" onclick="addItem()">Add</button>
+        if has_calc:
+            html_code += """        <div id="calc-display" class="display-panel">0</div>
+        <div class="grid-controls">
+            <button onclick="clearCalc()" class="op">C</button>
+            <button onclick="appendOp('/')" class="op">÷</button>
+            <button onclick="appendOp('*')" class="op">×</button>
+            <button onclick="deleteDigit()" class="op">⌫</button>
+            <button onclick="appendNum('7')">7</button>
+            <button onclick="appendNum('8')">8</button>
+            <button onclick="appendNum('9')">9</button>
+            <button onclick="appendOp('-')" class="op">−</button>
+            <button onclick="appendNum('4')">4</button>
+            <button onclick="appendNum('5')">5</button>
+            <button onclick="appendNum('6')">6</button>
+            <button onclick="appendOp('+')" class="op">+</button>
+            <button onclick="appendNum('1')">1</button>
+            <button onclick="appendNum('2')">2</button>
+            <button onclick="appendNum('3')">3</button>
+            <button onclick="calculateResult()" class="op" style="grid-row: span 2; background: var(--accent); color: #0f172a; font-weight: 700;">=</button>
+            <button onclick="appendNum('0')" style="grid-column: span 2;">0</button>
+            <button onclick="appendNum('.')">.</button>
         </div>
-        <ul class="item-list" id="items-container"></ul>
 """
         else:
-            html_code += f"""        <div class="input-group">
-            <input type="text" id="item-input" placeholder="Enter new {entity_name.lower()} item or query..." onkeydown="if(event.key==='Enter') addItem()" />
+            html_code += f"""        <div class="input-group" style="margin-bottom: 0.75rem;">
+            <input type="text" id="search-input" placeholder="🔍 Search {entity_name.lower()} entries or categories..." oninput="filterItems(this.value)" />
+        </div>
+        <div class="input-group">
+            <input type="text" id="item-title" placeholder="{title} entry (e.g. description, name, title)..." onkeydown="if(event.key==='Enter') addItem()" />
+            <input type="number" id="item-amount" placeholder="Value / Amount" style="max-width: 140px;" />
+            <select id="item-cat" style="max-width: 150px;">
+                <option value="General">General</option>
+                <option value="Work">Work</option>
+                <option value="Personal">Personal</option>
+                <option value="Finance">Finance</option>
+                <option value="Health">Health</option>
+            </select>
             <button class="btn" id="btn-add" onclick="addItem()">Add {entity_name}</button>
         </div>
         <ul class="item-list" id="items-container"></ul>
@@ -747,6 +842,7 @@ class CodeGenerator:
         const STORAGE_KEY = "chitti_app_{slug}_data";
         let state = {{
             items: JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"),
+            searchQuery: "",
             calcBuffer: "0"
         }};
 
@@ -759,12 +855,18 @@ class CodeGenerator:
             const statCount = document.getElementById("stat-count");
             const statAux = document.getElementById("stat-aux");
             if (statCount) {{
-                statCount.innerHTML = `Items: <strong>${{state.items.length}}</strong>`;
+                const activeCount = state.items.filter(i => !i.completed).length;
+                statCount.innerHTML = `Active: <strong>${{activeCount}}</strong> / Total: <strong>${{state.items.length}}</strong>`;
             }}
             if (statAux) {{
-                const total = state.items.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
-                statAux.innerHTML = total > 0 ? `Total: <strong>₹${{total.toFixed(2)}}</strong>` : `Items Active`;
+                const totalVal = state.items.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
+                statAux.innerHTML = totalVal > 0 ? `Total: <strong>${{totalVal.toLocaleString()}}</strong>` : `System: <strong>Ready</strong>`;
             }}
+        }}
+
+        function filterItems(query) {{
+            state.searchQuery = (query || "").toLowerCase().trim();
+            renderItems();
         }}
 
         // General List & CRUD Logic
@@ -772,28 +874,38 @@ class CodeGenerator:
             const container = document.getElementById("items-container");
             if (!container) return;
             container.innerHTML = "";
-            if (state.items.length === 0) {{
-                container.innerHTML = `<li style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No items yet. Add one above!</li>`;
+
+            const visibleItems = state.items.filter(it => {{
+                if (!state.searchQuery) return true;
+                const matchTitle = it.title && it.title.toLowerCase().includes(state.searchQuery);
+                const matchCat = it.category && it.category.toLowerCase().includes(state.searchQuery);
+                return matchTitle || matchCat;
+            }});
+
+            if (visibleItems.length === 0) {{
+                container.innerHTML = `<li style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No matching entries found. Add one above!</li>`;
                 return;
             }}
-            state.items.forEach((it, idx) => {{
+
+            visibleItems.forEach((it) => {{
+                const originalIdx = state.items.indexOf(it);
                 const li = document.createElement("li");
                 li.className = "item-row" + (it.completed ? " completed" : "");
                 li.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <input type="checkbox" ${{it.completed ? "checked" : ""}} onchange="toggleItem(${{idx}})" />
+                    <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+                        <input type="checkbox" ${{it.completed ? "checked" : ""}} onchange="toggleItem(${{originalIdx}})" />
                         <span class="text">${{it.title}}</span>
-                        ${{it.amount ? `<span style="color: var(--accent); font-weight: 600;">(₹${{it.amount}})</span>` : ""}}
+                        ${{it.amount ? `<span style="color: var(--accent); font-weight: 600;">(${{it.amount}})</span>` : ""}}
                         ${{it.category ? `<span style="font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${{it.category}}</span>` : ""}}
                     </div>
-                    <button class="btn-del" onclick="deleteItem(${{idx}})" title="Delete">✕</button>
+                    <button class="btn-del" onclick="deleteItem(${{originalIdx}})" title="Delete">✕</button>
                 `;
                 container.appendChild(li);
             }});
         }}
 
         function addItem() {{
-            const inp = document.getElementById("item-input") || document.getElementById("item-title");
+            const inp = document.getElementById("item-title") || document.getElementById("item-input");
             const amtInp = document.getElementById("item-amount");
             const catInp = document.getElementById("item-cat");
             if (!inp || !inp.value.trim()) return;
@@ -801,13 +913,13 @@ class CodeGenerator:
             const newItem = {{
                 id: Date.now(),
                 title: inp.value.trim(),
-                amount: amtInp ? amtInp.value : null,
-                category: catInp ? catInp.value : null,
+                amount: amtInp && amtInp.value ? amtInp.value.trim() : null,
+                category: catInp ? catInp.value : "General",
                 completed: false,
                 timestamp: new Date().toISOString()
             }};
 
-            state.items.push(newItem);
+            state.items.unshift(newItem);
             inp.value = "";
             if (amtInp) amtInp.value = "";
             saveState();
@@ -823,9 +935,11 @@ class CodeGenerator:
         }}
 
         function deleteItem(idx) {{
-            state.items.splice(idx, 1);
-            saveState();
-            renderItems();
+            if (idx >= 0 && idx < state.items.length) {{
+                state.items.splice(idx, 1);
+                saveState();
+                renderItems();
+            }}
         }}
 
         // Calculator Logic
