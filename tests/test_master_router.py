@@ -24,6 +24,9 @@ def test_master_route_personal_memory_english():
         "what do you know about me",
         "what do u know about me",
         "what is my name",
+        "who i am",
+        "who am i",
+        "do you know who i am",
         "tell me about my college",
         "who is my best friend",
     ]
@@ -355,4 +358,119 @@ def test_phase3_face_database_and_vision_manager_apis(tmp_path):
     vm = VisionManager(face_db=db)
     assert hasattr(vm, "register_face_interactive")
     assert callable(vm.register_face_interactive)
+
+
+# ==============================================================================
+# 6. PHASE 5 ACTION EXECUTION ENGINE, ENTITY EXTRACTION & MULTI-STEP VERIFICATION
+# ==============================================================================
+
+def test_phase5_intent_extraction_and_routing_cases():
+    """Verifies entity extraction, ActionIntent dataclass and MasterRouter for all 8 cases."""
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+    from src.agent.planner import AgentPlanner
+    from src.agent.projects import ProjectRegistry
+
+    registry = MagicMock(spec=ProjectRegistry)
+    planner = AgentPlanner(project_registry=registry)
+
+    # Test 1: Simple browser action
+    t1_text = "open youtube"
+    t1_route = MasterRouter.classify_request(t1_text)
+    assert t1_route.route == MasterRoute.BROWSER_TASK
+    t1_intent = ActionIntentAnalyzer.extract_intent(t1_text)
+    assert t1_intent.intent in (ActionIntentType.OPEN_URL, ActionIntentType.OPEN_APPLICATION)
+    assert t1_intent.application in ("YouTube", "Browser")
+    assert "youtube" in t1_intent.goal.lower() or "youtube" in str(t1_intent.parameters).lower()
+
+    # Test 2: Browser multi-step action
+    t2_text = "search youtube for sonu nigam"
+    t2_route = MasterRouter.classify_request(t2_text)
+    assert t2_route.route == MasterRoute.BROWSER_TASK
+    t2_intent = ActionIntentAnalyzer.extract_intent(t2_text)
+    assert t2_intent.intent in (ActionIntentType.SEARCH_WEB, ActionIntentType.PLAY_MEDIA)
+
+    # Test 3: WhatsApp multi-step action
+    t3_text = "open whatsapp web and send hi to ayush"
+    t3_route = MasterRouter.classify_request(t3_text)
+    assert t3_route.route == MasterRoute.BROWSER_TASK
+    t3_intent = ActionIntentAnalyzer.extract_intent(t3_text)
+    assert t3_intent.intent == ActionIntentType.SEND_MESSAGE
+    assert t3_intent.application == "WhatsApp Web"
+    assert t3_intent.target == "ayush"
+    assert t3_intent.content == "hi"
+    assert t3_intent.requires_browser is True
+    assert t3_intent.verification_required is True
+
+    # Multi-step plan verification for WhatsApp
+    t3_plan = planner.plan_task(t3_text)
+    assert t3_plan is not None
+    actions = [s.action_type for s in t3_plan.steps]
+    assert "OPEN_URL" in actions
+    assert "CHECK_AUTHENTICATION" in actions
+    assert "SEARCH_CONTACT" in actions
+    assert "SELECT_CONVERSATION" in actions
+    assert "SEND_MESSAGE" in actions
+    assert "VERIFY_MESSAGE_SENT" in actions
+
+    # Test 4: Email sending (action request, NOT drafting)
+    t4_text1 = 'send "hi, what are you doing?" to ayusharyaa618@gmail.com'
+    t4_route1 = MasterRouter.classify_request(t4_text1)
+    assert t4_route1.route == MasterRoute.BROWSER_TASK
+    t4_intent1 = ActionIntentAnalyzer.extract_intent(t4_text1)
+    assert t4_intent1.intent == ActionIntentType.SEND_EMAIL
+    assert t4_intent1.recipient == "ayusharyaa618@gmail.com"
+    assert "hi, what are you doing?" in t4_intent1.content
+    assert t4_intent1.requires_confirmation is True
+
+    t4_text2 = "email hi, what are you doing?? message to ayusharyaa618@gmail.com from my side"
+    t4_route2 = MasterRouter.classify_request(t4_text2)
+    assert t4_route2.route == MasterRoute.BROWSER_TASK
+    t4_intent2 = ActionIntentAnalyzer.extract_intent(t4_text2)
+    assert t4_intent2.intent == ActionIntentType.SEND_EMAIL
+    assert t4_intent2.recipient == "ayusharyaa618@gmail.com"
+
+    # Multi-step plan verification for Email
+    t4_plan = planner.plan_task(t4_text1)
+    assert t4_plan is not None
+    actions_email = [s.action_type for s in t4_plan.steps]
+    assert "OPEN_URL" in actions_email
+    assert "CHECK_AUTHENTICATION" in actions_email
+    assert "COMPOSE_EMAIL" in actions_email
+    assert "CONFIRM_SEND" in actions_email
+    assert "SEND_EMAIL" in actions_email
+    assert "VERIFY_EMAIL_SENT" in actions_email
+
+    # Test 5: Email drafting (conversational drafting, NOT send action)
+    t5_text = "write an email to Ayush asking what he is doing"
+    t5_route = MasterRouter.classify_request(t5_text)
+    assert t5_route.route == MasterRoute.CHAT
+    t5_intent = ActionIntentAnalyzer.extract_intent(t5_text)
+    assert t5_intent.intent == ActionIntentType.WRITE_EMAIL
+
+    # Test 6: YouTube playback flow
+    t6_text = "play a Sonu Nigam song on YouTube"
+    t6_route = MasterRouter.classify_request(t6_text)
+    assert t6_route.route == MasterRoute.BROWSER_TASK
+    t6_intent = ActionIntentAnalyzer.extract_intent(t6_text)
+    assert t6_intent.intent == ActionIntentType.PLAY_MEDIA
+    t6_plan = planner.plan_task(t6_text)
+    assert t6_plan is not None
+    assert any(s.action_type == "PLAY_YOUTUBE" for s in t6_plan.steps)
+    assert any(s.action_type == "VERIFY_PLAYBACK" for s in t6_plan.steps)
+
+    # Test 7: Computer action
+    t7_text = "open VS Code"
+    t7_route = MasterRouter.classify_request(t7_text)
+    assert t7_route.route == MasterRoute.COMPUTER_TASK
+    t7_intent = ActionIntentAnalyzer.extract_intent(t7_text)
+    assert t7_intent.intent == ActionIntentType.OPEN_APPLICATION
+    assert t7_intent.application == "Visual Studio Code"
+
+    # Test 8: Project action
+    t8_text = "create a calculator with UI and run it"
+    t8_route = MasterRouter.classify_request(t8_text)
+    assert t8_route.route == MasterRoute.PROJECT_CREATION
+    t8_intent = ActionIntentAnalyzer.extract_intent(t8_text)
+    assert t8_intent.intent == ActionIntentType.CREATE_PROJECT
+
 

@@ -185,6 +185,12 @@ class SubtaskVerifier:
                 return VerificationOutcome(False, f"Command execution failed: {action_result.message}")
             return VerificationOutcome(True, "Execution verified.")
 
+        # 7. MESSAGING & COMMUNICATION ACTIONS
+        elif act in ("CHECK_AUTHENTICATION", "SEARCH_CONTACT", "SELECT_CONVERSATION", "SEND_MESSAGE", "VERIFY_MESSAGE_SENT", "COMPOSE_EMAIL", "CONFIRM_SEND", "SEND_EMAIL", "VERIFY_EMAIL_SENT"):
+            if action_result and action_result.success:
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")
+
         # Default fallback
         if action_result:
             return VerificationOutcome(action_result.success, action_result.message)

@@ -77,8 +77,8 @@ class MasterRouter:
 
     # 2. Personal & Long-term Memory Query Patterns
     PERSONAL_MEMORY_PATTERNS = [
-        r"(?i)\b(?:what\s+do\s+you\s+know\s+about\s+me|what\s+do\s+u\s+know\s+about\s+me|tell\s+me\s+about\s+me|what\s+is\s+my\s+name|who\s+am\s+i)\b",
-        r"(?i)\b(?:do\s+you\s+remember\s+me|what\s+do\s+you\s+remember\s+about\s+me|list\s+my\s+memories|my\s+memories)\b",
+        r"(?i)\b(?:what\s+do\s+(?:you|u)\s+know\s+about\s+me|tell\s+me\s+about\s+me|what\s+is\s+my\s+name|who\s+(?:am\s+i|i\s+am))\b",
+        r"(?i)\b(?:do\s+(?:you|u)\s+know\s+(?:who\s+(?:i\s+am|am\s+i)|me)|do\s+(?:you|u)\s+remember\s+me|what\s+do\s+(?:you|u)\s+remember\s+about\s+me|list\s+my\s+memories|my\s+memories)\b",
         r"(?i)\b(?:who\s+(?:created|made|built|developed)\s+(?:you|u)|who\s+is\s+your\s+creator|who\s+developed\s+you)\b",
         r"(?i)\b(?:what\s+is\s+my\s+(?:college|university|job|profession|work|branch|degree|goal|hobby|favorite\s+\w+))\b",
         r"(?i)\b(?:tell\s+me\s+about\s+my\s+(?:college|university|friends|family|projects|work|sister|brother|best\s+friend|hobbies))\b",
@@ -116,7 +116,8 @@ class MasterRouter:
 
     # 6. Phase 5 Direct OS / Application / Browser & Communication Tasks
     COMPUTER_TASK_PATTERNS = [
-        # Messaging / Communication / Web App Tasks
+        # Messaging / Communication / Email / Web App Tasks
+        (r"(?i)\b(?:send\s+(?:an?\s+)?(?:email|mail)|email\s+.*to\s+.*|mail\s+.*to\s+.*|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send\s+message)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg))\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|x\.com|github|wikipedia|amazon|flipkart|netflix|spotify|chatgpt)\b.*(?:kholo|open|chalao|visit|message|send|search|browse)", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|browser|web)\b", MasterRoute.BROWSER_TASK),
@@ -227,6 +228,19 @@ class MasterRouter:
                     explanation=f"User requested project lifecycle action: {action_route.value}",
                     metadata={"execution_requested": bool(re.search(r"(?i)\b(?:run|test|execute)\b", clean))},
                 )
+
+        # 4B. Check for Email Drafting / Generative Assistance vs Real Email Sending
+        is_email_draft = bool(re.search(r"(?i)\b(?:write|draft|compose|suggest)\s+(?:an?\s+)?email\b", clean)) and not bool(re.search(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", clean)) and not bool(re.search(r"(?i)\b(?:send|shoot|dispatch|mail\s+this|email\s+this)\b", clean))
+        if is_email_draft:
+            return cls._make_decision(
+                route=MasterRoute.CHAT,
+                confidence=0.95,
+                requires_memory=False,
+                requires_computer=False,
+                requires_phase5=False,
+                requires_phase6=False,
+                explanation="User requested drafting/writing email content (conversational assistance)",
+            )
 
         # 5. Check for Dedicated Computer Control / OS / Browser / Messaging Tasks (Phase 5)
         for pat, comp_route in cls.COMPUTER_TASK_PATTERNS:
