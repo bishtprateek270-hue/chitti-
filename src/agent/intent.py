@@ -232,9 +232,10 @@ class ActionIntentAnalyzer:
                 else:
                     contact_name, msg_text = g1, g2
 
-                # Clean contact name
-                contact_name = re.sub(r"(?i)\s+(?:on|via|using)\s+.*$", "", contact_name).strip() or "Contact"
-                msg_text = msg_text.strip() or "Hi"
+                # Clean message text and contact name
+                msg_text = re.sub(r"(?i)\s+(?:message|msg|text)$", "", msg_text).strip() or "Hi"
+                contact_name = re.sub(r"(?i)\s+(?:on|via|using)\s+.*$", "", contact_name).strip()
+                contact_name = re.sub(r"(?i)\s+(?:message|msg|text)$", "", contact_name).strip() or "Contact"
 
                 return ActionIntent(
                     intent=ActionIntentType.SEND_MESSAGE,

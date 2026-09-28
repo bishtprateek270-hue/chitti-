@@ -3,6 +3,8 @@ Chitti Screen Analyzer & UI Understanding.
 Analyzes screenshots, running windows, and UI state to provide honest, verifiable evidence.
 """
 
+import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,12 +69,21 @@ class ScreenAnalyzer:
         "google chrome": ["chrome.exe", "chrome", "google chrome"],
         "edge": ["msedge.exe", "msedge", "microsoft edge"],
         "msedge": ["msedge.exe", "msedge", "microsoft edge"],
+        "brave": ["brave.exe", "brave"],
         "notepad": ["notepad.exe", "notepad"],
         "calculator": ["calculator.exe", "calculatorapp.exe", "calc.exe"],
         "terminal": ["powershell.exe", "cmd.exe", "windowsterminal.exe", "wt.exe"],
-        "youtube": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera"],
+        "youtube": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "youtube"],
         "browser": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
         "web": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
+        "whatsapp web": ["whatsapp", "whatsapp web", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
+        "whatsapp": ["whatsapp", "whatsapp web", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
+        "gmail / webmail": ["gmail", "inbox", "mail.google.com", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
+        "gmail": ["gmail", "inbox", "mail.google.com", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
+        "webmail": ["gmail", "inbox", "mail.google.com", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
+        "telegram": ["telegram", "telegram.exe", "chrome.exe", "brave.exe"],
+        "slack": ["slack", "slack.exe", "chrome.exe", "brave.exe"],
+        "discord": ["discord", "discord.exe", "chrome.exe", "brave.exe"],
     }
 
 
@@ -83,11 +94,12 @@ class ScreenAnalyzer:
         """
         query = title_query.lower().strip()
         visible = self.controller.list_windows()
+        tokens = [t for t in re.split(r"[\s\/\-_]+", query) if len(t) > 2 and t not in ("web", "app", "window", "application")]
 
         # 1. Check visible window titles
         for w in visible:
             w_title = w.title.lower()
-            if query in w_title:
+            if query in w_title or (tokens and any(t in w_title for t in tokens)):
                 log_info(f"[VERIFY] Window '{w.title}' detected matching query '{title_query}'")
                 return VerificationResult(
                     success=True,
@@ -109,7 +121,7 @@ class ScreenAnalyzer:
         for proc in psutil.process_iter(['name']):
             try:
                 pname = (proc.info['name'] or "").lower()
-                if query in pname or any(alias in pname for alias in expected_aliases):
+                if query in pname or any(alias in pname for alias in expected_aliases) or (tokens and any(t in pname for t in tokens)):
                     log_info(f"[VERIFY] Running process '{pname}' detected matching '{title_query}'")
                     return VerificationResult(
                         success=True,

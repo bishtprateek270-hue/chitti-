@@ -33,6 +33,7 @@ from src.language.normalizer import LanguageNormalizer
 from src.language.translator import Translator
 from src.language.language_models import IntentCategory
 from src.agent.manager import LaptopAgentManager
+from src.agent.task_state import TaskStatus
 from src.router.master_router import MasterRouter, MasterRoute, MasterRouteDecision
 
 
@@ -246,7 +247,13 @@ class ChittiController:
             return
 
         # 2.5. Check for Actionable Laptop Agent Actions (Phase 5 / Phase 6)
-        if self.agent is not None and (master_decision.requires_computer or master_decision.requires_phase5 or master_decision.requires_phase6):
+        is_agent_confirmation_pending = (
+            self.agent is not None and (
+                (self.agent.active_task_state is not None and self.agent.active_task_state.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION))
+                or self.agent.pending_destructive_action is not None
+            )
+        )
+        if self.agent is not None and (master_decision.requires_computer or master_decision.requires_phase5 or master_decision.requires_phase6 or is_agent_confirmation_pending):
             try:
                 agent_result = self.agent.handle_command(user_text, lang=active_lang)
                 if (agent_result is None or not agent_result[0]) and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:

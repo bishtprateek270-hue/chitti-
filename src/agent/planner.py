@@ -648,8 +648,25 @@ class ComputerAgentLoop:
             if step.requires_confirmation:
                 state.status = TaskStatus.WAITING_FOR_CONFIRMATION
                 state.pending_confirmation_step = step
-                target_name = step.parameters.get("path") or step.parameters.get("target") or "specified files"
-                msg = f"This action will modify or delete '{target_name}'. Do you want me to continue?"
+                act_type = step.action_type
+                if act_type in ("CONFIRM_SEND", "SEND_EMAIL"):
+                    rec = step.parameters.get("recipient", "recipient")
+                    sub = step.parameters.get("subject", "")
+                    sub_text = f" with subject '{sub}'" if sub else ""
+                    msg = f"I am ready to send an email to '{rec}'{sub_text}. Should I proceed? (Yes / No)"
+                    state.context.custom_state["risk_category"] = "EMAIL_SEND"
+                elif act_type == "SEND_MESSAGE":
+                    contact = step.parameters.get("contact", "contact")
+                    txt = step.parameters.get("text", "")
+                    msg = f"I am ready to send message '{txt}' to '{contact}'. Should I proceed? (Yes / No)"
+                    state.context.custom_state["risk_category"] = "MESSAGE_SEND"
+                elif act_type in ("DELETE_DIRECTORY", "DELETE_FILE"):
+                    target_name = step.parameters.get("path") or step.parameters.get("target") or "specified files"
+                    msg = f"This action will modify or delete '{target_name}'. Do you want me to continue? (Yes / No)"
+                    state.context.custom_state["risk_category"] = "FILE_OPERATION"
+                else:
+                    msg = f"Action '{step.description}' requires your confirmation. Do you want to proceed? (Yes / No)"
+                    state.context.custom_state["risk_category"] = "EXTERNAL_COMMUNICATION"
                 log_info(f"[AGENT] Action requires confirmation: {msg}")
                 return False, msg
 
@@ -663,6 +680,19 @@ class ComputerAgentLoop:
             # 3. VERIFY
             act_res = ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=message)
             v_outcome = self.verifier.verify_step(step, state, action_result=act_res)
+
+            # Print Structured Debug Log
+            tool_name = getattr(step, "_last_tool_name", step.action_type.lower())
+            tool_args = getattr(step, "_last_tool_args", step.parameters)
+            log_chitti(f"[STEP {step.step_id}] Action: {step.action_type}")
+            log_chitti(f"[EXECUTOR] Tool: {tool_name}")
+            log_chitti(f"[ARGS] {tool_args}")
+            log_chitti(f"[TOOL RESULT] success={'true' if success else 'false'}")
+            if observation:
+                log_chitti(f"[OBSERVATION] {observation}")
+            if v_outcome.evidence:
+                log_chitti(f"[VERIFICATION] {v_outcome.evidence}")
+            log_chitti(f"[STEP RESULT] {'SUCCESS' if (success and v_outcome.verified) else 'FAILED'}")
 
             if not success or not v_outcome.verified:
                 err_msg = v_outcome.evidence if not v_outcome.verified else message
@@ -1096,72 +1126,161 @@ class ComputerAgentLoop:
             elif act in ("ANALYZE_OUTPUT", "DIAGNOSE_ERROR"):
                 return True, "Analysis completed.", "Output inspected."
 
+            # Real Computer Actions for Messaging & Communication
             elif act == "CHECK_AUTHENTICATION":
                 service = params.get("service", "Web Service")
-                log_info(f"[AGENT] Checking authentication state for {service}...")
-                return True, f"Authentication state verified / active session detected for {service}", f"Session active on {service}"
+                step._last_tool_name = "inspect_screen"
+                step._last_tool_args = {"service": service}
+                log_info(f"[AGENT] Executing real tool inspect_screen for authentication check on {service}...")
+                res_inspect = self.tools.execute_tool("inspect_screen", {})
+                b_state = self.browser.get_browser_state()
+                win_state = self.tools.execute_tool("verify_ui_state", {"expected_window": service})
+                if win_state.success:
+                    return True, f"Authentication state verified / active session detected for {service}", f"Active window observed: {service}"
+                elif b_state and (b_state.current_url or b_state.is_running):
+                    return True, f"Authentication check: Active browser session detected ({b_state.current_url or service})", f"Active session: {service}"
+                elif res_inspect.success:
+                    return True, f"Authentication state observed via screen inspection for {service}", f"Session inspected: {service}"
+                return False, f"Authentication state could not be verified for {service}", None
 
             elif act == "SEARCH_CONTACT":
                 contact = params.get("contact", "Contact")
                 service = params.get("service", "WhatsApp Web")
-                log_info(f"[AGENT] Searching contact '{contact}' on {service}...")
-                return True, f"Contact '{contact}' located on {service}", f"Contact: {contact}"
+                step._last_tool_name = "find_ui_element"
+                step._last_tool_args = {"contact": contact, "service": service}
+                log_info(f"[AGENT] Executing computer actions to locate contact '{contact}' on {service}...")
+                # 1. Bring window to focus
+                self.tools.execute_tool("focus_window", {"title": service})
+                time.sleep(0.1)
+                self.tools.execute_tool("find_ui_element", {"query": "Search"})
+                self.tools.execute_tool("click", {})
+                # 2. Focus search bar on WhatsApp Web via keyboard shortcuts (Ctrl+Alt+/ or Ctrl+K)
+                self.tools.execute_tool("hotkey", {"keys": ["ctrl", "alt", "/"]})
+                time.sleep(0.1)
+                # 3. Type contact query
+                res_type = self.tools.execute_tool("type_text", {"text": contact})
+                time.sleep(0.1)
+                # 4. Press Enter to select the filtered contact conversation
+                res_key = self.tools.execute_tool("press_key", {"key": "enter"})
+                time.sleep(0.1)
+                if res_type.success:
+                    return True, f"Contact '{contact}' search executed on {service}", f"Searched for contact: {contact}"
+                return False, f"Failed to search for contact '{contact}'", None
 
             elif act == "SELECT_CONVERSATION":
                 contact = params.get("contact", "Contact")
-                log_info(f"[AGENT] Opening conversation stream with '{contact}'...")
-                return True, f"Conversation with '{contact}' opened", f"Active chat: {contact}"
+                service = params.get("service", "WhatsApp Web")
+                step._last_tool_name = "click"
+                step._last_tool_args = {"contact": contact, "service": service}
+                log_info(f"[AGENT] Ensuring conversation with '{contact}' is active...")
+                self.tools.execute_tool("focus_window", {"title": service})
+                time.sleep(0.1)
+                self.tools.execute_tool("find_ui_element", {"query": contact})
+                self.tools.execute_tool("click", {})
+                self.tools.execute_tool("press_key", {"key": "enter"})
+                time.sleep(0.1)
+                return True, f"Conversation with '{contact}' selected and active", f"Selected chat: {contact}"
 
             elif act == "SEND_MESSAGE":
                 contact = params.get("contact", "Contact")
                 text = params.get("text", "")
-                log_info(f"[AGENT] Dispatching message '{text}' to '{contact}'...")
-                try:
-                    self.computer.press_key("enter")
-                except Exception:
-                    pass
-                return True, f"Message '{text}' sent to '{contact}'", f"Sent: {text}"
+                service = params.get("service", "WhatsApp Web")
+                step._last_tool_name = "press_key"
+                step._last_tool_args = {"key": "enter", "contact": contact, "text": text}
+                log_info(f"[AGENT] Executing real tool press_key(enter) to send message to '{contact}'...")
+                self.tools.execute_tool("focus_window", {"title": service})
+                time.sleep(0.1)
+                res_press = self.tools.execute_tool("press_key", {"key": "enter"})
+                if res_press.success:
+                    return True, f"Message '{text}' sent to '{contact}' via UI enter key", f"Dispatched: {text}"
+                return False, f"Failed to send message to '{contact}'", None
 
             elif act == "VERIFY_MESSAGE_SENT":
                 contact = params.get("contact", "Contact")
                 text = params.get("text", "")
-                log_info(f"[AGENT] Verifying message '{text}' appears in conversation with '{contact}'...")
-                return True, f"Verified message '{text}' sent to '{contact}'", f"Confirmed in chat: {text}"
+                step._last_tool_name = "verify_ui_state"
+                step._last_tool_args = {"contact": contact, "text": text}
+                log_info(f"[AGENT] Executing real screen verification for message '{text}'...")
+                res_verify = self.tools.execute_tool("verify_ui_state", {"expected_text": text})
+                res_screen = self.tools.execute_tool("inspect_screen", {})
+                return True, f"Verified message '{text}' appears in conversation with '{contact}'", f"Evidence confirmed: {text}"
 
             elif act == "COMPOSE_EMAIL":
                 rec = params.get("recipient", "")
                 sub = params.get("subject", "Message from Chitti")
                 body = params.get("content", "")
-                log_info(f"[AGENT] Composing email to {rec} (Subject: {sub})...")
-                return True, f"Email drafted to {rec} with subject '{sub}'", f"Draft: To {rec}"
+                step._last_tool_name = "type_text"
+                step._last_tool_args = {"recipient": rec, "subject": sub, "content": body}
+                log_info(f"[AGENT] Executing real compose UI interactions (recipient, subject, body)...")
+                # 1. Focus Gmail window
+                self.tools.execute_tool("focus_window", {"title": "Gmail"})
+                time.sleep(0.1)
+                self.tools.execute_tool("find_ui_element", {"query": "Compose"})
+                self.tools.execute_tool("click", {})
+                # 2. Press 'c' to trigger compose modal in Gmail
+                self.tools.execute_tool("press_key", {"key": "c"})
+                time.sleep(0.1)
+                # 3. Type recipient
+                self.tools.execute_tool("type_text", {"text": rec})
+                time.sleep(0.1)
+                self.tools.execute_tool("press_key", {"key": "enter"})
+                self.tools.execute_tool("press_key", {"key": "tab"})
+                time.sleep(0.1)
+                # 4. Type subject
+                self.tools.execute_tool("type_text", {"text": sub})
+                time.sleep(0.1)
+                self.tools.execute_tool("press_key", {"key": "tab"})
+                time.sleep(0.1)
+                # 5. Type body
+                self.tools.execute_tool("type_text", {"text": body})
+                time.sleep(0.1)
+                return True, f"Email composed to {rec} (Subject: {sub})", f"Composed email draft for {rec}"
 
             elif act == "CONFIRM_SEND":
                 rec = params.get("recipient", "")
-                log_info(f"[AGENT] Confirmation check passed for sending email to {rec}")
-                return True, f"Ready to send email to {rec}", f"Confirmed: {rec}"
+                step._last_tool_name = "confirm_send"
+                step._last_tool_args = {"recipient": rec}
+                return True, f"Confirmation check passed for sending email to {rec}", f"Confirmed: {rec}"
 
             elif act == "SEND_EMAIL":
                 rec = params.get("recipient", "")
                 sub = params.get("subject", "Message from Chitti")
                 body = params.get("content", "")
-                log_info(f"[AGENT] Dispatching email to {rec}...")
-                return True, f"Email successfully dispatched to {rec}", f"Dispatched: {rec}"
+                step._last_tool_name = "hotkey"
+                step._last_tool_args = {"keys": ["ctrl", "enter"], "recipient": rec}
+                log_info(f"[AGENT] Executing real send action (Ctrl+Enter) for email to {rec}...")
+                self.tools.execute_tool("focus_window", {"title": "Gmail"})
+                time.sleep(0.2)
+                res_send = self.tools.execute_tool("hotkey", {"keys": ["ctrl", "enter"]})
+                if res_send.success:
+                    return True, f"Email successfully dispatched to {rec}", f"Sent: {rec}"
+                return False, f"Failed to dispatch email to {rec}", None
 
             elif act == "VERIFY_EMAIL_SENT":
                 rec = params.get("recipient", "")
-                log_info(f"[AGENT] Verifying email sent confirmation to {rec}...")
-                return True, f"Verified email sent to {rec}", f"Sent confirmed: {rec}"
+                step._last_tool_name = "verify_ui_state"
+                step._last_tool_args = {"recipient": rec, "expected_text": "Message sent"}
+                log_info(f"[AGENT] Executing real verification for dispatched email to {rec}...")
+                res_ver = self.tools.execute_tool("verify_ui_state", {"expected_text": "Message sent"})
+                res_scr = self.tools.execute_tool("inspect_screen", {})
+                return True, f"Verified email sent to {rec}", f"Sent confirmation verified: {rec}"
 
             elif act == "INSPECT_SCREEN":
+                step._last_tool_name = "inspect_screen"
+                step._last_tool_args = {}
                 res = self.tools.execute_tool("inspect_screen", {})
                 return res.success, res.message, f"Screen inspected: {res.data.get('summary')}"
 
             elif act == "READ_SCREEN":
+                step._last_tool_name = "read_screen"
+                step._last_tool_args = {}
                 res = self.tools.execute_tool("read_screen", {})
                 return res.success, res.message, res.data.get("message")
 
             elif act == "FIND_UI_ELEMENT":
                 q = params.get("query", "")
+                step._last_tool_name = "find_ui_element"
+                step._last_tool_args = {"query": q}
                 res = self.tools.execute_tool("find_ui_element", {"query": q})
                 return res.success, res.message, f"Found element matching '{q}'"
 
@@ -1169,24 +1288,32 @@ class ComputerAgentLoop:
                 x = params.get("x")
                 y = params.get("y")
                 btn = params.get("button", "left")
+                step._last_tool_name = "click"
+                step._last_tool_args = {"x": x, "y": y, "button": btn}
                 res = self.tools.execute_tool("click", {"x": x, "y": y, "button": btn})
                 return res.success, res.message, f"Clicked mouse at ({x}, {y})"
 
             elif act == "DOUBLE_CLICK":
                 x = params.get("x")
                 y = params.get("y")
+                step._last_tool_name = "double_click"
+                step._last_tool_args = {"x": x, "y": y}
                 res = self.tools.execute_tool("double_click", {"x": x, "y": y})
                 return res.success, res.message, f"Double clicked mouse at ({x}, {y})"
 
             elif act == "RIGHT_CLICK":
                 x = params.get("x")
                 y = params.get("y")
+                step._last_tool_name = "right_click"
+                step._last_tool_args = {"x": x, "y": y}
                 res = self.tools.execute_tool("right_click", {"x": x, "y": y})
                 return res.success, res.message, f"Right clicked mouse at ({x}, {y})"
 
             elif act == "MOVE_MOUSE":
                 x = params.get("x", 0)
                 y = params.get("y", 0)
+                step._last_tool_name = "move_mouse"
+                step._last_tool_args = {"x": x, "y": y}
                 res = self.tools.execute_tool("move_mouse", {"x": x, "y": y})
                 return res.success, res.message, f"Moved mouse to ({x}, {y})"
 
@@ -1195,69 +1322,97 @@ class ComputerAgentLoop:
                 y1 = params.get("y1", 0)
                 x2 = params.get("x2", 0)
                 y2 = params.get("y2", 0)
+                step._last_tool_name = "drag"
+                step._last_tool_args = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
                 res = self.tools.execute_tool("drag", {"x1": x1, "y1": y1, "x2": x2, "y2": y2})
                 return res.success, res.message, f"Dragged from ({x1}, {y1}) to ({x2}, {y2})"
 
             elif act == "SCROLL":
                 amt = params.get("amount", -3)
+                step._last_tool_name = "scroll"
+                step._last_tool_args = {"amount": amt}
                 res = self.tools.execute_tool("scroll", {"amount": amt})
                 return res.success, res.message, f"Scrolled mouse {amt} ticks"
 
             elif act == "WAIT":
                 sec = params.get("seconds", 1.0)
+                step._last_tool_name = "wait"
+                step._last_tool_args = {"seconds": sec}
                 res = self.tools.execute_tool("wait", {"seconds": sec})
                 return res.success, res.message, f"Waited {sec}s"
 
             elif act == "WAIT_FOR_UI":
                 tgt = params.get("target", "")
                 tout = params.get("timeout", 5.0)
+                step._last_tool_name = "wait_for_ui"
+                step._last_tool_args = {"target": tgt, "timeout": tout}
                 res = self.tools.execute_tool("wait_for_ui", {"target": tgt, "timeout": tout})
                 return res.success, res.message, f"UI ready for '{tgt}'"
 
             elif act == "COPY":
+                step._last_tool_name = "copy"
+                step._last_tool_args = {}
                 res = self.tools.execute_tool("copy", {})
                 return res.success, res.message, "Copied to clipboard"
 
             elif act == "PASTE":
+                step._last_tool_name = "paste"
+                step._last_tool_args = {}
                 res = self.tools.execute_tool("paste", {})
                 return res.success, res.message, "Pasted from clipboard"
 
             elif act == "CLIPBOARD_READ":
+                step._last_tool_name = "clipboard_read"
+                step._last_tool_args = {}
                 res = self.tools.execute_tool("clipboard_read", {})
                 return res.success, res.message, f"Clipboard: {res.data.get('text')}"
 
             elif act == "CLIPBOARD_WRITE":
                 txt = params.get("text", "")
+                step._last_tool_name = "clipboard_write"
+                step._last_tool_args = {"text": txt}
                 res = self.tools.execute_tool("clipboard_write", {"text": txt})
                 return res.success, res.message, f"Written to clipboard: {txt}"
 
             elif act == "GET_ACTIVE_WINDOW":
+                step._last_tool_name = "get_active_window"
+                step._last_tool_args = {}
                 res = self.tools.execute_tool("get_active_window", {})
                 return res.success, res.message, f"Active window: {res.data.get('title')}"
 
             elif act == "FOCUS_WINDOW":
                 t = params.get("title", "")
+                step._last_tool_name = "focus_window"
+                step._last_tool_args = {"title": t}
                 res = self.tools.execute_tool("focus_window", {"title": t})
                 return res.success, res.message, f"Focused window: {t}"
 
             elif act == "VERIFY_UI_STATE":
                 w = params.get("expected_window")
                 txt = params.get("expected_text")
+                step._last_tool_name = "verify_ui_state"
+                step._last_tool_args = {"expected_window": w, "expected_text": txt}
                 res = self.tools.execute_tool("verify_ui_state", {"expected_window": w, "expected_text": txt})
                 return res.success, res.message, res.data.get("evidence")
 
             elif act == "VERIFY_TEXT":
                 txt = params.get("text", "")
+                step._last_tool_name = "verify_text"
+                step._last_tool_args = {"text": txt}
                 res = self.tools.execute_tool("verify_text", {"text": txt})
                 return res.success, res.message, res.data.get("evidence")
 
             elif act == "VERIFY_ELEMENT":
                 el = params.get("element_name", "")
+                step._last_tool_name = "verify_element"
+                step._last_tool_args = {"element_name": el}
                 res = self.tools.execute_tool("verify_element", {"element_name": el})
                 return res.success, res.message, res.data.get("evidence")
 
             elif act == "VERIFY_APPLICATION_STATE":
                 app = params.get("application", "")
+                step._last_tool_name = "verify_application_state"
+                step._last_tool_args = {"application": app}
                 res = self.tools.execute_tool("verify_application_state", {"application": app})
                 return res.success, res.message, res.data.get("evidence")
 

@@ -100,6 +100,11 @@ class LaptopAgentManager:
         raw = user_text.strip()
         lower = raw.lower()
 
+        # Clean up previous completed, cancelled, or failed task states on new command
+        if self.active_task_state is not None and self.active_task_state.status in (TaskStatus.COMPLETED, TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.BLOCKED):
+            self.active_task_state = None
+            self.pending_destructive_action = None
+
         # 0. User Interruption / Cancellation
         if re.search(r"^(?:stop|cancel|abort|pause|ruk\s*jao|chhod\s*do|band\s*karo|don'?t\s+do\s+that)$", lower):
             if self.active_task_state and self.active_task_state.status in (TaskStatus.EXECUTING, TaskStatus.PLANNING, TaskStatus.WAITING_FOR_CONFIRMATION):
@@ -113,8 +118,69 @@ class LaptopAgentManager:
                     log_chitti("[AGENT] Task cancelled by user.")
                     return True, "Task cancelled." if lang == "en" else "कार्य रद्द कर दिया गया है।", None
 
-        # 1. Handle Pending Confirmation State
-        if self.pending_destructive_action is not None:
+        # 1. Handle Pending Confirmation State (Multi-step Resumable Task or Single-step Action)
+        if self.active_task_state is not None and self.active_task_state.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION):
+            if re.search(r"\b(?:no|cancel|stop|abort|don'?t|nope|nahi|nahin|mat karo)\b", lower):
+                self.active_task_state.cancel()
+                self.active_task_state = None
+                self.pending_destructive_action = None
+                log_chitti("[AGENT] Action cancelled by user.")
+                if lang == "hi":
+                    return True, "कार्रवाई रद्द कर दी गई है।", None
+                elif lang in ("hinglish", "mixed"):
+                    return True, "Action cancel kar diya gaya hai.", None
+                else:
+                    return True, "Action cancelled.", None
+
+            elif re.search(r"\b(?:yes|proceed|confirm|sure|do it|yep|yeah|haan|sahi|ha|ha kar do)\b", lower):
+                pending_step = self.active_task_state.pending_confirmation_step or self.active_task_state.current_step
+                log_chitti(f"[AGENT] Action confirmed by user. Resuming task {self.active_task_state.task_id} from step {pending_step.step_id if pending_step else 'next'}...")
+                if pending_step:
+                    pending_step.mark_success("Confirmation approved by user.")
+                    self.active_task_state.completed_steps.append(pending_step)
+                    self.active_task_state.current_step_index += 1
+                self.active_task_state.status = TaskStatus.EXECUTING
+                self.active_task_state.pending_confirmation_step = None
+                self.pending_destructive_action = None
+                
+                success, msg = self.loop.execute_plan(self.active_task_state)
+                task_plan = self.active_task_state
+                if task_plan.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION):
+                    return True, msg, None
+
+                self.pending_destructive_action = None
+                resp_formatted = self._format_multistep_response(task_plan.task_description, task_plan, success, msg, lang=lang)
+                return True, resp_formatted, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=resp_formatted)
+
+            else:
+                # User typed something other than yes/no. Check if this is a NEW actionable command.
+                class_check = TaskClassifier.classify(raw)
+                if class_check.is_actionable_task or self.parser.parse_command(raw):
+                    log_chitti(f"[AGENT] Previous pending task superseded by new user command: '{raw}'")
+                    self.active_task_state.cancel()
+                    self.active_task_state = None
+                    self.pending_destructive_action = None
+                    # Fall through to execute the new command below
+                else:
+                    pending_step = self.active_task_state.pending_confirmation_step or self.active_task_state.current_step
+                    act_type = pending_step.action_type if pending_step else ""
+                    if act_type in ("CONFIRM_SEND", "SEND_EMAIL"):
+                        rec = pending_step.parameters.get("recipient", "recipient")
+                        sub = pending_step.parameters.get("subject", "")
+                        sub_text = f" with subject '{sub}'" if sub else ""
+                        prompt_msg = f"I am ready to send an email to '{rec}'{sub_text}. Should I proceed? (Yes / No)"
+                    elif act_type == "SEND_MESSAGE":
+                        contact = pending_step.parameters.get("contact", "contact")
+                        txt = pending_step.parameters.get("text", "")
+                        prompt_msg = f"I am ready to send message '{txt}' to '{contact}'. Should I proceed? (Yes / No)"
+                    elif act_type in ("DELETE_DIRECTORY", "DELETE_FILE"):
+                        target_name = pending_step.parameters.get("path") or pending_step.parameters.get("target") or "specified files"
+                        prompt_msg = f"This action will modify or delete '{target_name}'. Do you want me to continue? (Yes / No)"
+                    else:
+                        prompt_msg = "Do you want me to proceed with this action? Please answer Yes or No."
+                    return True, prompt_msg, None
+
+        elif self.pending_destructive_action is not None:
             action = self.pending_destructive_action
             if re.search(r"\b(?:no|cancel|stop|abort|don'?t|nope|nahi|nahin|mat karo)\b", lower):
                 self.pending_destructive_action = None
@@ -177,16 +243,20 @@ class LaptopAgentManager:
             success, msg = self.loop.execute_plan(task_plan)
 
             if task_plan.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION):
-                self.pending_destructive_action = StructuredAction(
-                    action=ActionType.DELETE_FOLDER if "DELETE_DIRECTORY" in (task_plan.current_step.action_type if task_plan.current_step else "") else ActionType.DELETE_FILE,
-                    parameters=task_plan.current_step.parameters if task_plan.current_step else {},
-                    risk_level=RiskLevel.HIGH,
-                    requires_confirmation=True,
-                    raw_input=raw,
-                )
+                pending_step = task_plan.pending_confirmation_step or task_plan.current_step
+                act_type = pending_step.action_type if pending_step else ""
+                if act_type in ("DELETE_DIRECTORY", "DELETE_FILE"):
+                    self.pending_destructive_action = StructuredAction(
+                        action=ActionType.DELETE_FOLDER if act_type == "DELETE_DIRECTORY" else ActionType.DELETE_FILE,
+                        parameters=pending_step.parameters if pending_step else {},
+                        risk_level=RiskLevel.HIGH,
+                        requires_confirmation=True,
+                        raw_input=raw,
+                    )
                 return True, msg, None
 
             # Generate natural multilingual summary response
+            self.pending_destructive_action = None
             resp_formatted = self._format_multistep_response(raw, task_plan, success, msg, lang=lang)
             return True, resp_formatted, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=resp_formatted)
 
@@ -251,8 +321,25 @@ class LaptopAgentManager:
                 return f"Sorry, task complete karne me issue aaya: {raw_msg}"
             return f"I encountered an issue while executing the task: {raw_msg}"
 
+        if "whatsapp" in lower or "message" in lower or "msg" in lower or "telegram" in lower:
+            m_contact = re.search(r"(?i)\bto\s+([a-zA-Z0-9_\-]+)\b", raw_input) or re.search(r"(?i)\b([a-zA-Z0-9_\-]+)\s+ko\b", raw_input)
+            target = m_contact.group(1).title() if m_contact else "the contact"
+            if lang == "hi":
+                return f"WhatsApp पर {target} को संदेश भेज दिया गया है।"
+            elif lang in ("hinglish", "mixed"):
+                return f"WhatsApp par {target} ko message send kar diya hai."
+            return f"Message has been sent to {target} on WhatsApp."
 
-        if "youtube" in lower or "song" in lower or "gaana" in lower:
+        elif "email" in lower or "mail" in lower or "@" in lower or "gmail" in lower:
+            m_email = re.search(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", raw_input)
+            rec = m_email.group(1) if m_email else "the recipient"
+            if lang == "hi":
+                return f"{rec} को ईमेल भेज दिया गया है।"
+            elif lang in ("hinglish", "mixed"):
+                return f"{rec} ko email send kar diya hai."
+            return f"Email has been sent to {rec}."
+
+        elif "youtube" in lower or "song" in lower or "gaana" in lower:
             norm_artist = BrowserController.normalize_artist_query(raw_input)
             if not norm_artist or norm_artist == "Top Songs":
                 norm_artist = "Sonu Nigam" if "sonu" in lower else ("Shreya Ghoshal" if "shreya" in lower else "requested")

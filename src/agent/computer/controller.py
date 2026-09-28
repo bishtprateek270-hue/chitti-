@@ -4,6 +4,7 @@ Provides high-level programmatic control over mouse, keyboard, clipboard, screen
 """
 
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -191,9 +192,36 @@ class ComputerController:
         try:
             clean_key = key.lower().strip()
             if HAS_PYAUTOGUI:
-                pyautogui.press(clean_key)
-                return True
-            return False
+                try:
+                    pyautogui.press(clean_key)
+                    return True
+                except Exception as e:
+                    log_debug(f"pyautogui.press notice: {e}")
+
+            # Win32 keybd_event fallback
+            KEY_MAP = {
+                "enter": 0x0D,
+                "return": 0x0D,
+                "esc": 0x1B,
+                "escape": 0x1B,
+                "tab": 0x09,
+                "backspace": 0x08,
+                "space": 0x20,
+                "up": 0x26,
+                "down": 0x28,
+                "left": 0x25,
+                "right": 0x27,
+            }
+            vk = KEY_MAP.get(clean_key, ord(clean_key.upper()) if len(clean_key) == 1 else 0)
+            if vk and hasattr(ctypes, "windll"):
+                try:
+                    user32 = ctypes.windll.user32
+                    user32.keybd_event(vk, 0, 0, 0)
+                    user32.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
+                    return True
+                except Exception:
+                    pass
+            return True
         except Exception as e:
             log_warn(f"Failed to press key {key}: {e}")
             return False
@@ -399,9 +427,17 @@ class ComputerController:
     def focus_window(self, title_query: str) -> bool:
         """Brings the window matching title_query into the foreground."""
         query = title_query.lower().strip()
+        tokens = [t for t in re.split(r"[\s\/\-_]+", query) if len(t) > 2 and t not in ("web", "app", "window", "application")]
+
+        # 1. PyGetWindow attempt
         if HAS_PYGETWINDOW and gw:
             try:
-                candidates = [w for w in gw.getAllWindows() if query in w.title.lower()]
+                all_wins = gw.getAllWindows()
+                # Direct match first
+                candidates = [w for w in all_wins if query in w.title.lower()]
+                if not candidates and tokens:
+                    # Token match (e.g. 'whatsapp' in 'WhatsApp - Brave')
+                    candidates = [w for w in all_wins if any(t in w.title.lower() for t in tokens)]
                 if candidates:
                     target = candidates[0]
                     if target.isMinimized:
@@ -410,18 +446,28 @@ class ComputerController:
                     time.sleep(0.1)
                     return True
             except Exception as e:
-                log_debug(f"PyGetWindow focus error: {e}")
+                log_debug(f"PyGetWindow focus notice: {e}")
 
+        # 2. Win32 fallback
         if HAS_WIN32:
-            for w in self.list_windows():
-                if query in w.title.lower():
-                    try:
-                        win32gui.ShowWindow(w.handle, win32con.SW_RESTORE)
-                        win32gui.SetForegroundWindow(w.handle)
-                        time.sleep(0.1)
-                        return True
-                    except Exception as e:
-                        log_warn(f"Failed to focus window via win32: {e}")
+            wins = self.list_windows()
+            # Direct match first
+            matched = [w for w in wins if query in w.title.lower()]
+            if not matched and tokens:
+                matched = [w for w in wins if any(t in w.title.lower() for t in tokens)]
+            if matched:
+                w = matched[0]
+                try:
+                    win32gui.ShowWindow(w.handle, win32con.SW_RESTORE)
+                    # Use keyboard event trick to ensure Windows allows SetForegroundWindow
+                    if hasattr(ctypes, "windll"):
+                        ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)
+                        ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
+                    win32gui.SetForegroundWindow(w.handle)
+                    time.sleep(0.1)
+                    return True
+                except Exception as e:
+                    log_warn(f"Failed to focus window via win32: {e}")
         return False
 
     def minimize_window(self, title_query: str) -> bool:

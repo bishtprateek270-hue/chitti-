@@ -277,3 +277,131 @@ def test_12_browser_form_interaction_flow(mock_agent_environment):
     success, msg = loop.execute_plan(state)
     assert success is True
     assert state.status == TaskStatus.COMPLETED
+
+
+# ==============================================================================
+# 7. CONFIRMATION ROUTING & RESUMABLE MULTI-STEP TASK TESTS
+# ==============================================================================
+
+def test_13_confirmation_category_and_resumption(mock_agent_environment):
+    """
+    Verifies that when an email plan reaches confirmation:
+    1. It asks a specific email confirmation question (NOT a file deletion question).
+    2. When the user confirms ('yes'), it resumes the SAME task state from step 6 onwards.
+    """
+    mgr = mock_agent_environment
+    raw_cmd = "open gmail and send an email to ayush@example.com saying hi"
+    
+    # Initial command execution
+    res = mgr.handle_command(raw_cmd)
+    assert res is not None
+    handled, prompt_msg, action_res = res
+    assert handled is True
+    assert "ayush@example.com" in prompt_msg
+    assert "modify or delete" not in prompt_msg  # NEVER confuse email with file deletion!
+    assert mgr.active_task_state is not None
+    assert mgr.active_task_state.status == TaskStatus.WAITING_FOR_CONFIRMATION
+    orig_task_id = mgr.active_task_state.task_id
+
+    # User confirms
+    res_confirm = mgr.handle_command("yes")
+    assert res_confirm is not None
+    c_handled, c_msg, c_res = res_confirm
+    assert c_handled is True
+    assert c_res.success is True
+    assert mgr.active_task_state.status == TaskStatus.COMPLETED
+    assert mgr.active_task_state.task_id == orig_task_id
+
+
+def test_14_confirmation_cancellation(mock_agent_environment):
+    """Verifies that answering 'no' to confirmation cancels the task without executing remaining steps."""
+    mgr = mock_agent_environment
+    raw_cmd = "open gmail and send an email to test@example.com saying hello"
+    
+    mgr.handle_command(raw_cmd)
+    assert mgr.active_task_state is not None
+    
+    # User cancels
+    res_cancel = mgr.handle_command("no")
+    assert res_cancel is not None
+    c_handled, c_msg, _ = res_cancel
+    assert c_handled is True
+    assert "cancel" in c_msg.lower()
+    assert mgr.active_task_state is None
+
+
+# ==============================================================================
+# 8. REAL TOOL INVOCATION AUDIT ASSERTIONS
+# ==============================================================================
+
+def test_15_whatsapp_real_tools_called(mock_agent_environment):
+    """
+    Verifies that SEARCH_CONTACT, SELECT_CONVERSATION, SEND_MESSAGE, and VERIFY_MESSAGE_SENT
+    dispatch real computer primitives to the ToolEngine.
+    """
+    loop = mock_agent_environment.loop
+    executed_tools = []
+    
+    original_exec = mock_agent_environment.tools.execute_tool
+    def spy_execute(tool_name, args):
+        executed_tools.append(tool_name)
+        return original_exec(tool_name, args)
+        
+    mock_agent_environment.tools.execute_tool = spy_execute
+    
+    state = TaskState(task_description="whatsapp message", goal="message sent")
+    state.steps = [
+        AgentStep(step_id=1, description="Open WhatsApp", action_type="OPEN_URL", parameters={"url": "https://web.whatsapp.com"}),
+        AgentStep(step_id=2, description="Check Auth", action_type="CHECK_AUTHENTICATION", parameters={"service": "WhatsApp Web"}, depends_on=[1]),
+        AgentStep(step_id=3, description="Search Contact", action_type="SEARCH_CONTACT", parameters={"contact": "ayush", "service": "WhatsApp Web"}, depends_on=[2]),
+        AgentStep(step_id=4, description="Select Chat", action_type="SELECT_CONVERSATION", parameters={"contact": "ayush", "service": "WhatsApp Web"}, depends_on=[3]),
+        AgentStep(step_id=5, description="Type message", action_type="TYPE_TEXT", parameters={"text": "hi"}, depends_on=[4]),
+        AgentStep(step_id=6, description="Send message", action_type="SEND_MESSAGE", parameters={"contact": "ayush", "text": "hi"}, depends_on=[5]),
+        AgentStep(step_id=7, description="Verify message", action_type="VERIFY_MESSAGE_SENT", parameters={"contact": "ayush", "text": "hi"}, depends_on=[6]),
+    ]
+    
+    success, msg = loop.execute_plan(state)
+    assert success is True
+    assert state.status == TaskStatus.COMPLETED
+    
+    # Real tool invocation assertions
+    assert "open_url" in executed_tools
+    assert "inspect_screen" in executed_tools
+    assert "find_ui_element" in executed_tools
+    assert "type_text" in executed_tools
+    assert "press_key" in executed_tools
+    assert "click" in executed_tools
+    assert "verify_ui_state" in executed_tools
+
+
+def test_16_gmail_real_tools_called(mock_agent_environment):
+    """
+    Verifies that COMPOSE_EMAIL, SEND_EMAIL, and VERIFY_EMAIL_SENT
+    dispatch real computer primitives to the ToolEngine.
+    """
+    loop = mock_agent_environment.loop
+    executed_tools = []
+    
+    original_exec = mock_agent_environment.tools.execute_tool
+    def spy_execute(tool_name, args):
+        executed_tools.append(tool_name)
+        return original_exec(tool_name, args)
+        
+    mock_agent_environment.tools.execute_tool = spy_execute
+    
+    state = TaskState(task_description="send email test", goal="email sent")
+    state.steps = [
+        AgentStep(step_id=1, description="Compose email", action_type="COMPOSE_EMAIL", parameters={"recipient": "ayush@example.com", "subject": "Test", "content": "hi"}),
+        AgentStep(step_id=2, description="Send email", action_type="SEND_EMAIL", parameters={"recipient": "ayush@example.com", "subject": "Test", "content": "hi"}, depends_on=[1]),
+        AgentStep(step_id=3, description="Verify email", action_type="VERIFY_EMAIL_SENT", parameters={"recipient": "ayush@example.com"}, depends_on=[2]),
+    ]
+    
+    success, msg = loop.execute_plan(state)
+    assert success is True
+    assert state.status == TaskStatus.COMPLETED
+    
+    assert "find_ui_element" in executed_tools
+    assert "type_text" in executed_tools
+    assert "hotkey" in executed_tools
+    assert "verify_ui_state" in executed_tools
+

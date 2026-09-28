@@ -73,7 +73,7 @@ class TaskClassifier:
 
     # 2. Pure Informational / Conceptual Questions ("what is", "explain", "why")
     KNOWLEDGE_PATTERNS = [
-        r"(?i)^(?:what\s+is|what\s+are|define|explain|meaning\s+of|difference\s+between|why\s+is|why\s+do|how\s+does)\s+(?:a\s+|an\s+|the\s+)?(?:[a-zA-Z0-9_\-\s]+)\??$",
+        r"(?i)^(?:what\s+is|what\s+are|define|explain|meaning\s+of|difference\s+between|why\s+is|why\s+do|how\s+does)\s+(?:a\s+|an\s+|the\s+)?(?:[a-zA-Z0-9_\-\s]+)[\?\.]?$",
         r"(?i)\b(?:kya\s+hota\s+hai|kya\s+hai|samjhao|explain\s+karo)\b",
         r"(?i)^(?:tell\s+me\s+about|what\s+do\s+you\s+know\s+about)\s+",
     ]

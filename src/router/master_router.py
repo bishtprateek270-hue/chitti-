@@ -80,10 +80,11 @@ class MasterRouter:
         r"(?i)\b(?:what\s+do\s+(?:you|u)\s+know\s+about\s+me|tell\s+me\s+about\s+me|what\s+is\s+my\s+name|who\s+(?:am\s+i|i\s+am))\b",
         r"(?i)\b(?:do\s+(?:you|u)\s+know\s+(?:who\s+(?:i\s+am|am\s+i)|me)|do\s+(?:you|u)\s+remember\s+me|what\s+do\s+(?:you|u)\s+remember\s+about\s+me|list\s+my\s+memories|my\s+memories)\b",
         r"(?i)\b(?:who\s+(?:created|made|built|developed)\s+(?:you|u)|who\s+is\s+your\s+creator|who\s+developed\s+you)\b",
-        r"(?i)\b(?:what\s+is\s+my\s+(?:college|university|job|profession|work|branch|degree|goal|hobby|favorite\s+\w+))\b",
+        r"(?i)\b(?:what\s+is\s+my\s+(?:college|university|job|profession|work|branch|degree|goal|hobby|favorite\s+\w+|preferred\s+\w+))\b",
         r"(?i)\b(?:tell\s+me\s+about\s+my\s+(?:college|university|friends|family|projects|work|sister|brother|best\s+friend|hobbies))\b",
         r"(?i)\b(?:who\s+is\s+(?:my\s+)?(?:best\s+friend|friend|sister|brother|father|mother|teammate|coworker|partner|girlfriend|boyfriend|wife|husband))\b",
         r"(?i)\b(?:mera\s+naam\s+kya\s+hai|mujhe\s+jaante\s+ho|mere\s+baare\s+me(?:in)?\s+kya\s+jaante\s+ho|tumhe\s+kisne\s+banaya|main\s+kaun\s+hoon)\b",
+        r"(?i)\b(?:mera|meri|mere)\s+(?:preferred|favourite|favorite|college|naam|dost|project|goal|degree|language|programming\s+language)\b.*(?:kya\s+hai|kya\s+tha|batao|yaad\s+hai)",
         r"(?:तुम्हें\s+मेरे\s+बारे\s+में\s+क्या\s+याद\s+है|मेरा\s+नाम\s+क्या\s+है|तुम्हें\s+किसने\s+बनाया)",
     ]
 
@@ -131,6 +132,8 @@ class MasterRouter:
         (r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:downloads|documents|desktop|pictures|music|videos)\b", MasterRoute.FILE_OPERATION),
         (r"(?i)\b(?:type\s+.*into\s+notepad|open\s+notepad\s+and\s+type)\b", MasterRoute.COMPUTER_TASK),
         (r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell|explorer|cmd)\b", MasterRoute.COMPUTER_TASK),
+        # Agent confirmation responses (e.g. Yes, No, Proceed, Cancel, Haan)
+        (r"(?i)^\s*(?:yes|proceed|confirm|sure|do\s+it|yep|yeah|haan|sahi|ha|ha\s+kar\s+do|no|cancel|stop|abort|don'?t|nope|nahi|nahin|mat\s+karo)\s*$", MasterRoute.COMPUTER_TASK),
     ]
 
     # 7. Conversational Chat & Greetings
