@@ -191,6 +191,17 @@ class SubtaskVerifier:
                 return VerificationOutcome(True, action_result.message)
             return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")
 
+        # 8. GENERIC COMPUTER ACTION PRIMITIVES
+        elif act in (
+            "INSPECT_SCREEN", "READ_SCREEN", "FIND_UI_ELEMENT", "CLICK", "DOUBLE_CLICK", "RIGHT_CLICK",
+            "MOVE_MOUSE", "DRAG", "SCROLL", "WAIT", "WAIT_FOR_UI", "COPY", "PASTE",
+            "CLIPBOARD_READ", "CLIPBOARD_WRITE", "GET_ACTIVE_WINDOW", "FOCUS_WINDOW",
+            "VERIFY_UI_STATE", "VERIFY_TEXT", "VERIFY_ELEMENT", "VERIFY_APPLICATION_STATE"
+        ):
+            if action_result and action_result.success:
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")
+
         # Default fallback
         if action_result:
             return VerificationOutcome(action_result.success, action_result.message)

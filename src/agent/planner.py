@@ -1152,6 +1152,115 @@ class ComputerAgentLoop:
                 log_info(f"[AGENT] Verifying email sent confirmation to {rec}...")
                 return True, f"Verified email sent to {rec}", f"Sent confirmed: {rec}"
 
+            elif act == "INSPECT_SCREEN":
+                res = self.tools.execute_tool("inspect_screen", {})
+                return res.success, res.message, f"Screen inspected: {res.data.get('summary')}"
+
+            elif act == "READ_SCREEN":
+                res = self.tools.execute_tool("read_screen", {})
+                return res.success, res.message, res.data.get("message")
+
+            elif act == "FIND_UI_ELEMENT":
+                q = params.get("query", "")
+                res = self.tools.execute_tool("find_ui_element", {"query": q})
+                return res.success, res.message, f"Found element matching '{q}'"
+
+            elif act == "CLICK":
+                x = params.get("x")
+                y = params.get("y")
+                btn = params.get("button", "left")
+                res = self.tools.execute_tool("click", {"x": x, "y": y, "button": btn})
+                return res.success, res.message, f"Clicked mouse at ({x}, {y})"
+
+            elif act == "DOUBLE_CLICK":
+                x = params.get("x")
+                y = params.get("y")
+                res = self.tools.execute_tool("double_click", {"x": x, "y": y})
+                return res.success, res.message, f"Double clicked mouse at ({x}, {y})"
+
+            elif act == "RIGHT_CLICK":
+                x = params.get("x")
+                y = params.get("y")
+                res = self.tools.execute_tool("right_click", {"x": x, "y": y})
+                return res.success, res.message, f"Right clicked mouse at ({x}, {y})"
+
+            elif act == "MOVE_MOUSE":
+                x = params.get("x", 0)
+                y = params.get("y", 0)
+                res = self.tools.execute_tool("move_mouse", {"x": x, "y": y})
+                return res.success, res.message, f"Moved mouse to ({x}, {y})"
+
+            elif act == "DRAG":
+                x1 = params.get("x1", 0)
+                y1 = params.get("y1", 0)
+                x2 = params.get("x2", 0)
+                y2 = params.get("y2", 0)
+                res = self.tools.execute_tool("drag", {"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+                return res.success, res.message, f"Dragged from ({x1}, {y1}) to ({x2}, {y2})"
+
+            elif act == "SCROLL":
+                amt = params.get("amount", -3)
+                res = self.tools.execute_tool("scroll", {"amount": amt})
+                return res.success, res.message, f"Scrolled mouse {amt} ticks"
+
+            elif act == "WAIT":
+                sec = params.get("seconds", 1.0)
+                res = self.tools.execute_tool("wait", {"seconds": sec})
+                return res.success, res.message, f"Waited {sec}s"
+
+            elif act == "WAIT_FOR_UI":
+                tgt = params.get("target", "")
+                tout = params.get("timeout", 5.0)
+                res = self.tools.execute_tool("wait_for_ui", {"target": tgt, "timeout": tout})
+                return res.success, res.message, f"UI ready for '{tgt}'"
+
+            elif act == "COPY":
+                res = self.tools.execute_tool("copy", {})
+                return res.success, res.message, "Copied to clipboard"
+
+            elif act == "PASTE":
+                res = self.tools.execute_tool("paste", {})
+                return res.success, res.message, "Pasted from clipboard"
+
+            elif act == "CLIPBOARD_READ":
+                res = self.tools.execute_tool("clipboard_read", {})
+                return res.success, res.message, f"Clipboard: {res.data.get('text')}"
+
+            elif act == "CLIPBOARD_WRITE":
+                txt = params.get("text", "")
+                res = self.tools.execute_tool("clipboard_write", {"text": txt})
+                return res.success, res.message, f"Written to clipboard: {txt}"
+
+            elif act == "GET_ACTIVE_WINDOW":
+                res = self.tools.execute_tool("get_active_window", {})
+                return res.success, res.message, f"Active window: {res.data.get('title')}"
+
+            elif act == "FOCUS_WINDOW":
+                t = params.get("title", "")
+                res = self.tools.execute_tool("focus_window", {"title": t})
+                return res.success, res.message, f"Focused window: {t}"
+
+            elif act == "VERIFY_UI_STATE":
+                w = params.get("expected_window")
+                txt = params.get("expected_text")
+                res = self.tools.execute_tool("verify_ui_state", {"expected_window": w, "expected_text": txt})
+                return res.success, res.message, res.data.get("evidence")
+
+            elif act == "VERIFY_TEXT":
+                txt = params.get("text", "")
+                res = self.tools.execute_tool("verify_text", {"text": txt})
+                return res.success, res.message, res.data.get("evidence")
+
+            elif act == "VERIFY_ELEMENT":
+                el = params.get("element_name", "")
+                res = self.tools.execute_tool("verify_element", {"element_name": el})
+                return res.success, res.message, res.data.get("evidence")
+
+            elif act == "VERIFY_APPLICATION_STATE":
+                app = params.get("application", "")
+                res = self.tools.execute_tool("verify_application_state", {"application": app})
+                return res.success, res.message, res.data.get("evidence")
+
             return False, f"Unknown action: {act}", None
 
         except Exception as e:

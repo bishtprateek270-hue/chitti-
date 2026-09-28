@@ -72,6 +72,19 @@ class ActionIntent:
 
     def log_intent(self):
         """Emits structured observable logs for this action intent."""
+        log_chitti(f"[CHITTI] [GOAL]")
+        log_chitti(f"[CHITTI] Intent: {self.intent.value}")
+        if self.application:
+            log_chitti(f"[CHITTI] Application: {self.application}")
+        if self.recipient:
+            log_chitti(f"[CHITTI] Recipient: {self.recipient}")
+        elif self.target:
+            log_chitti(f"[CHITTI] Target: {self.target}")
+        if self.content:
+            log_chitti(f"[CHITTI] Content: {self.content}")
+        log_chitti(f"[CHITTI] Final Goal: {self.goal}")
+
+        # Also emit standard analyzer tags
         log_chitti(f"[CHITTI] [ACTION ANALYZER] Intent: {self.intent.value}")
         if self.application:
             log_chitti(f"[CHITTI] [ACTION ANALYZER] Application: {self.application}")
@@ -148,16 +161,17 @@ class ActionIntentAnalyzer:
 
             # Extract message content / body
             content = ""
-            # e.g. 'email "hello there" to ...' or 'email hi, what are you doing?? message to ...'
-            m_msg_body = re.search(r"(?i)\b(?:email|send|mail)\s+(?:message\s+|msg\s+)?([\"'][^\"']+[\"'])(?:\s+(?:message\s+|msg\s+)?to\b|\s*$)", clean) or \
-                         re.search(r"(?i)\b(?:email|send|mail)\s+(?:message\s+|msg\s+)?(.+?)\s+(?:message\s+|msg\s+)?to\s+", clean) or \
-                         re.search(r"(?i)\b(?:with\s+message|saying|body)\s+([\"']?[^\"']+?[\"']?)(?:\s+from\s+my\s+side|\s*$)", clean)
-            if m_msg_body:
-                content = m_msg_body.group(1).strip().strip("\"'")
-                # Clean leftover keywords
-                content = re.sub(r"(?i)\s+(?:message|msg)$", "", content).strip()
+            m_saying = re.search(r"(?i)\b(?:with\s+message|saying|body|with\s+body)\s+([\"']?.+?[\"']?)(?:\s+from\s+my\s+side|\s*$)", clean)
+            if m_saying:
+                content = m_saying.group(1).strip().strip("\"'")
+            else:
+                m_msg_body = re.search(r"(?i)\b(?:email|send|mail)\s+(?:message\s+|msg\s+)?([\"'][^\"']+[\"'])(?:\s+(?:message\s+|msg\s+)?to\b|\s*$)", clean) or \
+                             re.search(r"(?i)\b(?:email|send|mail)\s+(?:message\s+|msg\s+)?(?!(?:an?\s+)?(?:email|mail|message)\s+to)(.+?)\s+(?:message\s+|msg\s+)?to\s+", clean)
+                if m_msg_body:
+                    content = m_msg_body.group(1).strip().strip("\"'")
+                    content = re.sub(r"(?i)\s+(?:message|msg)$", "", content).strip()
             
-            if not content:
+            if not content or content.lower() in ("an email", "email", "a message", "message", "this"):
                 content = "Hello, I am reaching out to you."
 
             # Clean trailing instructions like 'from my side'

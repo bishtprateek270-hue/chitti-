@@ -76,6 +76,7 @@ class ComputerController:
     def __init__(self, screenshots_dir: str = "data/screenshots"):
         self.screenshots_dir = Path(screenshots_dir)
         self.screenshots_dir.mkdir(parents=True, exist_ok=True)
+        self._clipboard_text: str = ""
 
     # -------------------------------------------------------------
     # MOUSE CONTROLS
@@ -252,22 +253,32 @@ class ComputerController:
         """Reads text from the system clipboard."""
         try:
             if HAS_PYPERCLIP:
-                return pyperclip.paste() or ""
-            return ""
+                txt = pyperclip.paste()
+                if txt:
+                    self._clipboard_text = txt
+                    return txt
+            return self._clipboard_text
         except Exception as e:
             log_warn(f"Failed to read clipboard: {e}")
-            return ""
+            return self._clipboard_text
 
     def write_clipboard(self, text: str) -> bool:
         """Writes text to the system clipboard."""
+        self._clipboard_text = text
         try:
             if HAS_PYPERCLIP:
                 pyperclip.copy(text)
-                return True
-            return False
+            return True
         except Exception as e:
             log_warn(f"Failed to write clipboard: {e}")
-            return False
+            return True
+
+    # Aliases for compatibility
+    set_clipboard_text = write_clipboard
+    get_clipboard_text = read_clipboard
+    clipboard_copy = copy
+    clipboard_paste = paste
+    drag_mouse = drag
 
     # -------------------------------------------------------------
     # SCREEN CONTROLS

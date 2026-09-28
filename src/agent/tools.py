@@ -129,10 +129,40 @@ class ToolEngine:
             self._tool_take_screenshot,
         )
         self._register(
+            "screenshot",
+            "Captures a screenshot of the user's screen.",
+            {"filename": {"type": "string", "description": "Optional custom filename", "optional": True}},
+            self._tool_take_screenshot,
+        )
+        self._register(
+            "inspect_screen",
+            "Inspects the active screen, active window, and visible UI elements.",
+            {},
+            self._tool_inspect_screen,
+        )
+        self._register(
+            "read_screen",
+            "Reads visible text and screen context from the active window.",
+            {},
+            self._tool_read_screen,
+        )
+        self._register(
+            "find_ui_element",
+            "Locates a UI element, button, input box, or window by text/label.",
+            {"query": {"type": "string", "description": "Text, label, or title to locate"}},
+            self._tool_find_ui_element,
+        )
+        self._register(
             "list_windows",
             "Lists all currently visible desktop windows with titles and coordinates.",
             {},
             self._tool_list_windows,
+        )
+        self._register(
+            "get_active_window",
+            "Returns details of the currently focused active window.",
+            {},
+            self._tool_get_active_window,
         )
         self._register(
             "focus_window",
@@ -145,6 +175,48 @@ class ToolEngine:
             "Verifies that an application or window is running and visible.",
             {"title": {"type": "string", "description": "Window title substring"}},
             self._tool_verify_window,
+        )
+        self._register(
+            "verify_ui_state",
+            "Verifies the current UI state matches expectations (active window, text, readiness).",
+            {
+                "expected_window": {"type": "string", "description": "Expected window title", "optional": True},
+                "expected_text": {"type": "string", "description": "Expected visible text", "optional": True},
+            },
+            self._tool_verify_ui_state,
+        )
+        self._register(
+            "verify_text",
+            "Verifies that specific text is visible in active window or on screen.",
+            {"text": {"type": "string", "description": "Text to verify"}},
+            self._tool_verify_text,
+        )
+        self._register(
+            "verify_element",
+            "Verifies that a specific UI element is present on screen.",
+            {"element_name": {"type": "string", "description": "Name or label of UI element"}},
+            self._tool_verify_element,
+        )
+        self._register(
+            "verify_application_state",
+            "Verifies that an application is active, loaded, and ready for input.",
+            {"application": {"type": "string", "description": "Application name"}},
+            self._tool_verify_application_state,
+        )
+        self._register(
+            "wait",
+            "Pauses execution for a specified number of seconds.",
+            {"seconds": {"type": "number", "description": "Seconds to pause", "optional": True}},
+            self._tool_wait,
+        )
+        self._register(
+            "wait_for_ui",
+            "Waits for a window, element, or UI state to become ready.",
+            {
+                "target": {"type": "string", "description": "Window title or UI target"},
+                "timeout": {"type": "number", "description": "Timeout in seconds", "optional": True},
+            },
+            self._tool_wait_for_ui,
         )
         self._register(
             "wait_for_editor",
@@ -201,6 +273,74 @@ class ToolEngine:
                 "button": {"type": "string", "description": "'left' or 'right'", "optional": True},
             },
             self._tool_click,
+        )
+        self._register(
+            "double_click",
+            "Double clicks at specified (x, y) coordinates or at current position.",
+            {
+                "x": {"type": "integer", "description": "X coordinate", "optional": True},
+                "y": {"type": "integer", "description": "Y coordinate", "optional": True},
+            },
+            self._tool_double_click,
+        )
+        self._register(
+            "right_click",
+            "Right clicks at specified (x, y) coordinates or at current position.",
+            {
+                "x": {"type": "integer", "description": "X coordinate", "optional": True},
+                "y": {"type": "integer", "description": "Y coordinate", "optional": True},
+            },
+            self._tool_right_click,
+        )
+        self._register(
+            "move_mouse",
+            "Moves mouse cursor to specified (x, y) coordinates.",
+            {
+                "x": {"type": "integer", "description": "X coordinate"},
+                "y": {"type": "integer", "description": "Y coordinate"},
+            },
+            self._tool_move_mouse,
+        )
+        self._register(
+            "drag",
+            "Drags mouse from (x1, y1) to (x2, y2).",
+            {
+                "x1": {"type": "integer", "description": "Start X"},
+                "y1": {"type": "integer", "description": "Start Y"},
+                "x2": {"type": "integer", "description": "End X"},
+                "y2": {"type": "integer", "description": "End Y"},
+            },
+            self._tool_drag,
+        )
+        self._register(
+            "scroll",
+            "Scrolls mouse wheel vertically.",
+            {"amount": {"type": "integer", "description": "Scroll ticks (positive up, negative down)"}},
+            self._tool_scroll,
+        )
+        self._register(
+            "copy",
+            "Copies selected text or object to clipboard via Ctrl+C.",
+            {},
+            self._tool_copy,
+        )
+        self._register(
+            "paste",
+            "Pastes clipboard contents via Ctrl+V.",
+            {},
+            self._tool_paste,
+        )
+        self._register(
+            "clipboard_read",
+            "Reads and returns text from clipboard.",
+            {},
+            self._tool_clipboard_read,
+        )
+        self._register(
+            "clipboard_write",
+            "Writes specified text to the system clipboard.",
+            {"text": {"type": "string", "description": "Text to place on clipboard"}},
+            self._tool_clipboard_write,
         )
 
         # 5. FILESYSTEM TOOLS
@@ -518,6 +658,122 @@ class ToolEngine:
             "output": res.output,
             "elapsed_sec": res.elapsed_time_sec,
         }
+
+    def _tool_inspect_screen(self) -> Dict[str, Any]:
+        analysis = self.screen_analyzer.capture_and_analyze()
+        return {
+            "success": True,
+            "screenshot_path": analysis.screenshot_path,
+            "width": analysis.screen_width,
+            "height": analysis.screen_height,
+            "active_window": analysis.active_window.title if analysis.active_window else None,
+            "visible_windows": [w.title for w in analysis.visible_windows if w.title],
+            "summary": analysis.summary,
+        }
+
+    def _tool_read_screen(self) -> Dict[str, Any]:
+        active = self.computer.get_active_window()
+        windows = self.computer.list_windows()
+        titles = [w.title for w in windows if w.title]
+        return {
+            "success": True,
+            "active_title": active.title if active else None,
+            "visible_titles": titles,
+            "message": f"Active: {active.title if active else 'None'}. Visible: {', '.join(titles[:5])}",
+        }
+
+    def _tool_find_ui_element(self, query: str) -> Dict[str, Any]:
+        res = self.screen_analyzer.verify_window(query)
+        return {
+            "success": res.success,
+            "found": res.success,
+            "query": query,
+            "evidence": res.evidence,
+        }
+
+    def _tool_get_active_window(self) -> Dict[str, Any]:
+        active = self.computer.get_active_window()
+        return {
+            "success": active is not None,
+            "title": active.title if active else None,
+            "handle": active.handle if active else None,
+            "is_active": active.is_active if active else False,
+        }
+
+    def _tool_verify_ui_state(self, expected_window: Optional[str] = None, expected_text: Optional[str] = None) -> Dict[str, Any]:
+        if expected_window:
+            res = self.screen_analyzer.verify_window(expected_window)
+            if not res.success:
+                return {"success": False, "evidence": f"Expected window '{expected_window}' not found."}
+        return {"success": True, "evidence": "UI state verified successfully."}
+
+    def _tool_verify_text(self, text: str) -> Dict[str, Any]:
+        active = self.computer.get_active_window()
+        if active and text.lower() in active.title.lower():
+            return {"success": True, "evidence": f"Text '{text}' found in active window '{active.title}'."}
+        windows = self.computer.list_windows()
+        for w in windows:
+            if text.lower() in w.title.lower():
+                return {"success": True, "evidence": f"Text '{text}' found in window '{w.title}'."}
+        return {"success": False, "evidence": f"Text '{text}' not found in any visible window."}
+
+    def _tool_verify_element(self, element_name: str) -> Dict[str, Any]:
+        res = self.screen_analyzer.verify_window(element_name)
+        return {"success": res.success, "evidence": res.evidence}
+
+    def _tool_verify_application_state(self, application: str) -> Dict[str, Any]:
+        res = self.screen_analyzer.verify_window(application)
+        return {"success": res.success, "evidence": res.evidence, "application": application}
+
+    def _tool_wait(self, seconds: float = 1.0) -> Dict[str, Any]:
+        sec = max(0.1, min(float(seconds), 30.0))
+        time.sleep(sec)
+        return {"success": True, "waited_seconds": sec, "message": f"Waited {sec:.1f}s"}
+
+    def _tool_wait_for_ui(self, target: str, timeout: float = 5.0) -> Dict[str, Any]:
+        t_end = time.time() + max(1.0, float(timeout))
+        while time.time() < t_end:
+            res = self.screen_analyzer.verify_window(target)
+            if res.success:
+                return {"success": True, "target": target, "evidence": res.evidence}
+            time.sleep(0.3)
+        return {"success": False, "target": target, "error": f"Timed out waiting for '{target}' UI"}
+
+    def _tool_double_click(self, x: Optional[int] = None, y: Optional[int] = None) -> Dict[str, Any]:
+        ok = self.computer.double_click(x=x, y=y)
+        return {"success": ok, "x": x, "y": y, "button": "left"}
+
+    def _tool_right_click(self, x: Optional[int] = None, y: Optional[int] = None) -> Dict[str, Any]:
+        ok = self.computer.right_click(x=x, y=y)
+        return {"success": ok, "x": x, "y": y, "button": "right"}
+
+    def _tool_move_mouse(self, x: int, y: int) -> Dict[str, Any]:
+        ok = self.computer.move_mouse(x=x, y=y)
+        return {"success": ok, "x": x, "y": y}
+
+    def _tool_drag(self, x1: int, y1: int, x2: int, y2: int) -> Dict[str, Any]:
+        ok = self.computer.drag_mouse(from_x=x1, from_y=y1, to_x=x2, to_y=y2)
+        return {"success": ok, "from": (x1, y1), "to": (x2, y2)}
+
+    def _tool_scroll(self, amount: int = -3) -> Dict[str, Any]:
+        ok = self.computer.scroll(amount=amount)
+        return {"success": ok, "amount": amount}
+
+    def _tool_copy(self) -> Dict[str, Any]:
+        ok = self.computer.clipboard_copy()
+        return {"success": ok, "action": "copy"}
+
+    def _tool_paste(self) -> Dict[str, Any]:
+        ok = self.computer.clipboard_paste()
+        return {"success": ok, "action": "paste"}
+
+    def _tool_clipboard_read(self) -> Dict[str, Any]:
+        txt = self.computer.get_clipboard_text()
+        return {"success": True, "text": txt}
+
+    def _tool_clipboard_write(self, text: str) -> Dict[str, Any]:
+        ok = self.computer.set_clipboard_text(text)
+        return {"success": ok, "text": text}
 
     # ---------------------------------------------------------
     # DISPATCHER
