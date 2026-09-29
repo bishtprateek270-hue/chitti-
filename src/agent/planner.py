@@ -1035,6 +1035,20 @@ class ComputerAgentLoop:
 
             elif act == "TYPE_TEXT":
                 text = params["text"]
+                service = params.get("service")
+                if not service and ("whatsapp" in state.task_description.lower() or "whatsapp" in state.goal.lower()):
+                    service = "WhatsApp Web"
+
+                if service:
+                    self.tools.execute_tool("focus_window", {"title": service})
+                    time.sleep(0.2)
+                    win = self.computer.find_window(service)
+                    if win and win.width > 0:
+                        msg_x = win.left + int(win.width * 0.55)
+                        msg_y = win.top + (win.height - 50)
+                        self.tools.execute_tool("click", {"x": msg_x, "y": msg_y})
+                        time.sleep(0.1)
+
                 time.sleep(0.2)
                 res = self.tools.execute_tool("type_text", {"text": text})
                 return res.success, res.message, f"Text entered: {text}"
@@ -1159,15 +1173,15 @@ class ComputerAgentLoop:
                 time.sleep(0.2)
                 self.tools.execute_tool("find_ui_element", {"query": f"search bar for {service}"})
                 
-                # 2. Click search bar in WhatsApp Web inside window rect
+                # 2. Click search bar in WhatsApp Web inside window rect (y ~ 175)
                 win = self.computer.find_window(service)
                 if win and win.width > 0:
-                    search_x = win.left + int(win.width * 0.18)
-                    search_y = win.top + min(140, int(win.height * 0.16))
+                    search_x = win.left + min(240, int(win.width * 0.18))
+                    search_y = win.top + min(180, int(win.height * 0.18))
                 else:
                     screen_w, screen_h = self.computer.get_screen_size()
-                    search_x = int(screen_w * 0.15)
-                    search_y = int(screen_h * 0.18)
+                    search_x = min(240, int(screen_w * 0.15))
+                    search_y = min(180, int(screen_h * 0.18))
 
                 self.tools.execute_tool("click", {"x": search_x, "y": search_y})
                 time.sleep(0.2)
@@ -1196,15 +1210,15 @@ class ComputerAgentLoop:
                 self.tools.execute_tool("focus_window", {"title": service})
                 time.sleep(0.2)
                 
-                # Click first search result item on left list
+                # Click first search result item on left list (y ~ 260)
                 win = self.computer.find_window(service)
                 if win and win.width > 0:
-                    chat_item_x = win.left + int(win.width * 0.18)
-                    chat_item_y = win.top + min(230, int(win.height * 0.28))
+                    chat_item_x = win.left + min(240, int(win.width * 0.18))
+                    chat_item_y = win.top + min(270, int(win.height * 0.28))
                 else:
                     screen_w, screen_h = self.computer.get_screen_size()
-                    chat_item_x = int(screen_w * 0.15)
-                    chat_item_y = int(screen_h * 0.28)
+                    chat_item_x = min(240, int(screen_w * 0.15))
+                    chat_item_y = min(270, int(screen_h * 0.28))
 
                 self.tools.execute_tool("click", {"x": chat_item_x, "y": chat_item_y})
                 time.sleep(0.4)
@@ -1213,8 +1227,8 @@ class ComputerAgentLoop:
                 
                 # Click inside message input box at bottom right
                 if win and win.width > 0:
-                    msg_input_x = win.left + int(win.width * 0.6)
-                    msg_input_y = win.top + (win.height - 45)
+                    msg_input_x = win.left + int(win.width * 0.55)
+                    msg_input_y = win.top + (win.height - 50)
                     self.tools.execute_tool("click", {"x": msg_input_x, "y": msg_input_y})
                     time.sleep(0.2)
 
@@ -1233,8 +1247,8 @@ class ComputerAgentLoop:
                 # Ensure cursor is in message box before sending
                 win = self.computer.find_window(service)
                 if win and win.width > 0:
-                    msg_input_x = win.left + int(win.width * 0.6)
-                    msg_input_y = win.top + (win.height - 45)
+                    msg_input_x = win.left + int(win.width * 0.55)
+                    msg_input_y = win.top + (win.height - 50)
                     self.tools.execute_tool("click", {"x": msg_input_x, "y": msg_input_y})
                     time.sleep(0.1)
 

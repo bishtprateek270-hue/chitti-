@@ -433,12 +433,12 @@ class ComputerUseEngine:
                 
                 win = self.controller.find_window(service) if hasattr(self.controller, "find_window") else None
                 if win and win.width > 0:
-                    search_x = win.left + int(win.width * 0.18)
-                    search_y = win.top + min(140, int(win.height * 0.16))
+                    search_x = win.left + min(240, int(win.width * 0.18))
+                    search_y = win.top + min(180, int(win.height * 0.18))
                 else:
                     screen_w, screen_h = self.controller.get_screen_size()
-                    search_x = int(screen_w * 0.15)
-                    search_y = int(screen_h * 0.18)
+                    search_x = min(240, int(screen_w * 0.15))
+                    search_y = min(180, int(screen_h * 0.18))
 
                 self.controller.click(search_x, search_y)
                 self.controller.wait(0.2)
@@ -459,12 +459,12 @@ class ComputerUseEngine:
                 
                 win = self.controller.find_window(service) if hasattr(self.controller, "find_window") else None
                 if win and win.width > 0:
-                    chat_item_x = win.left + int(win.width * 0.18)
-                    chat_item_y = win.top + min(230, int(win.height * 0.28))
+                    chat_item_x = win.left + min(240, int(win.width * 0.18))
+                    chat_item_y = win.top + min(270, int(win.height * 0.28))
                 else:
                     screen_w, screen_h = self.controller.get_screen_size()
-                    chat_item_x = int(screen_w * 0.15)
-                    chat_item_y = int(screen_h * 0.28)
+                    chat_item_x = min(240, int(screen_w * 0.15))
+                    chat_item_y = min(270, int(screen_h * 0.28))
 
                 self.controller.click(chat_item_x, chat_item_y)
                 self.controller.wait(0.3)
@@ -472,8 +472,8 @@ class ComputerUseEngine:
                 self.controller.wait(0.3)
                 
                 if win and win.width > 0:
-                    msg_x = win.left + int(win.width * 0.6)
-                    msg_y = win.top + (win.height - 45)
+                    msg_x = win.left + int(win.width * 0.55)
+                    msg_y = win.top + (win.height - 50)
                     self.controller.click(msg_x, msg_y)
                     self.controller.wait(0.1)
 
