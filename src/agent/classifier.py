@@ -59,6 +59,9 @@ class ClassificationResult:
             self.is_computer_task = True
 
 
+from src.utils.text import normalize_typos
+
+
 class TaskClassifier:
     """
     Dedicated Intent Classification Layer for actionable computer/project tasks vs conversational queries.
@@ -119,17 +122,7 @@ class TaskClassifier:
     @classmethod
     def _normalize_text(cls, text: str) -> str:
         """Corrects common typographical errors in action verbs and application names."""
-        normalized = text
-        normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn)\b", "open", normalized)
-        normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch)\b", "launch", normalized)
-        normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg)\b", "message", normalized)
-        normalized = re.sub(r"(?i)\b(?:serach|sreach)\b", "search", normalized)
-        normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp)\b", "whatsapp", normalized)
-        normalized = re.sub(r"(?i)\b(?:vscdoe|vscde)\b", "vscode", normalized)
-        normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube)\b", "youtube", normalized)
-        normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm)\b", "chrome", normalized)
-        normalized = re.sub(r"(?i)\b(?:notepd|notepadd)\b", "notepad", normalized)
-        return normalized
+        return normalize_typos(text)
 
     @classmethod
     def classify(cls, user_text: str) -> ClassificationResult:
@@ -171,23 +164,7 @@ class TaskClassifier:
                 execution_requested=True,
             )
 
-        # 4. Check for Dedicated Computer Control / App Launch / Browser / Messaging
-        if any(re.search(pat, raw) for pat in cls.COMPUTER_CONTROL_PATTERNS):
-            if any(w in lower for w in ["whatsapp", "youtube", "song", "gaana", "browser", "chrome", "web", "gmail", "message", "telegram", "slack"]):
-                intent = TaskIntent.BROWSER_TASK
-            elif "folder" in lower or "file" in lower or "desktop" in lower or "delete" in lower:
-                intent = TaskIntent.FILE_OPERATION
-            else:
-                intent = TaskIntent.COMPUTER_TASK
-
-            return ClassificationResult(
-                intent=intent,
-                is_actionable_task=True,
-                confidence=0.95,
-                reason=f"Direct computer control trigger: {intent.value}",
-            )
-
-        # 5. Check for Technical "How-to" / Informational Code Snippet Questions
+        # 4. Check for Technical "How-to" / Informational Code Snippet Questions
         # If user explicitly asks "how do I create...", "give me code for...", "explain..." WITHOUT asking Chitti to do it
         is_informational_howto = any(re.search(pat, raw) for pat in cls.TECHNICAL_QUERY_PATTERNS)
         is_pure_conceptual = any(re.search(pat, raw) for pat in cls.KNOWLEDGE_PATTERNS)
@@ -210,12 +187,12 @@ class TaskClassifier:
                 reason="Conceptual or general knowledge question",
             )
 
-        # 6. Check for Software Project Creation / Code Synthesis (Semantic Detection)
+        # 5. Check for Software Project Creation / Code Synthesis (Semantic Detection)
         # Signals: Action verbs (create, build, make, develop, implement, generate, write, design, banao, likho)
         # OR Desires (I want an application that..., I need a tool that..., can you build me...)
         is_creation_request = (
-            # Action verb + target / intent
-            bool(re.search(r"(?i)\b(?:create|build|make|develop|implement|generate|design|write)\s+(?:me\s+|us\s+|for\s+me\s+)?(?:an?|the|some)?\s*(?:fully\s+functional\s+|interactive\s+|simple\s+|modern\s+|clean\s+|complete\s+)?(?:[a-zA-Z0-9_\-\s]+)", raw)) or
+            # Optional VS Code prefix + Action verb + target / intent
+            bool(re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|build|make|develop|implement|generate|design|write)\s+(?:me\s+|us\s+|for\s+me\s+)?(?:an?|the|some|ek)?\s*(?:fully\s+functional\s+|interactive\s+|simple\s+|modern\s+|clean\s+|complete\s+)?(?:[a-zA-Z0-9_\-\s]+)", raw)) or
             # Desire structure: "I want an app...", "I need a system...", "can you make..."
             bool(re.search(r"(?i)\b(?:i\s+want|i\s+need|can\s+you\s+(?:build|create|make|develop)|please\s+(?:build|create|make|develop))\s+(?:an?|the|some)?\s*(?:application|app|project|website|system|tool|dashboard|tracker|script|solution|software|service|game|interface|api|program)\b", raw)) or
             # Hinglish: "X banao", "X likho", "X create karo"
@@ -237,6 +214,7 @@ class TaskClassifier:
             # E.g. "todo list", "calculator", "expense tracker", "attendance system"
             clean_proj = raw
             clean_proj = re.sub(r"(?i)^(?:chitti,?\s*|hey\s+chitti,?\s*|please\s+|can\s+you\s+|i\s+want\s+(?:an?|the)?\s*|i\s+need\s+(?:an?|the)?\s*)", "", clean_proj).strip()
+            clean_proj = re.sub(r"(?i)^(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)", "", clean_proj).strip()
             clean_proj = re.sub(r"(?i)^(?:create|build|make|develop|implement|generate|design|write)\s+(?:me\s+|us\s+|for\s+me\s+)?(?:an?|the|some|ek)?\s*(?:fully\s+functional\s+|interactive\s+|simple\s+|modern\s+|clean\s+|complete\s+)?", "", clean_proj).strip()
             clean_proj = re.sub(r"(?i)\s*(?:with\s+(?:an?\s+)?(?:interactive|good|modern|responsive|clean)?\s*ui|for\s+me|and\s+run\s+it|aur\s+run\s+karo|in\s+vs\s*code|in\s+python|in\s+react|in\s+c\+\+|in\s+java).*$", "", clean_proj).strip()
             clean_proj = re.sub(r"(?i)\s+(?:banao|likho|create\s+karo|develop\s+karo|kro|karo|do)$", "", clean_proj).strip()
@@ -259,6 +237,22 @@ class TaskClassifier:
                 ui_required=ui_required,
                 execution_requested=execution_requested,
                 extracted_requirements=requirements,
+            )
+
+        # 6. Check for Dedicated Computer Control / App Launch / Browser / Messaging
+        if any(re.search(pat, raw) for pat in cls.COMPUTER_CONTROL_PATTERNS):
+            if any(w in lower for w in ["whatsapp", "youtube", "song", "gaana", "browser", "chrome", "web", "gmail", "message", "telegram", "slack"]):
+                intent = TaskIntent.BROWSER_TASK
+            elif "folder" in lower or "file" in lower or "desktop" in lower or "delete" in lower:
+                intent = TaskIntent.FILE_OPERATION
+            else:
+                intent = TaskIntent.COMPUTER_TASK
+
+            return ClassificationResult(
+                intent=intent,
+                is_actionable_task=True,
+                confidence=0.95,
+                reason=f"Direct computer control trigger: {intent.value}",
             )
 
         # 7. Default Fallback

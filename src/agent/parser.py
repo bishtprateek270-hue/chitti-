@@ -9,6 +9,7 @@ from typing import Optional
 from src.agent.actions import ActionType, RiskLevel, StructuredAction
 from src.agent.registry import DEFAULT_URL_MAP
 from src.utils.logging import log_debug
+from src.utils.text import normalize_typos
 
 
 class ActionParser:
@@ -16,12 +17,17 @@ class ActionParser:
 
     @classmethod
     def parse_command(cls, user_text: str) -> Optional[StructuredAction]:
-        raw = user_text.strip()
+        raw = normalize_typos(user_text.strip())
         lower = raw.lower()
 
         # Clean Chitti invocation prefix if present
         clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", raw, flags=re.IGNORECASE).strip()
         clean_lower = clean.lower()
+
+        # Reject compound multi-step instructions that should be planned by AgentPlanner
+        if re.search(r"(?i)\b(?:and|aur|\&)\s+(?:build|create|make|develop|write|run|execute|type|search|open|close|play|send|message|email)\b", clean) or \
+           re.search(r"(?i)\b(?:with\s+(?:clean\s+|good\s+|modern\s+)?ui|and\s+run\s+it|aur\s+run\s+karo)\b", clean):
+            return None
 
         # 1. SCREENSHOT COMMANDS
         screenshot_patterns = [
@@ -230,6 +236,9 @@ class ActionParser:
         m_app_en = re.search(r"(?i)^(?:open|launch|start|run)\s+(?:the\s+|app\s+)?([A-Za-z0-9_\-\s]+)$", clean)
         if m_app_en:
             app_target = m_app_en.group(1).strip().rstrip(".!? \t\n")
+            # Exclude compound phrases containing conjunctions or action verbs
+            if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type)\b", app_target):
+                return None
             # Exclude non-app words (e.g. general questions or verbs)
             if app_target.lower() not in {
                 "the", "a", "my", "this", "deep learning", "cnn", "dbms", "leetcode",

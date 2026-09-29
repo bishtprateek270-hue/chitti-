@@ -173,3 +173,55 @@ def test_memory_router_does_not_block_task_router(agent_mgr):
     assert handled is True
     assert result is not None
     assert result.success is True
+
+
+def test_open_vs_code_and_build_calculator_with_typos(agent_mgr):
+    """
+    Test exact user scenario:
+    'open vs code and build a fully functional calcultor with clean ui and run it'
+    Must:
+    1. MasterRouter classifies as PROJECT_CREATION.
+    2. TaskClassifier classifies as CREATE_PROJECT.
+    3. ActionParser rejects single-step app launch.
+    4. ActionIntentAnalyzer extracts CREATE_PROJECT.
+    5. AgentPlanner builds multi-step plan, writes calculator files, opens VS Code, and executes.
+    """
+    from src.agent.parser import ActionParser
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+    from src.router.master_router import MasterRouter, MasterRoute
+
+    prompt = "open vs code and build a fully functional calcultor with clean ui and run it"
+
+    # 1. Master Router
+    mr_res = MasterRouter.classify_request(prompt)
+    assert mr_res.route == MasterRoute.PROJECT_CREATION
+    assert mr_res.requires_computer is True
+    assert mr_res.requires_phase6 is True
+
+    # 2. Task Classifier
+    class_res = TaskClassifier.classify(prompt)
+    assert class_res.intent == TaskIntent.CREATE_PROJECT
+    assert class_res.is_actionable_task is True
+    assert class_res.ui_required is True
+    assert class_res.execution_requested is True
+
+    # 3. ActionParser (must return None because it's a compound multi-step task)
+    single_action = ActionParser.parse_command(prompt)
+    assert single_action is None
+
+    # 4. ActionIntentAnalyzer
+    intent = ActionIntentAnalyzer.extract_intent(prompt)
+    assert intent.intent == ActionIntentType.CREATE_PROJECT
+
+    # 5. Full Agent Execution
+    handled, msg, result = agent_mgr.handle_command(prompt, lang="en")
+    assert handled is True
+    assert result is not None
+    assert result.success is True
+
+    # Verify calculator file generated
+    files = list(Path(agent_mgr.workspace_dir).glob("*.html")) + list(Path(agent_mgr.workspace_dir).glob("*.py"))
+    assert len(files) >= 1
+    content = files[0].read_text(encoding="utf-8")
+    assert "calculator" in content.lower() or "calc" in content.lower()
+

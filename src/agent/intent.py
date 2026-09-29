@@ -107,17 +107,8 @@ class ActionIntentAnalyzer:
     @classmethod
     def _normalize_text(cls, text: str) -> str:
         """Corrects typos in common action verbs and application names."""
-        normalized = text
-        normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn)\b", "open", normalized)
-        normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch)\b", "launch", normalized)
-        normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg)\b", "message", normalized)
-        normalized = re.sub(r"(?i)\b(?:serach|sreach)\b", "search", normalized)
-        normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp)\b", "whatsapp", normalized)
-        normalized = re.sub(r"(?i)\b(?:vscdoe|vscde)\b", "vscode", normalized)
-        normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube)\b", "youtube", normalized)
-        normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm)\b", "chrome", normalized)
-        normalized = re.sub(r"(?i)\b(?:notepd|notepadd)\b", "notepad", normalized)
-        return normalized
+        from src.utils.text import normalize_typos
+        return normalize_typos(text)
 
     @classmethod
     def extract_intent(cls, user_text: str) -> ActionIntent:
@@ -340,7 +331,26 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 5. DESKTOP APPLICATION LAUNCH & CONTROLS
+        # 5. PROJECT CREATION / CODING ACTIONS (Phase 6)
+        # -------------------------------------------------------------
+        is_coding = bool(
+            re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|build|make|develop|implement|generate|design|write)\s+.*(?:app|application|project|website|calculator|tracker|system|dashboard|timer|todo|game|api|script|program|code)", clean) or
+            re.search(r"(?i)\b(?:python|cpp|c\+\+|java|react|html|css|flask|fastapi)\b.*(?:banao|create|build|write|implement|run)", clean) or
+            re.search(r"(?i)\b(?:banao|bana\s+do|create\s+karo|develop\s+karo)\b", clean) or
+            re.search(r"(?i)\b(?:calculator|tracker|todo|dashboard|timer|system|game|app|project|website|api)\s+(?:with\s+.*ui|and\s+run|aur\s+run|banao|likho)\b", clean)
+        )
+        if is_coding:
+            return ActionIntent(
+                intent=ActionIntentType.CREATE_PROJECT,
+                goal=clean,
+                channel="Project Agent",
+                application="Visual Studio Code",
+                target="Project",
+                verification_required=True,
+            )
+
+        # -------------------------------------------------------------
+        # 6. DESKTOP APPLICATION LAUNCH & CONTROLS
         # -------------------------------------------------------------
         m_notepad_type = re.search(r"(?i)\bopen\s+notepad\s+(?:and|aur)\s+type\s+(.*)", clean) or \
                          re.search(r"(?i)\bnotepad\s+(?:kholo|open\s+karo)\s+aur\s+(?:type\s+karo\s+|likho\s+)(.*)", clean)
@@ -385,7 +395,7 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 6. SYSTEM CONTROLS (Screenshot, Volume)
+        # 7. SYSTEM CONTROLS (Screenshot, Volume)
         # -------------------------------------------------------------
         if bool(re.search(r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot|screenshot\s+(?:le\s+lo|kheecho)\b", clean)):
             return ActionIntent(
@@ -398,7 +408,7 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 7. FILESYSTEM OPERATIONS
+        # 8. FILESYSTEM OPERATIONS
         # -------------------------------------------------------------
         m_desk_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean)
         if m_desk_folder:
@@ -413,24 +423,6 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 8. PROJECT CREATION / CODING ACTIONS (Phase 6)
-        # -------------------------------------------------------------
-        is_coding = bool(
-            re.search(r"(?i)\b(?:create|build|make|develop|implement|generate|design|write)\s+.*(?:app|application|project|website|calculator|tracker|system|dashboard|timer|todo|game|api|script|program)", clean) or
-            re.search(r"(?i)\b(?:python|cpp|c\+\+|java|react|html|css|flask|fastapi)\b.*(?:banao|create|build|write|implement|run)", clean) or
-            re.search(r"(?i)\b(?:banao|bana\s+do|create\s+karo|develop\s+karo)\b", clean)
-        )
-        if is_coding:
-            return ActionIntent(
-                intent=ActionIntentType.CREATE_PROJECT,
-                goal=clean,
-                channel="Project Agent",
-                application="Visual Studio Code",
-                target="Project",
-                verification_required=True,
-            )
-
-        # -------------------------------------------------------------
         # 9. FALLBACK
         # -------------------------------------------------------------
         return ActionIntent(
@@ -440,3 +432,4 @@ class ActionIntentAnalyzer:
             target="Conversation",
             verification_required=False,
         )
+

@@ -37,7 +37,7 @@ from src.agent.tools import ToolEngine
 from src.agent.verifier import SubtaskVerifier, VerificationOutcome
 from src.brain.llm import BaseLLM
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
-from src.utils.text import clean_contact_query, strip_emojis
+from src.utils.text import clean_contact_query, normalize_typos, strip_emojis
 
 
 class AgentPlanner:
@@ -55,7 +55,7 @@ class AgentPlanner:
 
     def plan_task(self, user_text: str, context: Optional[TaskContext] = None) -> Optional[TaskState]:
         """Analyzes the user's goal and constructs a multi-step task plan with dependencies."""
-        raw = user_text.strip()
+        raw = normalize_typos(user_text.strip())
         lower = raw.lower()
 
         # Clean invocation prefixes
@@ -239,11 +239,12 @@ class AgentPlanner:
         # 9. GENERAL-PURPOSE PROGRAMMING & CODING TASKS (Single-file & Multi-file)
         task_class = TaskClassifier.classify(clean)
         is_coding_request = (
-            task_class.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.MODIFY_PROJECT, TaskIntent.BUILD_PROJECT)
+            intent.intent == ActionIntentType.CREATE_PROJECT
+            or task_class.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.MODIFY_PROJECT, TaskIntent.BUILD_PROJECT)
             or (task_class.is_actionable_task and task_class.intent not in (TaskIntent.COMPUTER_TASK, TaskIntent.BROWSER_TASK, TaskIntent.FILE_OPERATION))
-            or bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|bana|karo)", clean))
-            or bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql|flask|fastapi|express|django|node)\b.*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
-            or bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
+            or bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|build|make|develop|likho|implement|class|api|app|algorithm|calculator|bana|karo)", clean))
+            or bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql|flask|fastapi|express|django|node)\b.*(?:code|program|script|file|banao|kro|create|write|build|make|develop|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
+            or bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|build|make|develop|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
             or bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement|develop)\s+.*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper|dashboard|calculator|timer|file|solution|todo|system|website|portal|bot|crawler|interface|game)", clean))
             or bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm|project|tracker|scraper|dashboard|timer|todo|system|website)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
         )

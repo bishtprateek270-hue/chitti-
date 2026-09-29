@@ -98,8 +98,8 @@ class MasterRouter:
 
     # 4. Project Creation Patterns (Phase 6 Agent)
     PROJECT_CREATION_PATTERNS = [
-        # Explicit creation directives
-        r"(?i)\b(?:create|build|make|develop|implement|generate|design)\s+(?:a\s+|an\s+|the\s+)?(?:fully\s+functional\s+|complete\s+|simple\s+|interactive\s+|modern\s+|good\s+ui\s+)?([a-zA-Z0-9_\-\s]+?)(?:\s+for\s+me|\s+with\s+.*|\s+in\s+[a-zA-Z0-9_\+\#]+|\s+using\s+.*|\s+and\s+run\s+it)?$",
+        # Explicit creation directives (including with VS Code prefix)
+        r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|build|make|develop|implement|generate|design|write)\s+(?:a\s+|an\s+|the\s+)?(?:fully\s+functional\s+|complete\s+|simple\s+|interactive\s+|modern\s+|clean\s+ui\s+|good\s+ui\s+)?([a-zA-Z0-9_\-\s]+?)(?:\s+for\s+me|\s+with\s+.*|\s+in\s+[a-zA-Z0-9_\+\#]+|\s+using\s+.*|\s+and\s+run\s+it)?$",
         # Desire-based project requests ("I want an app that...", "I need a project for...")
         r"(?i)\b(?:i\s+want|i\s+need|can\s+you\s+(?:build|make|create)|please\s+(?:build|make|create))\s+(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9_\-\s]+?(?:application|app|project|website|dashboard|tracker|tool|system))\b",
         # Multilingual Hindi / Hinglish project building
@@ -155,19 +155,8 @@ class MasterRouter:
     @classmethod
     def _normalize_text(cls, text: str) -> str:
         """Corrects common typographical errors in action verbs and application names."""
-        normalized = text
-        # Common verb typos
-        normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn)\b", "open", normalized)
-        normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch)\b", "launch", normalized)
-        normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg)\b", "message", normalized)
-        normalized = re.sub(r"(?i)\b(?:serach|sreach)\b", "search", normalized)
-        # Common app name typos
-        normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp)\b", "whatsapp", normalized)
-        normalized = re.sub(r"(?i)\b(?:vscdoe|vscde)\b", "vscode", normalized)
-        normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube)\b", "youtube", normalized)
-        normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm)\b", "chrome", normalized)
-        normalized = re.sub(r"(?i)\b(?:notepd|notepadd)\b", "notepad", normalized)
-        return normalized
+        from src.utils.text import normalize_typos
+        return normalize_typos(text)
 
     @classmethod
     def classify_request(cls, user_text: str) -> MasterRouteDecision:
@@ -245,20 +234,7 @@ class MasterRouter:
                 explanation="User requested drafting/writing email content (conversational assistance)",
             )
 
-        # 5. Check for Dedicated Computer Control / OS / Browser / Messaging Tasks (Phase 5)
-        for pat, comp_route in cls.COMPUTER_TASK_PATTERNS:
-            if re.search(pat, clean):
-                return cls._make_decision(
-                    route=comp_route,
-                    confidence=0.95,
-                    requires_memory=False,
-                    requires_computer=True,
-                    requires_phase5=True,
-                    requires_phase6=False,
-                    explanation=f"Direct computer/OS action detected: {comp_route.value}",
-                )
-
-        # 6. Check for Technical / Conversational "How-to" vs Project Creation
+        # 5. Check for Technical / Conversational "How-to" vs Project Creation
         # Distinguish: "How do I create a todo list?" (Technical Knowledge) vs "Create a todo list for me" (Project Creation)
         is_informational = any(re.search(pat, clean) for pat in cls.TECHNICAL_KNOWLEDGE_PATTERNS)
         is_actionable_directive = bool(
@@ -266,7 +242,7 @@ class MasterRouter:
             or re.search(r"(?i)\b(?:interactive\s+ui|good\s+ui|fully\s+functional|run\s+it|open\s+in\s+browser)\b", clean)
         )
 
-        # 7. Check for Project Creation (Phase 6 Agent)
+        # 6. Check for Project Creation (Phase 6 Agent)
         is_project_signal = (
             any(re.search(pat, clean) for pat in cls.PROJECT_CREATION_PATTERNS)
             or bool(re.search(r"(?i)\b(?:create|build|make|develop|implement)\s+(?:a\s+|an\s+)?(?:[a-zA-Z0-9_\-\s]+?\s+)?(?:app|project|application|tool|system|dashboard|tracker|website|api|game|interface|quiz|calculator|timer)\b", clean))
@@ -301,6 +277,19 @@ class MasterRouter:
                     "ui_required": ui_req,
                 },
             )
+
+        # 7. Check for Dedicated Computer Control / OS / Browser / Messaging Tasks (Phase 5)
+        for pat, comp_route in cls.COMPUTER_TASK_PATTERNS:
+            if re.search(pat, clean):
+                return cls._make_decision(
+                    route=comp_route,
+                    confidence=0.95,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=False,
+                    explanation=f"Direct computer/OS action detected: {comp_route.value}",
+                )
 
         # 8. Check for Casual Greeting / Small Talk / Name Call
         if not clean or any(re.search(pat, raw) for pat in cls.CHAT_GREETING_PATTERNS) or clean_lower in ("hello", "hi", "hey", "namaste", "sup", "yo", "chitti", "hey chitti"):
