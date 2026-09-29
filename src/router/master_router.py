@@ -120,8 +120,8 @@ class MasterRouter:
         # Messaging / Communication / Email / Web App Tasks
         (r"(?i)\b(?:send\s+(?:an?\s+)?(?:email|mail)|email\s+.*to\s+.*|mail\s+.*to\s+.*|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send\s+message)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg))\b", MasterRoute.BROWSER_TASK),
-        (r"(?i)\b(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|x\.com|github|wikipedia|amazon|flipkart|netflix|spotify|chatgpt)\b.*(?:kholo|open|chalao|visit|message|send|search|browse)", MasterRoute.BROWSER_TASK),
-        (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|browser|web)\b", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|x\.com|github|wikipedia|amazon|flipkart|netflix|spotify|chatgpt|youtube|yt)\b.*(?:kholo|open|chalao|visit|message|send|search|browse|play)", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|youtube|yt|browser|web)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:search\s+(?:for\s+)?.*on\s+(?:google|chrome|browser|bing|youtube|web)|open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+.*)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)(?:\s+in\s+browser)?\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|go\s+to\s+youtube\s+and\s+play|youtube\s+(?:pe|par).*chalao|gaana\s+chalao|search\s+youtube\s+for)\b", MasterRoute.BROWSER_TASK),
@@ -131,7 +131,7 @@ class MasterRouter:
         (r"(?i)\b(?:open|launch|kholo|chalao|show)\s+(?:the\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:folder|directory)\b", MasterRoute.FILE_OPERATION),
         (r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:downloads|documents|desktop|pictures|music|videos)\b", MasterRoute.FILE_OPERATION),
         (r"(?i)\b(?:type\s+.*into\s+notepad|open\s+notepad\s+and\s+type)\b", MasterRoute.COMPUTER_TASK),
-        (r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell|explorer|cmd)\b", MasterRoute.COMPUTER_TASK),
+        (r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell|explorer|cmd|paint|spotify|word|excel|task\s*manager)\b", MasterRoute.COMPUTER_TASK),
         # Agent confirmation responses (e.g. Yes, No, Proceed, Cancel, Haan)
         (r"(?i)^\s*(?:yes|proceed|confirm|sure|do\s+it|yep|yeah|haan|sahi|ha|ha\s+kar\s+do|no|cancel|stop|abort|don'?t|nope|nahi|nahin|mat\s+karo)\s*$", MasterRoute.COMPUTER_TASK),
     ]
@@ -167,8 +167,9 @@ class MasterRouter:
         normalized_raw = cls._normalize_text(raw)
         lower = normalized_raw.lower()
 
-        # Clean invocation prefix
+        # Clean invocation prefix & trailing filler
         clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", normalized_raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # 1. Check for Explicit Memory Storage / Update Commands

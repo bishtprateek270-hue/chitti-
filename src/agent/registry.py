@@ -41,7 +41,10 @@ DEFAULT_URL_MAP: Dict[str, str] = {
     "google": "https://www.google.com",
     "github": "https://www.github.com",
     "youtube": "https://www.youtube.com",
-    "chatgpt": "https://chat.openai.com",
+    "yt": "https://www.youtube.com",
+    "whatsapp": "https://web.whatsapp.com",
+    "whatsapp web": "https://web.whatsapp.com",
+    "chatgpt": "https://chatgpt.com",
     "gmail": "https://mail.google.com",
     "stackoverflow": "https://stackoverflow.com",
     "wikipedia": "https://www.wikipedia.org",
@@ -49,6 +52,9 @@ DEFAULT_URL_MAP: Dict[str, str] = {
     "twitter": "https://www.x.com",
     "x": "https://www.x.com",
     "linkedin": "https://www.linkedin.com",
+    "spotify": "https://open.spotify.com",
+    "netflix": "https://www.netflix.com",
+    "amazon": "https://www.amazon.com",
 }
 
 

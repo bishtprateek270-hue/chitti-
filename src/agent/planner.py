@@ -58,8 +58,9 @@ class AgentPlanner:
         raw = normalize_typos(user_text.strip())
         lower = raw.lower()
 
-        # Clean invocation prefixes
+        # Clean invocation prefixes & trailing fillers
         clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # 0. Extract structured action intent and user goal
@@ -102,7 +103,7 @@ class AgentPlanner:
 
         # 3. YOUTUBE / SONG PLAYBACK COMMANDS
         m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+youtube\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+youtube|youtube\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
-        if m_yt or ("youtube" in clean_lower and ("play" in clean_lower or "search" in clean_lower or "song" in clean_lower or "gaana" in clean_lower)):
+        if m_yt or (("youtube" in clean_lower or "yt" in clean_lower) and ("play" in clean_lower or "search" in clean_lower or "song" in clean_lower or "gaana" in clean_lower)):
             if m_yt:
                 song_query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or "").strip()
             else:
@@ -175,13 +176,17 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 7. Multi-step: Direct Web Navigation "open <service/site>" (e.g. open whatsapp, open reddit, open github)
-        m_web_nav = re.search(r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(whatsapp\s+web|whatsapp|reddit|github|twitter|x\.com|wikipedia|amazon|gmail|chatgpt|netflix|spotify)\b", clean)
+        # 7. Multi-step: Direct Web Navigation "open <service/site>" (e.g. open youtube, open whatsapp, open reddit, open github)
+        m_web_nav = re.search(r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(whatsapp\s+web|whatsapp|youtube|yt|reddit|github|twitter|x\.com|wikipedia|amazon|gmail|chatgpt|netflix|spotify|google)\b", clean) or \
+                    re.search(r"(?i)\b(whatsapp\s+web|whatsapp|youtube|yt|reddit|github|twitter|x\.com|wikipedia|amazon|gmail|chatgpt|netflix|spotify|google)\s+(?:kholo|open|chalao|visit)\b", clean)
         if m_web_nav:
             service = m_web_nav.group(1).lower()
+            if service in ("yt", "youtube"):
+                service = "youtube"
             url_map = {
                 "whatsapp web": "https://web.whatsapp.com",
                 "whatsapp": "https://web.whatsapp.com",
+                "youtube": "https://www.youtube.com",
                 "reddit": "https://reddit.com",
                 "github": "https://github.com",
                 "twitter": "https://twitter.com",
@@ -192,6 +197,7 @@ class AgentPlanner:
                 "chatgpt": "https://chatgpt.com",
                 "netflix": "https://netflix.com",
                 "spotify": "https://open.spotify.com",
+                "google": "https://google.com",
             }
             target_url = url_map.get(service, f"https://{service}.com")
             state.steps = [

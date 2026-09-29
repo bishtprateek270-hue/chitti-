@@ -83,7 +83,7 @@ def normalize_typos(text: str) -> str:
         return ""
     normalized = text
     # Common verb typos
-    normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn)\b", "open", normalized)
+    normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn|oprn|opn)\b", "open", normalized)
     normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch)\b", "launch", normalized)
     normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg)\b", "message", normalized)
     normalized = re.sub(r"(?i)\b(?:serach|sreach)\b", "search", normalized)
@@ -91,9 +91,10 @@ def normalize_typos(text: str) -> str:
     normalized = re.sub(r"(?i)\b(?:craete|creat|crate)\b", "create", normalized)
     normalized = re.sub(r"(?i)\b(?:fuctional|funtional|functioanl)\b", "functional", normalized)
     # Common app name & keyword typos
-    normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp)\b", "whatsapp", normalized)
-    normalized = re.sub(r"(?i)\b(?:vscdoe|vscde)\b", "vscode", normalized)
-    normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube)\b", "youtube", normalized)
+    normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube|you\s+tube|u\s*tube)\b", "youtube", normalized)
+    normalized = re.sub(r"(?i)\byt\b", "youtube", normalized)
+    normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp|whats\s+app)\b", "whatsapp", normalized)
+    normalized = re.sub(r"(?i)\b(?:vscdoe|vscde|vs\s+code)\b", "vscode", normalized)
     normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm)\b", "chrome", normalized)
     normalized = re.sub(r"(?i)\b(?:notepd|notepadd)\b", "notepad", normalized)
     normalized = re.sub(r"(?i)\b(?:calcultor|calclator|caculator|calcualtor|calcutor)\b", "calculator", normalized)

@@ -20,8 +20,9 @@ class ActionParser:
         raw = normalize_typos(user_text.strip())
         lower = raw.lower()
 
-        # Clean Chitti invocation prefix if present
+        # Clean Chitti invocation prefix if present & trailing fillers
         clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # Reject compound multi-step instructions that should be planned by AgentPlanner

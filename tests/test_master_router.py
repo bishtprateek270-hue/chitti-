@@ -11,6 +11,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from src.router.master_router import MasterRouter, MasterRoute, MasterRouteDecision
+from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
 from src.main import ChittiController
 
 
@@ -472,5 +473,37 @@ def test_phase5_intent_extraction_and_routing_cases():
     assert t8_route.route == MasterRoute.PROJECT_CREATION
     t8_intent = ActionIntentAnalyzer.extract_intent(t8_text)
     assert t8_intent.intent == ActionIntentType.CREATE_PROJECT
+
+
+def test_typo_and_variation_application_routing():
+    """Verify typo handling and natural phrasing variations for opening apps and sites."""
+    # 1. "oprn yt"
+    r1 = MasterRouter.classify_request("oprn yt")
+    assert r1.route in (MasterRoute.BROWSER_TASK, MasterRoute.COMPUTER_TASK)
+    i1 = ActionIntentAnalyzer.extract_intent("oprn yt")
+    assert i1.intent == ActionIntentType.OPEN_URL
+    assert "youtube" in i1.parameters.get("url", "").lower()
+
+    # 2. "open you tube in any browser"
+    r2 = MasterRouter.classify_request("open you tube in any browser")
+    assert r2.route in (MasterRoute.BROWSER_TASK, MasterRoute.COMPUTER_TASK)
+    i2 = ActionIntentAnalyzer.extract_intent("open you tube in any browser")
+    assert i2.intent == ActionIntentType.OPEN_URL
+    assert "youtube" in i2.parameters.get("url", "").lower()
+
+    # 3. "oprn yt for me"
+    r3 = MasterRouter.classify_request("oprn yt for me")
+    assert r3.route in (MasterRoute.BROWSER_TASK, MasterRoute.COMPUTER_TASK)
+    i3 = ActionIntentAnalyzer.extract_intent("oprn yt for me")
+    assert i3.intent == ActionIntentType.OPEN_URL
+    assert "youtube" in i3.parameters.get("url", "").lower()
+
+    # 4. "open you tube"
+    r4 = MasterRouter.classify_request("open you tube")
+    assert r4.route in (MasterRoute.BROWSER_TASK, MasterRoute.COMPUTER_TASK)
+    i4 = ActionIntentAnalyzer.extract_intent("open you tube")
+    assert i4.intent == ActionIntentType.OPEN_URL
+    assert "youtube" in i4.parameters.get("url", "").lower()
+
 
 

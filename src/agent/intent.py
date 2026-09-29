@@ -119,8 +119,9 @@ class ActionIntentAnalyzer:
         normalized = cls._normalize_text(raw)
         lower = normalized.lower()
 
-        # Clean conversational prefixes
+        # Clean conversational prefixes and trailing fillers
         clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", normalized, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # -------------------------------------------------------------
@@ -304,9 +305,12 @@ class ActionIntentAnalyzer:
             )
 
         # Direct Web URL or famous site navigation (e.g. open youtube, open reddit, open github)
-        m_site = re.search(r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?|youtube|reddit|github|twitter|x\.com|wikipedia|amazon|netflix|spotify|chatgpt)\b", clean)
+        m_site = re.search(r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?|youtube|yt|reddit|github|twitter|x\.com|wikipedia|amazon|netflix|spotify|chatgpt|gmail|google)\b", clean) or \
+                 re.search(r"(?i)\b(?:youtube|yt|reddit|github|twitter|wikipedia|amazon|netflix|spotify|chatgpt|gmail)\s+(?:kholo|open|chalao|visit)\b", clean)
         if m_site:
             site_raw = m_site.group(1).lower().strip()
+            if site_raw in ("yt", "youtube"):
+                site_raw = "youtube"
             url_map = {
                 "youtube": "https://youtube.com",
                 "reddit": "https://reddit.com",
@@ -318,6 +322,8 @@ class ActionIntentAnalyzer:
                 "netflix": "https://netflix.com",
                 "spotify": "https://open.spotify.com",
                 "chatgpt": "https://chatgpt.com",
+                "gmail": "https://mail.google.com",
+                "google": "https://google.com",
             }
             target_url = url_map.get(site_raw, site_raw if site_raw.startswith("http") else f"https://{site_raw}")
             site_name = site_raw.title()
@@ -369,7 +375,7 @@ class ActionIntentAnalyzer:
                 verification_required=True,
             )
 
-        m_app = re.search(r"(?i)\b(?:open|launch|kholo|chalao)\s+(vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell|cmd|explorer)\b", clean)
+        m_app = re.search(r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:the\s+|app\s+)?(vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell|cmd|explorer|paint|mspaint|task\s*manager|taskmgr|spotify|word|excel|powerpoint)\b", clean)
         if m_app:
             app_raw = m_app.group(1).lower().strip()
             app_map = {
@@ -384,6 +390,14 @@ class ActionIntentAnalyzer:
                 "powershell": "PowerShell",
                 "cmd": "Command Prompt",
                 "explorer": "File Explorer",
+                "paint": "Paint",
+                "mspaint": "Paint",
+                "task manager": "Task Manager",
+                "taskmgr": "Task Manager",
+                "spotify": "Spotify",
+                "word": "Microsoft Word",
+                "excel": "Microsoft Excel",
+                "powerpoint": "Microsoft PowerPoint",
             }
             app_name = app_map.get(app_raw, app_raw.title())
             return ActionIntent(
