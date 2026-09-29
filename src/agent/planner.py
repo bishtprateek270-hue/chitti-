@@ -1158,19 +1158,28 @@ class ComputerAgentLoop:
                 self.tools.execute_tool("press_key", {"key": "esc"})
                 time.sleep(0.2)
                 self.tools.execute_tool("find_ui_element", {"query": f"search bar for {service}"})
-                # 2. Click search bar in WhatsApp Web on left pane
-                screen_w, screen_h = self.computer.get_screen_size()
-                search_x = int(screen_w * 0.15)
-                search_y = int(screen_h * 0.18)
+                
+                # 2. Click search bar in WhatsApp Web inside window rect
+                win = self.computer.find_window(service)
+                if win and win.width > 0:
+                    search_x = win.left + int(win.width * 0.18)
+                    search_y = win.top + min(140, int(win.height * 0.16))
+                else:
+                    screen_w, screen_h = self.computer.get_screen_size()
+                    search_x = int(screen_w * 0.15)
+                    search_y = int(screen_h * 0.18)
+
                 self.tools.execute_tool("click", {"x": search_x, "y": search_y})
                 time.sleep(0.2)
                 self.tools.execute_tool("hotkey", {"keys": ["ctrl", "a"]})
                 time.sleep(0.1)
                 self.tools.execute_tool("press_key", {"key": "backspace"})
                 time.sleep(0.1)
+                
                 # 3. Type clean contact query (without emojis)
                 res_type = self.tools.execute_tool("type_text", {"text": search_query})
                 time.sleep(0.6)
+                
                 # 4. Press Enter to select the filtered contact conversation
                 self.tools.execute_tool("press_key", {"key": "enter"})
                 time.sleep(0.4)
@@ -1186,14 +1195,29 @@ class ComputerAgentLoop:
                 log_info(f"[AGENT] Ensuring conversation with '{contact}' is active...")
                 self.tools.execute_tool("focus_window", {"title": service})
                 time.sleep(0.2)
+                
                 # Click first search result item on left list
-                screen_w, screen_h = self.computer.get_screen_size()
-                chat_item_x = int(screen_w * 0.15)
-                chat_item_y = int(screen_h * 0.28)
+                win = self.computer.find_window(service)
+                if win and win.width > 0:
+                    chat_item_x = win.left + int(win.width * 0.18)
+                    chat_item_y = win.top + min(230, int(win.height * 0.28))
+                else:
+                    screen_w, screen_h = self.computer.get_screen_size()
+                    chat_item_x = int(screen_w * 0.15)
+                    chat_item_y = int(screen_h * 0.28)
+
                 self.tools.execute_tool("click", {"x": chat_item_x, "y": chat_item_y})
-                time.sleep(0.3)
+                time.sleep(0.4)
                 self.tools.execute_tool("press_key", {"key": "enter"})
-                time.sleep(0.3)
+                time.sleep(0.4)
+                
+                # Click inside message input box at bottom right
+                if win and win.width > 0:
+                    msg_input_x = win.left + int(win.width * 0.6)
+                    msg_input_y = win.top + (win.height - 45)
+                    self.tools.execute_tool("click", {"x": msg_input_x, "y": msg_input_y})
+                    time.sleep(0.2)
+
                 return True, f"Conversation with '{contact}' selected and active", f"Selected chat: {contact}"
 
             elif act == "SEND_MESSAGE":
@@ -1205,6 +1229,15 @@ class ComputerAgentLoop:
                 log_info(f"[AGENT] Executing real tool press_key(enter) to send message to '{contact}'...")
                 self.tools.execute_tool("focus_window", {"title": service})
                 time.sleep(0.2)
+                
+                # Ensure cursor is in message box before sending
+                win = self.computer.find_window(service)
+                if win and win.width > 0:
+                    msg_input_x = win.left + int(win.width * 0.6)
+                    msg_input_y = win.top + (win.height - 45)
+                    self.tools.execute_tool("click", {"x": msg_input_x, "y": msg_input_y})
+                    time.sleep(0.1)
+
                 res_press = self.tools.execute_tool("press_key", {"key": "enter"})
                 time.sleep(0.4)
                 if res_press.success:

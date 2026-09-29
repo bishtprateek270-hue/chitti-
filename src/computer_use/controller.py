@@ -393,40 +393,75 @@ class ComputerController:
                 pass
         return None
 
-    def focus_window(self, title_query: str) -> bool:
-        """Brings the window matching title_query into the foreground."""
+    def find_window(self, title_query: str) -> Optional[WindowInfo]:
+        """Finds a window by title query or keywords."""
         query = title_query.lower().strip()
         tokens = [t for t in re.split(r"[\s\/\-_]+", query) if len(t) > 2 and t not in ("web", "app", "window", "application")]
+        wins = self.list_windows()
+        for w in wins:
+            if query in w.title.lower():
+                return w
+        if tokens:
+            for w in wins:
+                if any(t in w.title.lower() for t in tokens):
+                    return w
+        return None
+
+    def focus_window(self, title_query: str) -> bool:
+        """Brings the window matching title_query into the foreground with rock-solid focus."""
+        target_win = self.find_window(title_query)
+        if not target_win:
+            if HAS_PYGETWINDOW and gw:
+                try:
+                    for w in gw.getAllWindows():
+                        if any(t in w.title.lower() for t in re.split(r"[\s\/\-_]+", title_query.lower()) if len(t) > 2):
+                            if w.isMinimized:
+                                w.restore()
+                            w.activate()
+                            time.sleep(0.1)
+                            return True
+                except Exception:
+                    pass
+            return False
+
+        hwnd = target_win.handle
+        if hwnd and hasattr(ctypes, "windll"):
+            try:
+                user32 = ctypes.windll.user32
+                if target_win.is_minimized or user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                else:
+                    user32.ShowWindow(hwnd, 5)  # SW_SHOW
+
+                fg_window = user32.GetForegroundWindow()
+                if fg_window and fg_window != hwnd:
+                    fg_thread = user32.GetWindowThreadProcessId(fg_window, None)
+                    current_thread = user32.GetWindowThreadProcessId(hwnd, None)
+                    user32.AttachThreadInput(fg_thread, current_thread, True)
+                    user32.BringWindowToTop(hwnd)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.AttachThreadInput(fg_thread, current_thread, False)
+                else:
+                    user32.BringWindowToTop(hwnd)
+                    user32.SetForegroundWindow(hwnd)
+
+                time.sleep(0.15)
+                return True
+            except Exception as e:
+                log_debug(f"Win32 focus notice: {e}")
 
         if HAS_PYGETWINDOW and gw:
             try:
-                all_wins = gw.getAllWindows()
-                candidates = [w for w in all_wins if query in w.title.lower() or (tokens and any(t in w.title.lower() for t in tokens))]
-                if candidates:
-                    t = candidates[0]
-                    if t.isMinimized:
-                        t.restore()
-                    t.activate()
-                    time.sleep(0.05)
-                    return True
-            except Exception:
-                pass
+                for w in gw.getAllWindows():
+                    if (hwnd and getattr(w, "_hWnd", 0) == hwnd) or (target_win.title and target_win.title in w.title):
+                        if w.isMinimized:
+                            w.restore()
+                        w.activate()
+                        time.sleep(0.1)
+                        return True
+            except Exception as e:
+                log_debug(f"PyGetWindow fallback notice: {e}")
 
-        if HAS_WIN32:
-            wins = self.list_windows()
-            matched = [w for w in wins if query in w.title.lower() or (tokens and any(t in w.title.lower() for t in tokens))]
-            if matched:
-                w = matched[0]
-                try:
-                    win32gui.ShowWindow(w.handle, win32con.SW_RESTORE)
-                    if hasattr(ctypes, "windll"):
-                        ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)
-                        ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
-                    win32gui.SetForegroundWindow(w.handle)
-                    time.sleep(0.05)
-                    return True
-                except Exception:
-                    pass
         return False
 
     def close_window(self, title_query: str) -> bool:
