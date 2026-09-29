@@ -1214,12 +1214,11 @@ class ComputerAgentLoop:
                 log_info(f"[AGENT] Executing real compose UI interactions (recipient, subject, body)...")
                 # 1. Focus Gmail window
                 self.tools.execute_tool("focus_window", {"title": "Gmail"})
-                time.sleep(0.1)
-                self.tools.execute_tool("find_ui_element", {"query": "Compose"})
-                self.tools.execute_tool("click", {})
+                time.sleep(0.2)
+                self.tools.execute_tool("find_ui_element", {"query": "Gmail"})
                 # 2. Press 'c' to trigger compose modal in Gmail
                 self.tools.execute_tool("press_key", {"key": "c"})
-                time.sleep(0.1)
+                time.sleep(0.3)
                 # 3. Type recipient
                 self.tools.execute_tool("type_text", {"text": rec})
                 time.sleep(0.1)
@@ -1233,7 +1232,7 @@ class ComputerAgentLoop:
                 time.sleep(0.1)
                 # 5. Type body
                 self.tools.execute_tool("type_text", {"text": body})
-                time.sleep(0.1)
+                time.sleep(0.2)
                 return True, f"Email composed to {rec} (Subject: {sub})", f"Composed email draft for {rec}"
 
             elif act == "CONFIRM_SEND":

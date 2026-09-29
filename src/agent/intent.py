@@ -192,6 +192,7 @@ class ActionIntentAnalyzer:
                 target=recipient,
                 content=content,
                 subject=subject,
+                parameters={"recipient": recipient, "subject": subject, "content": content},
                 requires_browser=True,
                 requires_authentication=True,
                 requires_confirmation=True,

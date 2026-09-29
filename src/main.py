@@ -544,7 +544,8 @@ class ChittiController:
 
         while True:
             try:
-                user_choice = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register, L=list faces, M=memory, C=clear, Q=quit): ").strip().lower()
+                raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register, L=list faces, M=memory, C=clear, Q=quit): ").strip()
+                user_choice = raw_input_line.lower()
 
                 if user_choice in ("q", "quit", "exit"):
                     log_chitti("Shutting down Chitti. Goodbye!")
@@ -591,13 +592,18 @@ class ChittiController:
                         self.process_user_input(typed_text)
                     continue
 
-                # Default: Push-to-talk microphone capture
+                # If user typed a command or question directly at the prompt without typing 'T' first
+                if len(raw_input_line) > 0:
+                    self.process_user_input(raw_input_line)
+                    continue
+
+                # Default: Push-to-talk microphone capture (user pressed ENTER on empty prompt)
                 voice_text = self.listen_and_transcribe()
                 if voice_text:
                     self.process_user_input(voice_text)
                 else:
                     log_chitti("No speech was detected or understood.")
-                    print("Hint: Check microphone volume or press 'T' to type.")
+                    print("Hint: Check microphone volume or type your request directly.")
 
             except KeyboardInterrupt:
                 print("\n")
