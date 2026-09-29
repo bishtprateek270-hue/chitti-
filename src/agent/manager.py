@@ -322,8 +322,12 @@ class LaptopAgentManager:
             return f"I encountered an issue while executing the task: {raw_msg}"
 
         if "whatsapp" in lower or "message" in lower or "msg" in lower or "telegram" in lower:
-            m_contact = re.search(r"(?i)\bto\s+([a-zA-Z0-9_\-]+)\b", raw_input) or re.search(r"(?i)\b([a-zA-Z0-9_\-]+)\s+ko\b", raw_input)
-            target = m_contact.group(1).title() if m_contact else "the contact"
+            m_contact = (
+                re.search(r"(?i)\bto\s+([^\n\r,;:.]+?)(?:\s+saying|\s+that|\s+message|\s+msg|\s*:|\s+['\"]|$)", raw_input) or
+                re.search(r"(?i)\b([^\n\r,;:.]+?)\s+ko\b", raw_input) or
+                re.search(r"(?i)\bto\s+([a-zA-Z0-9_\-]+)\b", raw_input)
+            )
+            target = m_contact.group(1).strip() if m_contact else "the contact"
             if lang == "hi":
                 return f"WhatsApp पर {target} को संदेश भेज दिया गया है।"
             elif lang in ("hinglish", "mixed"):

@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.utils.logging import log_chitti, log_debug, log_info
+from src.utils.text import clean_contact_query, strip_emojis
 
 
 class ActionIntentType(str, Enum):
@@ -217,25 +218,22 @@ class ActionIntentAnalyzer:
                 channel, app, base_url = "WhatsApp", "WhatsApp Web", "https://web.whatsapp.com"
 
             # Check if this is merely opening the service or sending a real message
-            m_msg_full = re.search(r"(?i)\b(?:message|msg|send(?:\s+a)?\s+message|send)\s+([\"']?[^\"']+?[\"']?)\s+to\s+([a-zA-Z0-9_\-\s]+)\b", clean) or \
-                         re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:message|msg|send(?:\s+a)?\s+message|send)\s+([\"']?[^\"']+?[\"']?)\s+to\s+([a-zA-Z0-9_\-\s]+)\b", clean) or \
-                         re.search(r"(?i)\b([a-zA-Z0-9_\-]+)\s+ko\s+([\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|send\s+karo|message\s+kar|msg\s+bhejo)\b", clean) or \
-                         re.search(r"(?i)\b(?:whatsapp|watsapp)\s+(?:par|pe)?\s*([a-zA-Z0-9_\-]+)\s+ko\s+([\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|send\s+karo|message\s+kar)\b", clean)
+            m_msg_to = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:message|msg|send(?:\s+a)?\s+message|send)\s+(?P<msg>[\"'][^\"']+[\"']|[^\s\"']+(?:\s+[^\s\"']+)?)\s+to\s+(?P<contact>[^\n\r,;:.]+)", clean)
+            m_contact_ko = re.search(r"(?i)(?:(?:whatsapp|watsapp)\s+(?:par|pe)?\s*)?(?P<contact>[^\n\r,;:.]+?)\s+ko\s+(?P<msg>[\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|send\s+karo|message\s+kar|msg\s+bhejo)", clean)
+            m_send_contact_msg = re.search(r"(?i)\b(?:send|message|msg)\s+(?P<contact>[^\n\r,;:'\"]+?)\s*(?:saying|that|message|msg|:)\s*(?P<msg>[\"']?[^\"']+?[\"']?)$", clean) or \
+                                 re.search(r"(?i)\b(?:send|message|msg)\s+(?P<contact>[^\n\r,;:'\"]+?)\s+(?P<msg>['\"][^'\"]+?['\"])", clean)
 
-            if m_msg_full:
-                g1 = (m_msg_full.group(1) or "").strip().strip("\"'")
-                g2 = (m_msg_full.group(2) or "").strip().strip("\"'")
+            m_msg_matched = m_msg_to or m_contact_ko or m_send_contact_msg
 
-                # Distinguish contact vs message content
-                if any(w in g1.lower() for w in ["hi", "hello", "hey", "namaste", "good", "how", "what", "meet", "doc", "link", "thanks", "ok"]):
-                    msg_text, contact_name = g1, g2
-                else:
-                    contact_name, msg_text = g1, g2
+            if m_msg_matched:
+                msg_text = (m_msg_matched.group("msg") or "").strip().strip("\"'")
+                contact_name = (m_msg_matched.group("contact") or "").strip().strip("\"'")
 
                 # Clean message text and contact name
                 msg_text = re.sub(r"(?i)\s+(?:message|msg|text)$", "", msg_text).strip() or "Hi"
                 contact_name = re.sub(r"(?i)\s+(?:on|via|using)\s+.*$", "", contact_name).strip()
                 contact_name = re.sub(r"(?i)\s+(?:message|msg|text)$", "", contact_name).strip() or "Contact"
+                search_query = clean_contact_query(contact_name)
 
                 return ActionIntent(
                     intent=ActionIntentType.SEND_MESSAGE,
@@ -244,7 +242,7 @@ class ActionIntentAnalyzer:
                     application=app,
                     target=contact_name,
                     content=msg_text,
-                    parameters={"url": base_url, "contact": contact_name, "text": msg_text},
+                    parameters={"url": base_url, "contact": contact_name, "search_contact": search_query, "text": msg_text},
                     requires_browser=True,
                     requires_authentication=True,
                     requires_confirmation=False,

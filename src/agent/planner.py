@@ -37,6 +37,7 @@ from src.agent.tools import ToolEngine
 from src.agent.verifier import SubtaskVerifier, VerificationOutcome
 from src.brain.llm import BaseLLM
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
+from src.utils.text import clean_contact_query, strip_emojis
 
 
 class AgentPlanner:
@@ -1145,10 +1146,11 @@ class ComputerAgentLoop:
 
             elif act == "SEARCH_CONTACT":
                 contact = params.get("contact", "Contact")
+                search_query = params.get("search_contact") or clean_contact_query(contact)
                 service = params.get("service", "WhatsApp Web")
                 step._last_tool_name = "find_ui_element"
-                step._last_tool_args = {"contact": contact, "service": service}
-                log_info(f"[AGENT] Executing computer actions to locate contact '{contact}' on {service}...")
+                step._last_tool_args = {"contact": contact, "search_query": search_query, "service": service}
+                log_info(f"[AGENT] Executing computer actions to locate contact '{contact}' (query: '{search_query}') on {service}...")
                 # 1. Bring window to focus
                 self.tools.execute_tool("focus_window", {"title": service})
                 time.sleep(0.1)
@@ -1157,14 +1159,14 @@ class ComputerAgentLoop:
                 # 2. Focus search bar on WhatsApp Web via keyboard shortcuts (Ctrl+Alt+/ or Ctrl+K)
                 self.tools.execute_tool("hotkey", {"keys": ["ctrl", "alt", "/"]})
                 time.sleep(0.1)
-                # 3. Type contact query
-                res_type = self.tools.execute_tool("type_text", {"text": contact})
-                time.sleep(0.1)
+                # 3. Type clean contact query (without emojis)
+                res_type = self.tools.execute_tool("type_text", {"text": search_query})
+                time.sleep(0.3)
                 # 4. Press Enter to select the filtered contact conversation
                 res_key = self.tools.execute_tool("press_key", {"key": "enter"})
                 time.sleep(0.1)
                 if res_type.success:
-                    return True, f"Contact '{contact}' search executed on {service}", f"Searched for contact: {contact}"
+                    return True, f"Contact '{contact}' search executed on {service}", f"Searched for contact: {search_query}"
                 return False, f"Failed to search for contact '{contact}'", None
 
             elif act == "SELECT_CONVERSATION":
