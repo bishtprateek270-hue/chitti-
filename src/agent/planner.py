@@ -1148,14 +1148,13 @@ class ComputerAgentLoop:
                 contact = params.get("contact", "Contact")
                 search_query = params.get("search_contact") or clean_contact_query(contact)
                 service = params.get("service", "WhatsApp Web")
-                step._last_tool_name = "find_ui_element"
+                step._last_tool_name = "type_text"
                 step._last_tool_args = {"contact": contact, "search_query": search_query, "service": service}
                 log_info(f"[AGENT] Executing computer actions to locate contact '{contact}' (query: '{search_query}') on {service}...")
                 # 1. Bring window to focus
                 self.tools.execute_tool("focus_window", {"title": service})
                 time.sleep(0.1)
-                self.tools.execute_tool("find_ui_element", {"query": "Search"})
-                self.tools.execute_tool("click", {})
+                self.tools.execute_tool("find_ui_element", {"query": service})
                 # 2. Focus search bar on WhatsApp Web via keyboard shortcuts (Ctrl+Alt+/ or Ctrl+K)
                 self.tools.execute_tool("hotkey", {"keys": ["ctrl", "alt", "/"]})
                 time.sleep(0.1)
@@ -1172,12 +1171,11 @@ class ComputerAgentLoop:
             elif act == "SELECT_CONVERSATION":
                 contact = params.get("contact", "Contact")
                 service = params.get("service", "WhatsApp Web")
-                step._last_tool_name = "click"
+                step._last_tool_name = "press_key"
                 step._last_tool_args = {"contact": contact, "service": service}
                 log_info(f"[AGENT] Ensuring conversation with '{contact}' is active...")
                 self.tools.execute_tool("focus_window", {"title": service})
                 time.sleep(0.1)
-                self.tools.execute_tool("find_ui_element", {"query": contact})
                 self.tools.execute_tool("click", {})
                 self.tools.execute_tool("press_key", {"key": "enter"})
                 time.sleep(0.1)
