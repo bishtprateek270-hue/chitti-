@@ -41,16 +41,18 @@ def strip_emojis(text: str) -> str:
 
 def clean_contact_query(name: str) -> str:
     """
-    Cleans a contact name by stripping emojis, leading/trailing punctuation,
-    and returns a clean search query suitable for WhatsApp / contact searching.
+    Cleans a contact name by stripping emojis, leading prepositions ('to', 'for'),
+    leading/trailing punctuation, and returns a clean search query.
     Example:
         'Rahul ❤️' -> 'Rahul'
         '🔥 Ayush 🔥' -> 'Ayush'
+        'to Ayush' -> 'Ayush'
         'Mummy 🥰 (Home)' -> 'Mummy (Home)'
     """
     if not name:
         return ""
     cleaned = strip_emojis(name)
+    cleaned = re.sub(r"(?i)^(?:to\s+|for\s+|ko\s+)", "", cleaned).strip()
     # Remove leading/trailing quotes, colons, hyphens, stars, spaces
     cleaned = re.sub(r"^[\s\"':;,\-_*#@!~]+|[\s\"':;,\-_*#@!~]+$", "", cleaned).strip()
     return cleaned if cleaned else name.strip()

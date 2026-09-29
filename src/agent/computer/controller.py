@@ -176,16 +176,31 @@ class ComputerController:
     def type_text(self, text: str, interval: float = 0.02) -> bool:
         """Types the given string into the active window."""
         try:
-            if HAS_PYAUTOGUI:
-                pyautogui.write(text, interval=interval)
+            # If text contains non-ASCII characters or emojis, use clipboard paste for 100% accuracy
+            if any(ord(c) > 127 for c in text):
+                self.write_clipboard(text)
+                time.sleep(0.05)
+                self.hotkey("ctrl", "v")
+                time.sleep(0.05)
                 return True
+
+            if HAS_PYAUTOGUI:
+                try:
+                    pyautogui.write(text, interval=interval)
+                    return True
+                except Exception:
+                    pass
+
             # Fallback to clipboard paste for Unicode / special characters
             self.write_clipboard(text)
-            self.paste()
+            time.sleep(0.05)
+            self.hotkey("ctrl", "v")
+            time.sleep(0.05)
             return True
         except Exception as e:
             log_warn(f"Failed to type text: {e}")
             return False
+
 
     def press_key(self, key: str) -> bool:
         """Presses a single key (e.g. 'enter', 'esc', 'tab', 'backspace')."""

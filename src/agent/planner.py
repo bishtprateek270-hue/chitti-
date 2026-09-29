@@ -1152,19 +1152,28 @@ class ComputerAgentLoop:
                 step._last_tool_name = "type_text"
                 step._last_tool_args = {"contact": contact, "search_query": search_query, "service": service}
                 log_info(f"[AGENT] Executing computer actions to locate contact '{contact}' (query: '{search_query}') on {service}...")
-                # 1. Bring window to focus
+                # 1. Bring window to focus and dismiss any active menus/popups
                 self.tools.execute_tool("focus_window", {"title": service})
+                time.sleep(0.3)
+                self.tools.execute_tool("press_key", {"key": "esc"})
+                time.sleep(0.2)
+                self.tools.execute_tool("find_ui_element", {"query": f"search bar for {service}"})
+                # 2. Click search bar in WhatsApp Web on left pane
+                screen_w, screen_h = self.computer.get_screen_size()
+                search_x = int(screen_w * 0.15)
+                search_y = int(screen_h * 0.18)
+                self.tools.execute_tool("click", {"x": search_x, "y": search_y})
+                time.sleep(0.2)
+                self.tools.execute_tool("hotkey", {"keys": ["ctrl", "a"]})
                 time.sleep(0.1)
-                self.tools.execute_tool("find_ui_element", {"query": service})
-                # 2. Focus search bar on WhatsApp Web via keyboard shortcuts (Ctrl+Alt+/ or Ctrl+K)
-                self.tools.execute_tool("hotkey", {"keys": ["ctrl", "alt", "/"]})
+                self.tools.execute_tool("press_key", {"key": "backspace"})
                 time.sleep(0.1)
                 # 3. Type clean contact query (without emojis)
                 res_type = self.tools.execute_tool("type_text", {"text": search_query})
-                time.sleep(0.3)
+                time.sleep(0.6)
                 # 4. Press Enter to select the filtered contact conversation
-                res_key = self.tools.execute_tool("press_key", {"key": "enter"})
-                time.sleep(0.1)
+                self.tools.execute_tool("press_key", {"key": "enter"})
+                time.sleep(0.4)
                 if res_type.success:
                     return True, f"Contact '{contact}' search executed on {service}", f"Searched for contact: {search_query}"
                 return False, f"Failed to search for contact '{contact}'", None
@@ -1176,10 +1185,15 @@ class ComputerAgentLoop:
                 step._last_tool_args = {"contact": contact, "service": service}
                 log_info(f"[AGENT] Ensuring conversation with '{contact}' is active...")
                 self.tools.execute_tool("focus_window", {"title": service})
-                time.sleep(0.1)
-                self.tools.execute_tool("click", {})
+                time.sleep(0.2)
+                # Click first search result item on left list
+                screen_w, screen_h = self.computer.get_screen_size()
+                chat_item_x = int(screen_w * 0.15)
+                chat_item_y = int(screen_h * 0.28)
+                self.tools.execute_tool("click", {"x": chat_item_x, "y": chat_item_y})
+                time.sleep(0.3)
                 self.tools.execute_tool("press_key", {"key": "enter"})
-                time.sleep(0.1)
+                time.sleep(0.3)
                 return True, f"Conversation with '{contact}' selected and active", f"Selected chat: {contact}"
 
             elif act == "SEND_MESSAGE":
@@ -1190,11 +1204,13 @@ class ComputerAgentLoop:
                 step._last_tool_args = {"key": "enter", "contact": contact, "text": text}
                 log_info(f"[AGENT] Executing real tool press_key(enter) to send message to '{contact}'...")
                 self.tools.execute_tool("focus_window", {"title": service})
-                time.sleep(0.1)
+                time.sleep(0.2)
                 res_press = self.tools.execute_tool("press_key", {"key": "enter"})
+                time.sleep(0.4)
                 if res_press.success:
                     return True, f"Message '{text}' sent to '{contact}' via UI enter key", f"Dispatched: {text}"
                 return False, f"Failed to send message to '{contact}'", None
+
 
             elif act == "VERIFY_MESSAGE_SENT":
                 contact = params.get("contact", "Contact")

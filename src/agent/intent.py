@@ -212,10 +212,11 @@ class ActionIntentAnalyzer:
             # Check if this is merely opening the service or sending a real message
             m_msg_to = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:message|msg|send(?:\s+a)?\s+message|send)\s+(?P<msg>[\"'][^\"']+[\"']|[^\s\"']+(?:\s+[^\s\"']+)?)\s+to\s+(?P<contact>[^\n\r,;:.]+)", clean)
             m_contact_ko = re.search(r"(?i)(?:(?:whatsapp|watsapp)\s+(?:par|pe)?\s*)?(?P<contact>[^\n\r,;:.]+?)\s+ko\s+(?P<msg>[\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|send\s+karo|message\s+kar|msg\s+bhejo)", clean)
-            m_send_contact_msg = re.search(r"(?i)\b(?:send|message|msg)\s+(?P<contact>[^\n\r,;:'\"]+?)\s*(?:saying|that|message|msg|:)\s*(?P<msg>[\"']?[^\"']+?[\"']?)$", clean) or \
-                                 re.search(r"(?i)\b(?:send|message|msg)\s+(?P<contact>[^\n\r,;:'\"]+?)\s+(?P<msg>['\"][^'\"]+?['\"])", clean)
+            m_send_contact_msg = re.search(r"(?i)\b(?:send|message|msg)\s+(?:to\s+)?(?P<contact>[^\n\r,;:'\"]+?)\s*(?:saying|that|message|msg|:)\s*(?P<msg>[\"']?[^\"']+?[\"']?)$", clean) or \
+                                 re.search(r"(?i)\b(?:send|message|msg)\s+(?:to\s+)?(?P<contact>[^\n\r,;:'\"]+?)\s+(?P<msg>['\"][^'\"]+?['\"])", clean)
+            m_send_to_contact = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:send|message|msg)\s+to\s+(?P<contact>[A-Za-z0-9_\s]+?)\s+(?P<msg>[\"'][^\"']+[\"']|[^\s\"']+(?:\s+[^\s\"']+)?)$", clean)
 
-            m_msg_matched = m_msg_to or m_contact_ko or m_send_contact_msg
+            m_msg_matched = m_msg_to or m_contact_ko or m_send_contact_msg or m_send_to_contact
 
             if m_msg_matched:
                 msg_text = (m_msg_matched.group("msg") or "").strip().strip("\"'")
@@ -224,7 +225,8 @@ class ActionIntentAnalyzer:
                 # Clean message text and contact name
                 msg_text = re.sub(r"(?i)\s+(?:message|msg|text)$", "", msg_text).strip() or "Hi"
                 contact_name = re.sub(r"(?i)\s+(?:on|via|using)\s+.*$", "", contact_name).strip()
-                contact_name = re.sub(r"(?i)\s+(?:message|msg|text)$", "", contact_name).strip() or "Contact"
+                contact_name = re.sub(r"(?i)\s+(?:message|msg|text)$", "", contact_name).strip()
+                contact_name = re.sub(r"(?i)^(?:to\s+|for\s+|ko\s+)", "", contact_name).strip() or "Contact"
                 search_query = clean_contact_query(contact_name)
 
                 return ActionIntent(
