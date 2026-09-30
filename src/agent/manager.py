@@ -333,7 +333,28 @@ class LaptopAgentManager:
                 return f"Sorry, task complete karne me issue aaya: {raw_msg}"
             return f"I encountered an issue while executing the task: {raw_msg}"
 
-        if "whatsapp" in lower or "message" in lower or "msg" in lower or "telegram" in lower:
+        # Inspect action types actually executed in the plan
+        step_actions = [s.action_type for s in task_state.steps]
+        has_sent_message = any(a in ("SEND_MESSAGE", "VERIFY_MESSAGE_SENT") for a in step_actions)
+        has_sent_email = any(a in ("SEND_EMAIL", "VERIFY_EMAIL_SENT") for a in step_actions)
+        has_played_media = any(a in ("PLAY_YOUTUBE", "VERIFY_PLAYBACK") for a in step_actions)
+        has_created_folder = any(a == "CREATE_DIRECTORY" for a in step_actions)
+        has_opened_folder = any(a == "OPEN_FOLDER" for a in step_actions)
+        has_opened_app = any(a == "OPEN_APPLICATION" for a in step_actions)
+        has_opened_url = any(a == "OPEN_URL" for a in step_actions)
+
+        # 1. Real message sending actions (WhatsApp, Telegram, Slack, etc.)
+        if has_sent_message:
+            channel = "WhatsApp"
+            if "telegram" in lower:
+                channel = "Telegram"
+            elif "slack" in lower:
+                channel = "Slack"
+            elif "discord" in lower:
+                channel = "Discord"
+            elif "teams" in lower:
+                channel = "Microsoft Teams"
+
             m_contact = (
                 re.search(r"(?i)\bto\s+([^\n\r,;:.]+?)(?:\s+saying|\s+that|\s+message|\s+msg|\s*:|\s+['\"]|\s+on\s+whatsapp|$)", raw_input) or
                 re.search(r"(?i)\b([^\n\r,;:.]+?)\s+ko\b", raw_input) or
@@ -343,12 +364,13 @@ class LaptopAgentManager:
             target = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", target).strip()
             target = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+.*$", "", target).strip()
             if lang == "hi":
-                return f"WhatsApp पर {target} को संदेश भेज दिया गया है।"
+                return f"{channel} पर {target} को संदेश भेज दिया गया है।"
             elif lang in ("hinglish", "mixed"):
-                return f"WhatsApp par {target} ko message send kar diya hai."
-            return f"Message has been sent to {target} on WhatsApp."
+                return f"{channel} par {target} ko message send kar diya hai."
+            return f"Message has been sent to {target} on {channel}."
 
-        elif "email" in lower or "mail" in lower or "@" in lower or "gmail" in lower:
+        # 2. Real email sending actions
+        elif has_sent_email:
             m_email = re.search(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", raw_input)
             rec = m_email.group(1) if m_email else "the recipient"
             if lang == "hi":
@@ -357,7 +379,8 @@ class LaptopAgentManager:
                 return f"{rec} ko email send kar diya hai."
             return f"Email has been sent to {rec}."
 
-        elif "youtube" in lower or "song" in lower or "gaana" in lower:
+        # 3. YouTube / Media playback
+        elif has_played_media or ("youtube" in lower and any(kw in lower for kw in ["play", "song", "gaana", "music", "track"])):
             norm_artist = BrowserController.normalize_artist_query(raw_input)
             if not norm_artist or norm_artist == "Top Songs":
                 norm_artist = "Sonu Nigam" if "sonu" in lower else ("Shreya Ghoshal" if "shreya" in lower else "requested")
@@ -367,6 +390,40 @@ class LaptopAgentManager:
                 return f"YouTube open karke {norm_artist} ka song select kar diya hai aur playback verify ho gaya hai."
             return f"Done. I opened YouTube, selected a {norm_artist} song, and verified playback started."
 
+        # 4. Pure Browser URL / Web Service opening (e.g. "open whatsapp", "open gmail", "open telegram")
+        elif has_opened_url:
+            site_target = ""
+            for step in task_state.steps:
+                if step.action_type == "OPEN_URL":
+                    site_target = step.parameters.get("site_name") or ""
+                    break
+            if not site_target:
+                if "whatsapp" in lower:
+                    site_target = "WhatsApp Web"
+                elif "telegram" in lower:
+                    site_target = "Telegram Web"
+                elif "gmail" in lower or "email" in lower or "mail" in lower:
+                    site_target = "Gmail"
+                elif "slack" in lower:
+                    site_target = "Slack"
+                elif "discord" in lower:
+                    site_target = "Discord"
+                elif "youtube" in lower:
+                    site_target = "YouTube"
+                elif "google" in lower:
+                    site_target = "Google"
+                elif "github" in lower:
+                    site_target = "GitHub"
+                else:
+                    site_target = "the requested page"
+
+            if lang == "hi":
+                return f"ब्राउज़र में {site_target} खोल दिया गया है।"
+            elif lang in ("hinglish", "mixed"):
+                return f"Browser mein {site_target} open kar diya hai."
+            return f"Opened {site_target} in your browser."
+
+        # 5. VS Code / Programming Tasks
         elif "vs code" in lower or "vscode" in lower or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho", "implement", "tracker", "scraper"]):
             spec = CodeGenerator.parse_programming_task(raw_input)
             topic_title = spec.problem_description.title()
@@ -386,6 +443,7 @@ class LaptopAgentManager:
                     return f"VS Code open hai aur {spec.filename} mein {topic_title} {lang_name} code likhkar save aur verify kar diya hai."
                 return f"VS Code is open, and {spec.filename} has been created with the {topic_title} {lang_name} solution, verified in the editor, and saved."
 
+        # 6. Notepad with text typing
         elif "notepad" in lower:
             if lang == "hi":
                 return "Notepad खोल दिया गया है और टेक्स्ट लिख दिया गया है।"
@@ -393,13 +451,44 @@ class LaptopAgentManager:
                 return "Notepad open kar diya hai aur text type ho gaya hai."
             return "Notepad opened and text was entered."
 
-        elif "desktop" in lower and "folder" in lower:
+        # 7. Desktop folder creation
+        elif "desktop" in lower and "folder" in lower and has_created_folder:
             if lang == "hi":
                 return "Desktop पर फ़ोल्डर बना दिया गया है।"
             elif lang in ("hinglish", "mixed"):
                 return "Desktop par folder create kar diya gaya hai."
             return "Folder has been successfully created on your Desktop."
 
+        # 8. Folder opening
+        elif has_opened_folder:
+            folder_name = "Folder"
+            for s in task_state.steps:
+                if s.action_type == "OPEN_FOLDER":
+                    folder_name = s.parameters.get("target") or s.parameters.get("path") or folder_name
+                    break
+            if lang == "hi":
+                return f"{folder_name} फ़ोल्डर खोल दिया गया है।"
+            elif lang in ("hinglish", "mixed"):
+                return f"{folder_name} folder open kar diya gaya hai."
+            return f"Opened {folder_name} folder."
+
+        # 9. Application opening
+        elif has_opened_app:
+            app_name = "Application"
+            for s in task_state.steps:
+                if s.action_type == "OPEN_APPLICATION":
+                    app_name = s.parameters.get("target") or app_name
+                    break
+            if lang == "hi":
+                return f"{app_name} खोल दिया गया है।"
+            elif lang in ("hinglish", "mixed"):
+                return f"{app_name} khol diya gaya hai."
+            return f"Opened {app_name}."
+
+        if lang == "hi":
+            return "कार्य सफलतापूर्वक पूरा हुआ।"
+        elif lang in ("hinglish", "mixed"):
+            return "Task successfully complete ho gaya hai."
         return "Task completed successfully."
 
     def _format_response(self, result: ActionResult, lang: str = "en") -> str:
