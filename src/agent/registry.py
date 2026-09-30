@@ -9,6 +9,7 @@ import sys
 import re
 import shutil
 import platform
+import difflib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, List, Any
@@ -106,12 +107,18 @@ DEFAULT_APP_MAP: Dict[str, List[str]] = {
 # Standard URL mappings for popular services
 DEFAULT_URL_MAP: Dict[str, str] = {
     "google": "https://www.google.com",
+    "gemini": "https://gemini.google.com",
     "github": "https://www.github.com",
     "youtube": "https://www.youtube.com",
     "yt": "https://www.youtube.com",
     "whatsapp": "https://web.whatsapp.com",
     "whatsapp web": "https://web.whatsapp.com",
     "chatgpt": "https://chatgpt.com",
+    "claude": "https://claude.ai",
+    "telegram": "https://web.telegram.org",
+    "discord": "https://discord.com/app",
+    "slack": "https://app.slack.com",
+    "teams": "https://teams.microsoft.com",
     "gmail": "https://mail.google.com",
     "stackoverflow": "https://stackoverflow.com",
     "wikipedia": "https://www.wikipedia.org",
@@ -313,6 +320,14 @@ class AppDiscovery:
         if direct_p.exists() and direct_p.is_file():
             return str(direct_p.resolve())
 
+        # 6. Fuzzy Match against known apps, builtins, and registered apps
+        all_known = list(builtins.keys()) + list(DEFAULT_APP_MAP.keys()) + list(reg_apps.keys())
+        fuzzy_app = difflib.get_close_matches(clean_no_ext, all_known, n=1, cutoff=0.7)
+        if fuzzy_app and fuzzy_app[0] != clean_no_ext:
+            matched_name = fuzzy_app[0]
+            log_debug(f"[APP_DISCOVERY] Fuzzy matched '{clean_no_ext}' -> '{matched_name}'")
+            return cls.resolve_application(matched_name)
+
         # Fallback: if it's a simple alphanumeric name, allow standard Windows shell execution
         if re.match(r"^[a-zA-Z0-9_\-]+$", clean_no_ext):
             return clean_no_ext
@@ -388,6 +403,10 @@ class ResourceDiscovery:
             return True
         if clean in DEFAULT_URL_MAP:
             return True
+        # Check fuzzy match in DEFAULT_URL_MAP
+        matches = difflib.get_close_matches(clean, list(DEFAULT_URL_MAP.keys()), n=1, cutoff=0.7)
+        if matches:
+            return True
         return False
 
     @classmethod
@@ -395,6 +414,9 @@ class ResourceDiscovery:
         clean = target.strip().lower()
         if clean in DEFAULT_URL_MAP:
             return DEFAULT_URL_MAP[clean]
+        matches = difflib.get_close_matches(clean, list(DEFAULT_URL_MAP.keys()), n=1, cutoff=0.7)
+        if matches:
+            return DEFAULT_URL_MAP[matches[0]]
         if clean.startswith("http://") or clean.startswith("https://"):
             return target.strip()
         if clean.startswith("www."):

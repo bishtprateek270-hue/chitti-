@@ -77,26 +77,36 @@ def matches_contact_name(query: str, target: str) -> bool:
 def normalize_typos(text: str) -> str:
     """
     Corrects common typographical and speech recognition errors in action verbs,
-    application names, and programming keywords.
+    application names, web services, and programming keywords.
     """
     if not text:
         return ""
     normalized = text
     # Common verb typos
-    normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn|oprn|opn)\b", "open", normalized)
-    normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch)\b", "launch", normalized)
-    normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg)\b", "message", normalized)
-    normalized = re.sub(r"(?i)\b(?:serach|sreach)\b", "search", normalized)
-    normalized = re.sub(r"(?i)\b(?:bulid|buid|biuld)\b", "build", normalized)
-    normalized = re.sub(r"(?i)\b(?:craete|creat|crate)\b", "create", normalized)
+    normalized = re.sub(r"(?i)\b(?:opem|opne|oppen|oepn|oprn|opn|opeb|openkaro|khol)\b", "open", normalized)
+    normalized = re.sub(r"(?i)\b(?:lauch|luanch|lanuch|lanch|launchh)\b", "launch", normalized)
+    normalized = re.sub(r"(?i)\b(?:strat|stert|strt|stat)\b", "start", normalized)
+    normalized = re.sub(r"(?i)\b(?:messag|mesage|mesg|msg|massge|massage)\b", "message", normalized)
+    normalized = re.sub(r"(?i)\b(?:snd|snde|bhej|bhejo)\b", "send", normalized)
+    normalized = re.sub(r"(?i)\b(?:serach|sreach|serch|sarch)\b", "search", normalized)
+    normalized = re.sub(r"(?i)\b(?:bulid|buid|biuld|bld)\b", "build", normalized)
+    normalized = re.sub(r"(?i)\b(?:craete|creat|crate|cratee)\b", "create", normalized)
     normalized = re.sub(r"(?i)\b(?:fuctional|funtional|functioanl)\b", "functional", normalized)
-    # Common app name & keyword typos
-    normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube|you\s+tube|u\s*tube)\b", "youtube", normalized)
+    
+    # Common app name & web service typos
+    normalized = re.sub(r"(?i)\b(?:gemmini|gemnii|gemni|gimini|gemini\s+ai)\b", "gemini", normalized)
+    normalized = re.sub(r"(?i)\b(?:youtub|yotube|utube|you\s+tube|u\s*tube|ytube)\b", "youtube", normalized)
     normalized = re.sub(r"(?i)\byt\b", "youtube", normalized)
-    normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp|whats\s+app)\b", "whatsapp", normalized)
-    normalized = re.sub(r"(?i)\b(?:vscdoe|vscde|vs\s+code)\b", "vscode", normalized)
-    normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm)\b", "chrome", normalized)
-    normalized = re.sub(r"(?i)\b(?:notepd|notepadd)\b", "notepad", normalized)
-    normalized = re.sub(r"(?i)\b(?:calcultor|calclator|caculator|calcualtor|calcutor)\b", "calculator", normalized)
+    normalized = re.sub(r"(?i)\b(?:watsapp|whatapp|whatspp|whatsap|watsap|wtsp|whats\s+app|whatsaap)\b", "whatsapp", normalized)
+    normalized = re.sub(r"(?i)\b(?:vscdoe|vscde|vs\s+code|vsc)\b", "vscode", normalized)
+    normalized = re.sub(r"(?i)\b(?:chrone|chorme|crm|gchrome|goggle\s+chrome)\b", "chrome", normalized)
+    normalized = re.sub(r"(?i)\b(?:notepd|notepadd|notpad)\b", "notepad", normalized)
+    normalized = re.sub(r"(?i)\b(?:calcultor|calclator|caculator|calcualtor|calcutor|calc)\b", "calculator", normalized)
+    normalized = re.sub(r"(?i)\b(?:gmaill|gmai|gmil|g\s*mail)\b", "gmail", normalized)
+    normalized = re.sub(r"(?i)\b(?:spotfiy|spoty|spotfy|spotifi)\b", "spotify", normalized)
+    normalized = re.sub(r"(?i)\b(?:telegrram|telegrm|tg)\b", "telegram", normalized)
+    normalized = re.sub(r"(?i)\b(?:disocrd|disord|dc)\b", "discord", normalized)
+    normalized = re.sub(r"(?i)\b(?:chatgbt|chat\s+gpt|cgtp|chatgpd)\b", "chatgpt", normalized)
+    
     return normalized
 

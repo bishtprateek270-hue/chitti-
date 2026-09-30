@@ -372,6 +372,34 @@ class MasterRouter:
                 explanation="Action intent detected targeting computer control subsystem",
             )
 
+        # 13. Dynamic Target / Web / App Resolution for single-token or shorthand requests (e.g. "gemmini", "whatsapp", "yt", "calc")
+        try:
+            from src.agent.registry import ResourceDiscovery, AppDiscovery
+            if ResourceDiscovery.is_url(clean) or ResourceDiscovery.is_url(clean_lower):
+                return cls._make_decision(
+                    route=MasterRoute.BROWSER_TASK,
+                    confidence=0.90,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=False,
+                    explanation=f"Direct web resource target detected: {clean}",
+                )
+            if not re.search(r"\b(?:what|who|where|why|how|explain|define|tell|mean|is|are)\b", clean_lower):
+                resolved_app = AppDiscovery.resolve_application(clean)
+                if resolved_app:
+                    return cls._make_decision(
+                        route=MasterRoute.COMPUTER_TASK,
+                        confidence=0.88,
+                        requires_memory=False,
+                        requires_computer=True,
+                        requires_phase5=True,
+                        requires_phase6=False,
+                        explanation=f"Direct application target detected: {clean}",
+                    )
+        except Exception:
+            pass
+
         # Default fallback to Conversational Brain
         return cls._make_decision(
             route=MasterRoute.UNKNOWN,

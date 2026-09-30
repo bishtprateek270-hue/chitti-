@@ -218,13 +218,15 @@ class ActionIntentAnalyzer:
                 channel, app, base_url = "WhatsApp", "WhatsApp Web", "https://web.whatsapp.com"
 
             # Check if this is sending a real message or merely opening the app
-            m_msg_to = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:message|msg|send(?:\s+a)?\s+message|send)\s+(?P<msg>[\"'][^\"']+[\"']|[^\s\"']+(?:\s+[^\s\"']+)?)\s+to\s+(?P<contact>[^\n\r,;:.]+)", clean)
+            m_saying = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:send(?:\s+a)?\s+(?:message|msg|text)|message|msg)\s+to\s+(?P<contact>[^\n\r,;:.]+?)\s+(?:saying|that|:)\s*(?P<msg>[\"']?[^\"']+?[\"']?)$", clean)
+            m_msg_quotes = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:send(?:\s+a)?\s+(?:message|msg|text)|message|msg|send)\s+(?P<msg>[\"'][^\"']+[\"'])\s+to\s+(?P<contact>[^\n\r,;:.]+)", clean)
             m_contact_ko = re.search(r"(?i)(?:(?:whatsapp|watsapp)\s+(?:par|pe)?\s*)?(?P<contact>[^\n\r,;:.]+?)\s+ko\s+(?P<msg>[\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|send\s+karo|message\s+kar|msg\s+bhejo)", clean)
             m_send_contact_msg = re.search(r"(?i)\b(?:send|message|msg)\s+(?:to\s+)?(?P<contact>[^\n\r,;:'\"]+?)\s*(?:saying|that|message|msg|:)\s*(?P<msg>[\"']?[^\"']+?[\"']?)$", clean) or \
                                  re.search(r"(?i)\b(?:send|message|msg)\s+(?:to\s+)?(?P<contact>[^\n\r,;:'\"]+?)\s+(?P<msg>['\"][^'\"]+?['\"])", clean)
             m_send_to_contact = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:send|message|msg)\s+to\s+(?P<contact>[A-Za-z0-9_\s]+?)\s+(?P<msg>[\"'][^\"']+[\"']|[^\s\"']+(?:\s+[^\s\"']+)?)$", clean)
+            m_msg_to = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:send(?:\s+a)?\s+(?:message|msg|text)|send|message|msg)\s+(?P<msg>[\"'][^\"']+[\"']|[^\s\"']+(?:\s+[^\s\"']+)?)\s+to\s+(?P<contact>[^\n\r,;:.]+)", clean)
 
-            m_msg_matched = m_msg_to or m_contact_ko or m_send_contact_msg or m_send_to_contact
+            m_msg_matched = m_saying or m_msg_quotes or m_contact_ko or m_send_contact_msg or m_msg_to or m_send_to_contact
 
             if m_msg_matched:
                 msg_text = (m_msg_matched.group("msg") or "").strip().strip("\"'")

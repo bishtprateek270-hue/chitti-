@@ -143,3 +143,47 @@ def test_end_to_end_unseen_app_execution_with_diagnostics(tmp_path, caplog):
         assert "[INTENT]" in log_content or "[AGENT]" in log_content
         assert "[FINAL STATUS]" in log_content or "[AGENT]" in log_content
 
+
+def test_typo_tolerance_and_standalone_targets():
+    """Verify that common typos and standalone shorthand targets route and parse accurately."""
+    test_cases = [
+        ("oprn yt", "youtube", ActionType.OPEN_URL),
+        ("opne chrome", "chrome", ActionType.OPEN_APPLICATION),
+        ("gemmini", "gemini", ActionType.OPEN_URL),
+        ("watsapp", "whatsapp", ActionType.OPEN_URL),
+        ("calcultor", "calculator", ActionType.OPEN_APPLICATION),
+        ("strat notepad", "notepad", ActionType.OPEN_APPLICATION),
+    ]
+
+    for query, expected_keyword, expected_action in test_cases:
+        decision = MasterRouter.classify_request(query)
+        assert decision.requires_computer is True, f"Failed routing for {query}"
+
+        parsed = ActionParser.parse_command(query)
+        assert parsed is not None, f"Failed parsing for {query}"
+        assert parsed.action == expected_action
+        
+        target_str = str(parsed.parameters.get("target") or parsed.parameters.get("url") or "")
+        assert expected_keyword.lower() in target_str.lower()
+
+
+def test_send_message_and_email_intent_and_routing():
+    """Verify message and email dispatch intents extract targets and route to computer agent."""
+    msg_query = "send message to Rahul saying hello"
+    dec_msg = MasterRouter.classify_request(msg_query)
+    assert dec_msg.requires_computer is True
+    
+    intent_msg = ActionIntentAnalyzer.extract_intent(msg_query)
+    assert intent_msg.intent == ActionIntentType.SEND_MESSAGE
+    assert "rahul" in intent_msg.target.lower() or "rahul" in intent_msg.recipient.lower()
+    assert "hello" in intent_msg.content.lower()
+
+    email_query = "send email to test@example.com with subject Meeting and body Hello team"
+    dec_email = MasterRouter.classify_request(email_query)
+    assert dec_email.requires_computer is True
+
+    intent_email = ActionIntentAnalyzer.extract_intent(email_query)
+    assert intent_email.intent == ActionIntentType.SEND_EMAIL
+    assert "test@example.com" in intent_email.recipient
+
+

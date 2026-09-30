@@ -260,7 +260,7 @@ class ActionParser:
 
             # Exclude non-executable generic words
             if target_str.lower() not in {
-                "the", "a", "my", "this", "deep learning", "cnn", "dbms", "leetcode",
+                "the", "a", "my", "this", "deep learning", "cnn", "dbms",
                 "file", "folder", "url", "question", "problem", "solution"
             }:
                 return StructuredAction(
@@ -270,5 +270,28 @@ class ActionParser:
                     requires_confirmation=False,
                     raw_input=raw,
                 )
+
+        # 11. Single-word / Standalone Resource or App Target (e.g. "gemmini", "youtube", "whatsapp", "spotify")
+        if ResourceDiscovery.is_url(clean) or ResourceDiscovery.is_url(clean_lower):
+            url_val = ResourceDiscovery.to_url(clean)
+            return StructuredAction(
+                action=ActionType.OPEN_URL,
+                parameters={"url": url_val, "site_name": clean.title()},
+                risk_level=RiskLevel.LOW,
+                requires_confirmation=False,
+                raw_input=raw,
+            )
+
+        if not re.search(r"\b(?:what|who|where|why|how|explain|define|tell|mean|is|are|hi|hello|solve|debug|fix|help)\b", clean_lower):
+            if len(clean.split()) <= 2:
+                resolved_app = AppDiscovery.resolve_application(clean)
+                if resolved_app and clean_lower not in {"the", "a", "my", "this", "file", "folder", "problem", "question", "solution"}:
+                    return StructuredAction(
+                        action=ActionType.OPEN_APPLICATION,
+                        parameters={"target": clean},
+                        risk_level=RiskLevel.LOW,
+                        requires_confirmation=False,
+                        raw_input=raw,
+                    )
 
         return None
