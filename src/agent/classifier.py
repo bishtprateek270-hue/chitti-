@@ -104,7 +104,8 @@ class TaskClassifier:
 
     # 6. Computer Control & Application Patterns
     COMPUTER_CONTROL_PATTERNS = [
-        r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send\s+message)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg))\b",
+        r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send(?:\s+a)?\s+message|send)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg)|send\s+(?:an?\s+)?(?:email|mail))\b",
+        r"(?i)\b(?:send|bhejo|dispatch)\s+.*(?:on|via|pe|par)\s+(?:whatsapp|telegram|slack|discord|gmail|email)\b",
         r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)(?:\s+in\s+browser)?\b",
         r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot\b",
         r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|youtube\s+pe.*chalao|gaana\s+chalao|search\s+youtube\s+for)\b",

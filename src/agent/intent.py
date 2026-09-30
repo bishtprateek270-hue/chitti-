@@ -233,8 +233,12 @@ class ActionIntentAnalyzer:
                 contact_name = (m_msg_matched.group("contact") or "").strip().strip("\"'")
 
                 # Clean message text and contact name
-                msg_text = re.sub(r"(?i)\s+(?:message|msg|text)$", "", msg_text).strip() or "Hi"
-                contact_name = re.sub(r"(?i)\s+(?:on|via|using)\s+.*$", "", contact_name).strip()
+                msg_text = re.sub(r"(?i)^(?:saying|that|:)\s*", "", msg_text).strip()
+                msg_text = re.sub(r"(?i)\s+(?:message|msg|text)$", "", msg_text).strip()
+                msg_text = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", msg_text).strip() or "Hi"
+                
+                contact_name = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", contact_name).strip()
+                contact_name = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+.*$", "", contact_name).strip()
                 contact_name = re.sub(r"(?i)\s+(?:message|msg|text)$", "", contact_name).strip()
                 contact_name = re.sub(r"(?i)^(?:to\s+|for\s+|ko\s+)", "", contact_name).strip() or "Contact"
                 search_query = clean_contact_query(contact_name)

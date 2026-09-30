@@ -209,29 +209,7 @@ class LaptopAgentManager:
                 )
                 return True, prompt_msg, None
 
-        # 2. Intent Classification Check
-        class_res = TaskClassifier.classify(raw)
-        if not class_res.is_actionable_task and class_res.intent in (
-            TaskIntent.GENERAL_CONVERSATION,
-            TaskIntent.GENERAL_KNOWLEDGE,
-            TaskIntent.TECHNICAL_QUERY,
-            TaskIntent.PERSONAL_MEMORY,
-            TaskIntent.RELATIONSHIP_MEMORY,
-            TaskIntent.PROJECT_MEMORY,
-            TaskIntent.PREFERENCE_MEMORY,
-            TaskIntent.EXPLICIT_MEMORY,
-        ):
-            return False, "", None
-
-        # Project request detected logging
-        if class_res.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.BUILD_PROJECT, TaskIntent.MODIFY_PROJECT):
-            log_chitti(f"[CHITTI] [TASK ROUTER] Intent: {class_res.intent.value}")
-            log_chitti("[CHITTI] [TASK ROUTER] Project request detected")
-            log_chitti("[CHITTI] [TASK ROUTER] Phase 6 agent activated")
-        elif class_res.is_actionable_task:
-            log_chitti(f"[CHITTI] [TASK ROUTER] Intent: {class_res.intent.value}")
-
-        # 3. Check for Multi-step Task Plan First
+        # 2. Check for Multi-step Task Plan First
         task_plan = self.planner.plan_task(raw, context=self.session_context)
         if task_plan and task_plan.steps:
             log_chitti(f"[AGENT] Task detected: MULTI_STEP_PLAN ({len(task_plan.steps)} steps)")
@@ -260,6 +238,27 @@ class LaptopAgentManager:
             resp_formatted = self._format_multistep_response(raw, task_plan, success, msg, lang=lang)
             return True, resp_formatted, ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=resp_formatted)
 
+        # 3. Intent Classification Check
+        class_res = TaskClassifier.classify(raw)
+        if not class_res.is_actionable_task and class_res.intent in (
+            TaskIntent.GENERAL_CONVERSATION,
+            TaskIntent.GENERAL_KNOWLEDGE,
+            TaskIntent.TECHNICAL_QUERY,
+            TaskIntent.PERSONAL_MEMORY,
+            TaskIntent.RELATIONSHIP_MEMORY,
+            TaskIntent.PROJECT_MEMORY,
+            TaskIntent.PREFERENCE_MEMORY,
+            TaskIntent.EXPLICIT_MEMORY,
+        ):
+            return False, "", None
+
+        # Project request detected logging
+        if class_res.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.BUILD_PROJECT, TaskIntent.MODIFY_PROJECT):
+            log_chitti(f"[CHITTI] [TASK ROUTER] Intent: {class_res.intent.value}")
+            log_chitti("[CHITTI] [TASK ROUTER] Project request detected")
+            log_chitti("[CHITTI] [TASK ROUTER] Phase 6 agent activated")
+        elif class_res.is_actionable_task:
+            log_chitti(f"[CHITTI] [TASK ROUTER] Intent: {class_res.intent.value}")
 
         # 4. Check for Single-step Structured Action (Fast Path)
         structured_action = self.parser.parse_command(raw)
@@ -336,11 +335,13 @@ class LaptopAgentManager:
 
         if "whatsapp" in lower or "message" in lower or "msg" in lower or "telegram" in lower:
             m_contact = (
-                re.search(r"(?i)\bto\s+([^\n\r,;:.]+?)(?:\s+saying|\s+that|\s+message|\s+msg|\s*:|\s+['\"]|$)", raw_input) or
+                re.search(r"(?i)\bto\s+([^\n\r,;:.]+?)(?:\s+saying|\s+that|\s+message|\s+msg|\s*:|\s+['\"]|\s+on\s+whatsapp|$)", raw_input) or
                 re.search(r"(?i)\b([^\n\r,;:.]+?)\s+ko\b", raw_input) or
                 re.search(r"(?i)\bto\s+([a-zA-Z0-9_\-]+)\b", raw_input)
             )
             target = m_contact.group(1).strip() if m_contact else "the contact"
+            target = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", target).strip()
+            target = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+.*$", "", target).strip()
             if lang == "hi":
                 return f"WhatsApp पर {target} को संदेश भेज दिया गया है।"
             elif lang in ("hinglish", "mixed"):

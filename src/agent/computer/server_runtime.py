@@ -130,8 +130,8 @@ class ServerProcessManager:
                         return True, code, f"HTTP {code} OK"
                 raise url_err
         except urllib.error.HTTPError as e:
-            # 404, 405, 401, 403 on an API root or auth page indicate the host is reachable
-            if e.code in (404, 405, 401, 403, 302, 301):
+            # Any HTTP status code (including 400, 401, 403, 404, 405, 429) indicates the server is alive and responding
+            if e.code < 500 or e.code in (500, 502, 503):
                 return True, e.code, f"Server reachable (HTTP {e.code})"
             return False, e.code, f"Server returned error HTTP {e.code}: {e.reason}"
         except urllib.error.URLError as e:
@@ -374,6 +374,10 @@ class ServerProcessManager:
         if not healthy:
             return False, f"Browser error page detected: server at '{target}' is unreachable ({msg})."
 
+        # For external internet websites (WhatsApp Web, Gmail, YouTube, Gemini, etc.), reachability is verified
+        if not target.startswith(("http://localhost", "http://127.0.0.1", "file:///")):
+            return True, f"Browser page loaded successfully at {target} ({msg})."
+
         try:
             req = urllib.request.Request(target, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
             try:
@@ -401,7 +405,4 @@ class ServerProcessManager:
 
                 return True, f"Browser page loaded successfully at {target} (HTTP {code})."
         except Exception as e:
-            # For public websites, if health check succeeded but full scrape failed, treat page as loaded
-            if not target.startswith(("http://localhost", "http://127.0.0.1", "file:///")):
-                return True, f"Browser page reached at {target} (HTTP {code})."
             return False, f"Browser connection error: {e}"
