@@ -483,9 +483,57 @@ class ToolEngine:
             self._tool_verify_web_page,
         )
 
+        # 7. COMMUNICATION & MESSAGING TOOLS
+        self._register(
+            "send_email",
+            "Dispatches an email to a recipient with subject and body using SMTP or prefilled Gmail.",
+            {
+                "recipient": {"type": "string", "description": "Email address of the recipient"},
+                "subject": {"type": "string", "description": "Subject line of the email", "optional": True},
+                "content": {"type": "string", "description": "Body/content of the email", "optional": True},
+            },
+            self._tool_send_email,
+        )
+        self._register(
+            "send_message",
+            "Sends a message to a contact or phone number on WhatsApp Web or messaging service.",
+            {
+                "contact": {"type": "string", "description": "Contact name or phone number"},
+                "text": {"type": "string", "description": "Message text to send"},
+                "service": {"type": "string", "description": "Service name, defaults to WhatsApp Web", "optional": True},
+            },
+            self._tool_send_message,
+        )
+
     # ---------------------------------------------------------
     # TOOL HANDLERS
     # ---------------------------------------------------------
+
+    def _tool_send_email(self, recipient: str, subject: str = "Message from Chitti", content: str = "") -> Dict[str, Any]:
+        from src.agent.messaging import EmailDispatcher
+        # Attempt direct SMTP dispatch if credentials exist
+        res = EmailDispatcher.send_email_smtp(recipient=recipient, subject=subject, body=content)
+        if res.success:
+            return {"success": True, "message": res.message, "evidence": res.evidence, "method": "smtp"}
+        # Fallback to opening pre-filled Gmail compose URL in browser
+        compose_url = EmailDispatcher.get_gmail_compose_url(recipient=recipient, subject=subject, body=content)
+        self.browser.open_url(compose_url)
+        return {"success": True, "message": f"Opened Gmail with pre-filled compose draft for {recipient}", "evidence": f"Draft: {recipient}", "method": "browser_prefill"}
+
+    def _tool_send_message(self, contact: str, text: str, service: str = "WhatsApp Web") -> Dict[str, Any]:
+        from src.agent.messaging import WhatsAppDispatcher
+        if WhatsAppDispatcher.is_phone_number(contact):
+            res_py = WhatsAppDispatcher.send_via_pywhatkit(contact, text)
+            if res_py.success:
+                return {"success": True, "message": res_py.message, "evidence": res_py.evidence, "method": "pywhatkit"}
+            wa_url = WhatsAppDispatcher.get_whatsapp_url(contact, text)
+            self.browser.open_url(wa_url)
+            return {"success": True, "message": f"Navigated to WhatsApp chat with {contact}", "evidence": wa_url, "method": "browser_prefill"}
+
+        # Contact name search
+        wa_url = "https://web.whatsapp.com"
+        self.browser.open_url(wa_url)
+        return {"success": True, "message": f"Opened {service} for contact '{contact}'", "evidence": f"Chat with {contact}", "method": "browser_ui"}
 
     def _tool_start_web_server(self, cwd: str, command: Optional[str] = None, framework: Optional[str] = None, target_file: Optional[str] = None) -> Dict[str, Any]:
         from src.agent.computer.server_runtime import ServerProcessManager

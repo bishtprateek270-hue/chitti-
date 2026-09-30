@@ -29,6 +29,7 @@ from src.agent.computer import (
     TerminalRiskLevel,
 )
 from src.agent.intent import ActionIntent, ActionIntentAnalyzer, ActionIntentType
+from src.agent.messaging import EmailDispatcher, WhatsAppDispatcher
 from src.agent.projects import ProjectRegistry
 from src.agent.recovery import FailureRecoveryManager, RecoveryAction
 from src.agent.task_state import AgentStep, ExecutionFlag, StepStatus, TaskContext, TaskState, TaskStatus
@@ -73,9 +74,10 @@ class AgentPlanner:
 
         # 1. SEND_EMAIL Actions (e.g. email hi to ...@... / send email to ...)
         if intent.intent == ActionIntentType.SEND_EMAIL:
+            compose_url = EmailDispatcher.get_gmail_compose_url(intent.recipient, intent.subject, intent.content) if intent.recipient else "https://mail.google.com"
             state.steps = [
-                AgentStep(step_id=1, description=f"Open {intent.application} in browser", action_type="OPEN_URL", parameters={"url": "https://mail.google.com", "site_name": intent.application}),
-                AgentStep(step_id=2, description=f"Wait for {intent.application} to load and verify page readiness", action_type="VERIFY_PAGE_LOADED", parameters={"url": "https://mail.google.com"}, depends_on=[1]),
+                AgentStep(step_id=1, description=f"Open {intent.application} in browser", action_type="OPEN_URL", parameters={"url": compose_url, "site_name": intent.application}),
+                AgentStep(step_id=2, description=f"Wait for {intent.application} to load and verify page readiness", action_type="VERIFY_PAGE_LOADED", parameters={"url": compose_url}, depends_on=[1]),
                 AgentStep(step_id=3, description=f"Check user authentication and active session in {intent.application}", action_type="CHECK_AUTHENTICATION", parameters={"service": intent.application}, depends_on=[2]),
                 AgentStep(step_id=4, description=f"Compose email to '{intent.recipient}' with subject '{intent.subject}'", action_type="COMPOSE_EMAIL", parameters={"recipient": intent.recipient, "subject": intent.subject, "content": intent.content}, depends_on=[3]),
                 AgentStep(step_id=5, description=f"Confirm sending email to '{intent.recipient}'", action_type="CONFIRM_SEND", parameters={"recipient": intent.recipient, "content": intent.content}, requires_confirmation=True, depends_on=[4]),
@@ -87,7 +89,7 @@ class AgentPlanner:
 
         # 2. SEND_MESSAGE Actions (e.g. open whatsapp web and send hi to ayush)
         if intent.intent == ActionIntentType.SEND_MESSAGE:
-            target_url = intent.parameters.get("url", "https://web.whatsapp.com")
+            target_url = WhatsAppDispatcher.get_whatsapp_url(intent.target, intent.content) if WhatsAppDispatcher.is_phone_number(intent.target) else intent.parameters.get("url", "https://web.whatsapp.com")
             state.steps = [
                 AgentStep(step_id=1, description=f"Open {intent.application} in browser", action_type="OPEN_URL", parameters={"url": target_url, "site_name": intent.application}),
                 AgentStep(step_id=2, description=f"Wait for {intent.application} to load and verify authentication state", action_type="VERIFY_PAGE_LOADED", parameters={"url": target_url}, depends_on=[1]),
@@ -1232,7 +1234,15 @@ class ComputerAgentLoop:
                 service = params.get("service", "WhatsApp Web")
                 step._last_tool_name = "press_key"
                 step._last_tool_args = {"key": "enter", "contact": contact, "text": text}
-                log_info(f"[AGENT] Executing real tool press_key(enter) to send message to '{contact}'...")
+                log_info(f"[AGENT] Executing send message action for '{contact}'...")
+
+                # 1. Try pywhatkit if phone number and installed
+                if WhatsAppDispatcher.is_phone_number(contact):
+                    py_res = WhatsAppDispatcher.send_via_pywhatkit(contact, text)
+                    if py_res.success:
+                        return True, f"Message '{text}' sent to '{contact}' via WhatsApp automation", f"Dispatched: {text}"
+
+                # 2. Focus WhatsApp Web / desktop window and press enter
                 self.tools.execute_tool("focus_window", {"title": service})
                 time.sleep(0.2)
                 
@@ -1267,12 +1277,12 @@ class ComputerAgentLoop:
                 body = params.get("content", "")
                 step._last_tool_name = "type_text"
                 step._last_tool_args = {"recipient": rec, "subject": sub, "content": body}
-                log_info(f"[AGENT] Executing real compose UI interactions (recipient, subject, body)...")
+                log_info(f"[AGENT] Executing compose UI interactions (recipient: {rec}, subject: {sub})...")
                 # 1. Focus Gmail window
                 self.tools.execute_tool("focus_window", {"title": "Gmail"})
                 time.sleep(0.2)
                 self.tools.execute_tool("find_ui_element", {"query": "Gmail"})
-                # 2. Press 'c' to trigger compose modal in Gmail
+                # 2. Press 'c' to trigger compose modal in Gmail if not pre-opened
                 self.tools.execute_tool("press_key", {"key": "c"})
                 time.sleep(0.3)
                 # 3. Type recipient
@@ -1303,7 +1313,14 @@ class ComputerAgentLoop:
                 body = params.get("content", "")
                 step._last_tool_name = "hotkey"
                 step._last_tool_args = {"keys": ["ctrl", "enter"], "recipient": rec}
-                log_info(f"[AGENT] Executing real send action (Ctrl+Enter) for email to {rec}...")
+                log_info(f"[AGENT] Executing email dispatch for {rec}...")
+
+                # 1. Check if SMTP credentials exist for instant direct dispatch
+                smtp_res = EmailDispatcher.send_email_smtp(recipient=rec, subject=sub, body=body)
+                if smtp_res.success:
+                    return True, smtp_res.message, smtp_res.evidence
+
+                # 2. Fallback to Gmail Web shortcut (Ctrl+Enter) in browser
                 self.tools.execute_tool("focus_window", {"title": "Gmail"})
                 time.sleep(0.2)
                 res_send = self.tools.execute_tool("hotkey", {"keys": ["ctrl", "enter"]})
@@ -1315,7 +1332,7 @@ class ComputerAgentLoop:
                 rec = params.get("recipient", "")
                 step._last_tool_name = "verify_ui_state"
                 step._last_tool_args = {"recipient": rec, "expected_text": "Message sent"}
-                log_info(f"[AGENT] Executing real verification for dispatched email to {rec}...")
+                log_info(f"[AGENT] Executing verification for dispatched email to {rec}...")
                 res_ver = self.tools.execute_tool("verify_ui_state", {"expected_text": "Message sent"})
                 res_scr = self.tools.execute_tool("inspect_screen", {})
                 return True, f"Verified email sent to {rec}", f"Sent confirmation verified: {rec}"
