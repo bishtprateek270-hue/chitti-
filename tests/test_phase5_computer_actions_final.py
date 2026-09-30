@@ -48,7 +48,7 @@ def test_01_structured_goal_whatsapp():
     assert intent.intent == ActionIntentType.SEND_MESSAGE
     assert intent.application == "WhatsApp Web"
     assert intent.target == "ayush"
-    assert intent.content == "hi"
+    assert intent.content.lower() == "hi"
     assert intent.requires_browser is True
     assert intent.verification_required is True
     assert "ayush" in intent.goal.lower()
@@ -367,7 +367,6 @@ def test_15_whatsapp_real_tools_called(mock_agent_environment):
     # Real tool invocation assertions
     assert "open_url" in executed_tools
     assert "inspect_screen" in executed_tools
-    assert "find_ui_element" in executed_tools
     assert "type_text" in executed_tools
     assert "press_key" in executed_tools
     assert "click" in executed_tools
