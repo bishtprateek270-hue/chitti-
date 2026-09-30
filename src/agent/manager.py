@@ -342,6 +342,13 @@ class LaptopAgentManager:
         has_opened_folder = any(a == "OPEN_FOLDER" for a in step_actions)
         has_opened_app = any(a == "OPEN_APPLICATION" for a in step_actions)
         has_opened_url = any(a == "OPEN_URL" for a in step_actions)
+        has_diagnosed_error = any(a == "DIAGNOSE_SCREEN_ERROR" for a in step_actions)
+        has_analyzed_screen = any(a == "ANALYZE_SCREEN" for a in step_actions)
+        has_found_ui = any(a == "FIND_UI_ELEMENT" for a in step_actions)
+
+        # 0. Vision Grounding & Screen Reasoning (Phase 1)
+        if has_diagnosed_error or has_analyzed_screen or has_found_ui:
+            return raw_msg or "Screen visual analysis completed successfully."
 
         # 1. Real message sending actions (WhatsApp, Telegram, Slack, etc.)
         if has_sent_message:
@@ -550,5 +557,8 @@ class LaptopAgentManager:
                 return f"Volume {op} kar diya hai."
             else:
                 return result.message
+
+        elif result.action in (ActionType.ANALYZE_SCREEN, ActionType.DIAGNOSE_SCREEN_ERROR, ActionType.FIND_UI_ELEMENT):
+            return result.message
 
         return result.message

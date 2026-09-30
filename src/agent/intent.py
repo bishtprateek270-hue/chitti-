@@ -48,6 +48,9 @@ class ActionIntentType(str, Enum):
 
     # System Control Actions
     TAKE_SCREENSHOT = "TAKE_SCREENSHOT"
+    ANALYZE_SCREEN = "ANALYZE_SCREEN"
+    DIAGNOSE_SCREEN_ERROR = "DIAGNOSE_SCREEN_ERROR"
+    FIND_UI_ELEMENT = "FIND_UI_ELEMENT"
     SET_VOLUME = "SET_VOLUME"
     GET_SYSTEM_INFO = "GET_SYSTEM_INFO"
 
@@ -320,7 +323,61 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 4. BROWSER WEB SEARCH
+        # 4. VISION GROUNDING & SCREEN REASONING (Phase 1)
+        # -------------------------------------------------------------
+        # 4A. Error Diagnosis on Screen
+        is_diagnose_error = bool(
+            re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen\s+and\s+(?:tell|find|fix|check|diagnose|explain)|explain\s+(?:the\s+|this\s+)?error|why\s+(?:is\s+my\s+code\s+failing|did\s+it\s+fail|is\s+there\s+an\s+error)|diagnose\s+(?:the\s+)?(?:screen|error)|what\s+is\s+wrong\s+with\s+(?:my\s+code|this))\b", clean) or
+            re.search(r"(?i)\b(?:screen\s+pe\s+(?:kya\s+error\s+hai|error\s+dekho|error\s+batao|kya\s+gadbad\s+hai)|meri\s+screen\s+dekho\s+aur\s+error\s+batao|error\s+solve\s+karo\s+screen\s+dekh\s+ke)\b", clean) or
+            re.search(r"(?i)\b(?:read\s+this\s+error|read\s+the\s+error\s+on\s+screen)\b", clean)
+        )
+        if is_diagnose_error:
+            return ActionIntent(
+                intent=ActionIntentType.DIAGNOSE_SCREEN_ERROR,
+                goal="Inspect active window and diagnose visible errors",
+                channel="Vision Grounding",
+                application="Screen Vision",
+                target="Active Error",
+                parameters={"query": clean},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        # 4B. Find Interactive UI Elements (Buttons, Inputs)
+        m_find_ui = re.search(r"(?i)\b(?:find|locate)\s+(?:the\s+)?([A-Za-z0-9_\-\s]+?)\s+(?:button|input|icon|control|link)\s+on\s+screen\b", clean) or \
+                    re.search(r"(?i)\bscreen\s+pe\s+([A-Za-z0-9_\-\s]+?)\s+(?:button|dhoondo|kahan\s+hai)\b", clean)
+        if m_find_ui:
+            elem_name = m_find_ui.group(1).strip()
+            return ActionIntent(
+                intent=ActionIntentType.FIND_UI_ELEMENT,
+                goal=f"Locate '{elem_name}' control on screen",
+                channel="Vision Grounding",
+                application="Screen Vision",
+                target=elem_name,
+                parameters={"element": elem_name},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        # 4C. General Screen Analysis & Summarization ("look at my screen", "screen pe kya hai")
+        is_screen_analysis = bool(
+            re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+my\s+screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+what\s+is\s+on\s+(?:my\s+)?screen|inspect\s+(?:the\s+)?active\s+window|read\s+my\s+screen)\b", clean) or
+            re.search(r"(?i)\b(?:meri\s+screen\s+dekho|screen\s+(?:pe\s+)?kya\s+hai(?:\s+batao)?|screen\s+(?:ko\s+)?summarize\s+karo|screen\s+(?:ko\s+)?explain\s+karo|screen\s+dekho)\b", clean)
+        )
+        if is_screen_analysis and not any(w in clean_lower for w in ["screenshot le lo", "screenshot kheecho", "capture screen"]):
+            return ActionIntent(
+                intent=ActionIntentType.ANALYZE_SCREEN,
+                goal="Capture and visually analyze current display content",
+                channel="Vision Grounding",
+                application="Screen Vision",
+                target="Screen",
+                parameters={"query": clean, "focus_active_window": True},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        # -------------------------------------------------------------
+        # 5. BROWSER WEB SEARCH
         # -------------------------------------------------------------
         m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
                    re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser|web|bing))\b", clean) or \
@@ -342,7 +399,7 @@ class ActionIntentAnalyzer:
                 )
 
         # -------------------------------------------------------------
-        # 5. PROJECT CREATION / CODING ACTIONS (Phase 6)
+        # 6. PROJECT CREATION / CODING ACTIONS (Phase 6)
         # -------------------------------------------------------------
         is_coding = bool(
             re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|build|make|develop|implement|generate|design|write)\s+.*(?:app|application|project|website|calculator|tracker|system|dashboard|timer|todo|game|api|script|program|code)", clean) or
@@ -362,7 +419,7 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 6. SYSTEM CONTROLS (Screenshot, Volume, System Info)
+        # 7. SYSTEM CONTROLS (Screenshot, Volume, System Info)
         # -------------------------------------------------------------
         if bool(re.search(r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot|screenshot\s+(?:le\s+lo|kheecho|lo)\b", clean)):
             return ActionIntent(

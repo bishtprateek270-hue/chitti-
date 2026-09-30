@@ -139,6 +139,34 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
+        # 5A. VISION: ERROR DIAGNOSIS ON SCREEN (Phase 1)
+        if intent.intent == ActionIntentType.DIAGNOSE_SCREEN_ERROR:
+            state.steps = [
+                AgentStep(step_id=1, description="Capture active window frame", action_type="CAPTURE_ACTIVE_WINDOW", parameters={}),
+                AgentStep(step_id=2, description="Inspect visual frame and diagnose errors", action_type="DIAGNOSE_SCREEN_ERROR", parameters={"query": clean}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 5B. VISION: SCREEN & ACTIVE WINDOW ANALYSIS (Phase 1)
+        if intent.intent == ActionIntentType.ANALYZE_SCREEN:
+            state.steps = [
+                AgentStep(step_id=1, description="Capture screen visual frame", action_type="CAPTURE_SCREEN", parameters={}),
+                AgentStep(step_id=2, description="Analyze on-screen content and UI layout", action_type="ANALYZE_SCREEN", parameters={"query": clean}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 5C. VISION: LOCATE UI CONTROL ON SCREEN (Phase 1)
+        if intent.intent == ActionIntentType.FIND_UI_ELEMENT:
+            elem = intent.parameters.get("element") or intent.target or "control"
+            state.steps = [
+                AgentStep(step_id=1, description="Capture active window frame", action_type="CAPTURE_ACTIVE_WINDOW", parameters={}),
+                AgentStep(step_id=2, description=f"Locate '{elem}' interactive element on screen", action_type="FIND_UI_ELEMENT", parameters={"element": elem}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
 
 
         # 6. VS CODE + PROJECT OPENING COMMANDS
@@ -788,6 +816,29 @@ class ComputerAgentLoop:
                 filename = params.get("filename")
                 res = self.tools.execute_tool("take_screenshot", {"filename": filename})
                 return res.success, res.message, f"Screenshot captured: {res.data.get('path')}"
+
+            elif act == "CAPTURE_SCREEN":
+                res = self.tools.execute_tool("take_screenshot", {})
+                return res.success, res.message, f"Screen captured: {res.data.get('path')}"
+
+            elif act == "CAPTURE_ACTIVE_WINDOW":
+                res = self.tools.execute_tool("capture_active_window", {})
+                return res.success, res.message, f"Active window captured: {res.data.get('path')}"
+
+            elif act == "ANALYZE_SCREEN":
+                query = params.get("query", "Explain what is on screen")
+                res = self.tools.execute_tool("analyze_screen", {"query": query})
+                return res.success, res.message, res.data.get("summary")
+
+            elif act == "DIAGNOSE_SCREEN_ERROR":
+                query = params.get("query", "")
+                res = self.tools.execute_tool("diagnose_screen_error", {"query": query})
+                return res.success, res.message, res.data.get("description")
+
+            elif act == "FIND_UI_ELEMENT":
+                element = params.get("element", "")
+                res = self.tools.execute_tool("find_ui_element", {"query": element})
+                return res.success, res.message, res.data.get("evidence")
 
             elif act == "VERIFY_EDITOR_CONTENT":
                 app = params.get("application", "Visual Studio Code")

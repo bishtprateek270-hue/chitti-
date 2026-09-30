@@ -22,6 +22,7 @@ from src.agent.computer import (
     TerminalRiskLevel,
 )
 from src.agent.projects import ProjectRegistry
+from src.agent.vision import VisionGroundingEngine
 from src.utils.logging import log_debug, log_info, log_warn
 
 
@@ -66,6 +67,7 @@ class ToolEngine:
         apps: AppController,
         screen_analyzer: ScreenAnalyzer,
         projects: ProjectRegistry,
+        vision: Optional[VisionGroundingEngine] = None,
     ):
         self.computer = computer
         self.fs = filesystem
@@ -74,6 +76,7 @@ class ToolEngine:
         self.apps = apps
         self.screen_analyzer = screen_analyzer
         self.projects = projects
+        self.vision = vision or VisionGroundingEngine()
         self.tools: Dict[str, ToolDefinition] = {}
         self._register_all_tools()
 
@@ -145,6 +148,24 @@ class ToolEngine:
             "Reads visible text and screen context from the active window.",
             {},
             self._tool_read_screen,
+        )
+        self._register(
+            "analyze_screen",
+            "Visually analyzes the active screen or window using multimodal vision reasoning.",
+            {"query": {"type": "string", "description": "Analysis query or prompt", "optional": True}},
+            self._tool_analyze_screen,
+        )
+        self._register(
+            "diagnose_screen_error",
+            "Inspects the active screen and window to detect, explain, and diagnose errors.",
+            {"query": {"type": "string", "description": "Optional query or context", "optional": True}},
+            self._tool_diagnose_screen_error,
+        )
+        self._register(
+            "capture_active_window",
+            "Captures a screenshot cropped strictly to the active foreground application window.",
+            {},
+            self._tool_capture_active_window,
         )
         self._register(
             "find_ui_element",
@@ -747,7 +768,57 @@ class ToolEngine:
             "message": f"Active: {active.title if active else 'None'}. Visible: {', '.join(titles[:5])}",
         }
 
+    def _tool_analyze_screen(self, query: str = "Explain what is on the screen") -> Dict[str, Any]:
+        log_info(f"[TOOL] analyze_screen -> query: '{query}'")
+        res = self.vision.analyze_screen(query=query)
+        return {
+            "success": True,
+            "summary": res.summary,
+            "active_window": res.active_window_title,
+            "process": res.active_process,
+            "screenshot_path": res.screenshot_path,
+            "message": res.summary,
+            "raw_ocr": res.raw_ocr_text,
+        }
+
+    def _tool_diagnose_screen_error(self, query: str = "") -> Dict[str, Any]:
+        log_info(f"[TOOL] diagnose_screen_error -> query: '{query}'")
+        diag = self.vision.diagnose_screen_error()
+        return {
+            "success": True,
+            "has_error": diag.has_error,
+            "error_type": diag.error_type,
+            "description": diag.description,
+            "suggested_fix": diag.suggested_fix,
+            "evidence": diag.evidence_snippet,
+            "message": diag.description,
+        }
+
+    def _tool_capture_active_window(self) -> Dict[str, Any]:
+        log_info("[TOOL] capture_active_window")
+        path, win = self.vision.screen_reader.capture_active_window()
+        return {
+            "success": True,
+            "path": path,
+            "active_window": win.title if win else "Desktop",
+            "message": f"Captured active window screenshot: {path}",
+        }
+
     def _tool_find_ui_element(self, query: str) -> Dict[str, Any]:
+        # Try finding via vision localization first
+        match = self.vision.find_ui_element(query)
+        if match:
+            return {
+                "success": True,
+                "found": True,
+                "query": query,
+                "label": match.label,
+                "center_x": match.center_x,
+                "center_y": match.center_y,
+                "box": match.bounding_box,
+                "evidence": f"Found UI element '{match.label}' at ({match.center_x}, {match.center_y})",
+            }
+
         res = self.screen_analyzer.verify_window(query)
         return {
             "success": res.success,

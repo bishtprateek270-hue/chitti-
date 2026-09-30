@@ -17,6 +17,9 @@ class ActionType(str, Enum):
     CREATE_FOLDER = "CREATE_FOLDER"
     CREATE_TEXT_FILE = "CREATE_TEXT_FILE"
     TAKE_SCREENSHOT = "TAKE_SCREENSHOT"
+    ANALYZE_SCREEN = "ANALYZE_SCREEN"
+    DIAGNOSE_SCREEN_ERROR = "DIAGNOSE_SCREEN_ERROR"
+    FIND_UI_ELEMENT = "FIND_UI_ELEMENT"
     GET_SYSTEM_INFO = "GET_SYSTEM_INFO"
     SET_VOLUME = "SET_VOLUME"
     DELETE_FILE = "DELETE_FILE"
@@ -124,6 +127,27 @@ class ActionRegistry:
             risk_level=RiskLevel.LOW,
             requires_confirmation=False,
             optional_parameters=["output_path"],
+        ),
+        ActionType.ANALYZE_SCREEN: ActionDefinition(
+            action_type=ActionType.ANALYZE_SCREEN,
+            description="Captures and visually analyzes active screen content, UI elements, and windows.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            optional_parameters=["query", "focus_active_window"],
+        ),
+        ActionType.DIAGNOSE_SCREEN_ERROR: ActionDefinition(
+            action_type=ActionType.DIAGNOSE_SCREEN_ERROR,
+            description="Inspects active window and screen to detect, diagnose, and explain errors or tracebacks.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            optional_parameters=["query"],
+        ),
+        ActionType.FIND_UI_ELEMENT: ActionDefinition(
+            action_type=ActionType.FIND_UI_ELEMENT,
+            description="Locates interactive UI elements (buttons, inputs) on screen by label or query.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            required_parameters=["element"],
         ),
         ActionType.GET_SYSTEM_INFO: ActionDefinition(
             action_type=ActionType.GET_SYSTEM_INFO,

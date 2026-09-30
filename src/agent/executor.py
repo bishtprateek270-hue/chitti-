@@ -45,6 +45,12 @@ class ActionExecutor:
                 return cls._create_text_file(action, default_workspace)
             elif act_type == ActionType.TAKE_SCREENSHOT:
                 return cls._take_screenshot(action, screenshots_dir)
+            elif act_type == ActionType.ANALYZE_SCREEN:
+                return cls._analyze_screen(action)
+            elif act_type == ActionType.DIAGNOSE_SCREEN_ERROR:
+                return cls._diagnose_screen_error(action)
+            elif act_type == ActionType.FIND_UI_ELEMENT:
+                return cls._find_ui_element(action)
             elif act_type == ActionType.GET_SYSTEM_INFO:
                 return cls._get_system_info(action)
             elif act_type == ActionType.SET_VOLUME:
@@ -287,6 +293,70 @@ class ActionExecutor:
             action=ActionType.TAKE_SCREENSHOT,
             message=f"Screenshot taken and saved to {file_path.name}.",
             data={"path": str(file_path), "filename": file_path.name},
+        )
+
+    @classmethod
+    def _analyze_screen(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.vision import VisionGroundingEngine
+        engine = VisionGroundingEngine()
+        query = action.parameters.get("query", "Explain what is on the screen")
+        res = engine.analyze_screen(query=query)
+        log_chitti(f"[AGENT] Execution: SUCCESS | Visual Analysis: {res.summary}")
+        return ActionResult(
+            success=True,
+            action=ActionType.ANALYZE_SCREEN,
+            message=res.summary,
+            data={
+                "summary": res.summary,
+                "active_window": res.active_window_title,
+                "process": res.active_process,
+                "screenshot_path": res.screenshot_path,
+            },
+        )
+
+    @classmethod
+    def _diagnose_screen_error(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.vision import VisionGroundingEngine
+        engine = VisionGroundingEngine()
+        diag = engine.diagnose_screen_error()
+        log_chitti(f"[AGENT] Execution: SUCCESS | Error Diagnosis: {diag.description}")
+        return ActionResult(
+            success=True,
+            action=ActionType.DIAGNOSE_SCREEN_ERROR,
+            message=diag.description,
+            data={
+                "has_error": diag.has_error,
+                "error_type": diag.error_type,
+                "description": diag.description,
+                "suggested_fix": diag.suggested_fix,
+            },
+        )
+
+    @classmethod
+    def _find_ui_element(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.vision import VisionGroundingEngine
+        engine = VisionGroundingEngine()
+        elem_name = action.parameters.get("element", "")
+        match = engine.find_ui_element(elem_name)
+        if match:
+            msg = f"Found '{match.label}' on screen at coordinates ({match.center_x}, {match.center_y})."
+            return ActionResult(
+                success=True,
+                action=ActionType.FIND_UI_ELEMENT,
+                message=msg,
+                data={
+                    "found": True,
+                    "label": match.label,
+                    "center_x": match.center_x,
+                    "center_y": match.center_y,
+                    "box": match.bounding_box,
+                },
+            )
+        return ActionResult(
+            success=True,
+            action=ActionType.FIND_UI_ELEMENT,
+            message=f"UI element matching '{elem_name}' was not detected in active window.",
+            data={"found": False, "element": elem_name},
         )
 
     @classmethod
