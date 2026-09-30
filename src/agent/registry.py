@@ -343,24 +343,58 @@ class FolderDiscovery:
 
     @classmethod
     def resolve_folder_path(cls, folder_alias: str) -> Optional[Path]:
-        clean = folder_alias.strip().lower()
+        raw = folder_alias.strip() if folder_alias else ""
+        clean = raw.lower().strip(".!? \t\n\"'")
+        # Strip common leading verbs and determiners
+        clean = re.sub(r"^(?:open\s+|show\s+|launch\s+|the\s+|my\s+|a\s+|an\s+|this\s+|that\s+|some\s+)+", "", clean).strip()
+        # Strip trailing keywords
+        clean = re.sub(r"(?:\s+(?:folder|directory|dir|kholo|dikhao|open\s+karo|karo))+$", "", clean).strip()
+
         home = Path.home()
+        desktop = (home / "OneDrive" / "Desktop") if (home / "OneDrive" / "Desktop").exists() else (home / "Desktop")
+        documents = (home / "OneDrive" / "Documents") if (home / "OneDrive" / "Documents").exists() else (home / "Documents")
+        pictures = (home / "OneDrive" / "Pictures") if (home / "OneDrive" / "Pictures").exists() else (home / "Pictures")
+
+        # Generic / empty folder request -> default to Desktop or Home
+        if not clean or clean in (
+            "folder", "directory", "dir", "folders", "directories", "files",
+            "my files", "file explorer", "explorer", "my pc", "this pc", "computer",
+            "a", "the", "my", "some"
+        ):
+            return desktop if desktop.exists() else home
 
         alias_map = {
             "downloads": home / "Downloads",
             "download": home / "Downloads",
-            "documents": home / "Documents",
-            "docs": home / "Documents",
-            "document": home / "Documents",
-            "desktop": (home / "OneDrive" / "Desktop") if not (home / "Desktop").exists() and (home / "OneDrive" / "Desktop").exists() else (home / "Desktop"),
-            "pictures": home / "Pictures",
-            "photos": home / "Pictures",
-            "pics": home / "Pictures",
+            "documents": documents,
+            "docs": documents,
+            "doc": documents,
+            "document": documents,
+            "desktop": desktop,
+            "pictures": pictures,
+            "photos": pictures,
+            "pics": pictures,
+            "images": pictures,
+            "picture": pictures,
             "videos": home / "Videos",
             "video": home / "Videos",
+            "movies": home / "Videos",
             "music": home / "Music",
+            "songs": home / "Music",
+            "audio": home / "Music",
             "home": home,
             "user": home,
+            "userprofile": home,
+            "profile": home,
+            "workspace": Path.cwd(),
+            "work": Path.cwd(),
+            "current": Path.cwd(),
+            "cwd": Path.cwd(),
+            "project": Path.cwd(),
+            "chitti": Path.cwd(),
+            "c drive": Path("C:\\"),
+            "c:": Path("C:\\"),
+            "c": Path("C:\\"),
         }
 
         # Check standard alias
@@ -371,23 +405,35 @@ class FolderDiscovery:
 
         # Check direct path
         try:
-            direct_path = Path(folder_alias)
-            if direct_path.is_absolute() and direct_path.exists() and direct_path.is_dir():
-                return direct_path
+            for cand_str in (raw, clean):
+                direct_path = Path(cand_str)
+                if direct_path.is_absolute() and direct_path.exists() and direct_path.is_dir():
+                    return direct_path
 
-            # Check relative to home
-            rel_path = home / folder_alias
-            if rel_path.exists() and rel_path.is_dir():
-                return rel_path
+            # Check relative to standard locations
+            search_bases = [Path.cwd(), desktop, home / "Downloads", documents, home]
+            for base in search_bases:
+                if not base or not base.exists():
+                    continue
+                cand_rel = base / clean
+                if cand_rel.exists() and cand_rel.is_dir():
+                    return cand_rel
 
-            # Check relative to cwd
-            cwd_rel = Path.cwd() / folder_alias
-            if cwd_rel.exists() and cwd_rel.is_dir():
-                return cwd_rel
+            # Search immediate subdirectories (case-insensitive)
+            for base in search_bases:
+                if not base or not base.exists():
+                    continue
+                try:
+                    for child in base.iterdir():
+                        if child.is_dir() and child.name.lower() == clean:
+                            return child
+                except Exception:
+                    continue
         except Exception:
             pass
 
-        return None
+        # Fallback to Desktop or Home rather than returning None if a folder was requested
+        return desktop if desktop.exists() else home
 
 
 class ResourceDiscovery:

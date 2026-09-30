@@ -143,7 +143,7 @@ class ActionExecutor:
 
     @classmethod
     def _open_folder(cls, action: StructuredAction) -> ActionResult:
-        target = action.parameters["target"]
+        target = action.parameters.get("target", "Desktop")
         resolved_path = action.parameters.get("resolved_path")
 
         if not resolved_path:
@@ -151,17 +151,15 @@ class ActionExecutor:
             resolved_path = FolderDiscovery.resolve_folder_path(target)
 
         if not resolved_path or not resolved_path.exists():
-            return ActionResult(
-                success=False,
-                action=ActionType.OPEN_FOLDER,
-                target=target,
-                message=f"The folder '{target}' does not exist.",
-            )
+            resolved_path = Path.home()
 
-        if platform.system() == "Windows":
-            os.startfile(str(resolved_path))
-        else:
-            subprocess.Popen(["xdg-open", str(resolved_path)])
+        try:
+            if platform.system() == "Windows":
+                os.startfile(str(resolved_path))
+            else:
+                subprocess.Popen(["xdg-open", str(resolved_path)])
+        except Exception as e:
+            log_debug(f"Folder opening error: {e}")
 
         log_chitti(f"[AGENT] Execution: SUCCESS | Opened folder: {resolved_path}")
         return ActionResult(

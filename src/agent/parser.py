@@ -192,21 +192,27 @@ class ActionParser:
                 )
 
         # 9. OPEN FOLDER COMMANDS
-        m_folder = re.search(r"(?i)^(?:open\s+(?:the\s+)?([A-Za-z0-9_\-\s]+?)\s+folder|([A-Za-z0-9_\-\s]+?)\s+folder\s+(?:kholo|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean)
+        m_folder = re.search(
+            r"(?i)^(?:open\s+(?:the\s+|my\s+|a\s+|an\s+)?folder(?:\s+([A-Za-z0-9_\-\s]+))?|open\s+(?:the\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\s]+?)\s+folder|(?:the\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\s]+?)\s+folder\s+(?:kholo|open\s+karo|dikhao|खोलो|दिखाओ)|folder\s+(?:kholo|open\s+karo|खोलो))(?:\s+|$|[.,!?])",
+            clean
+        )
         if m_folder:
-            target_folder = (m_folder.group(1) or m_folder.group(2)).strip()
+            raw_target = (m_folder.group(1) or m_folder.group(2) or m_folder.group(3) or "").strip()
+            clean_target = re.sub(r"(?i)\b(?:folder|directory|a|an|the|my|this|some)\b", "", raw_target).strip()
+            if not clean_target:
+                clean_target = "Desktop"
             return StructuredAction(
                 action=ActionType.OPEN_FOLDER,
-                parameters={"target": target_folder},
+                parameters={"target": clean_target},
                 risk_level=RiskLevel.LOW,
                 requires_confirmation=False,
                 raw_input=raw,
             )
 
         # Direct folder alias checks (e.g., "Open Downloads", "Downloads kholo")
-        folder_aliases = ["downloads", "documents", "desktop", "pictures", "videos", "music"]
+        folder_aliases = ["downloads", "documents", "desktop", "pictures", "videos", "music", "workspace", "c drive", "d drive", "file explorer", "explorer"]
         for fa in folder_aliases:
-            if re.search(rf"(?i)(?:^open\s+{fa}|^{fa}\s+(?:kholo|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
+            if re.search(rf"(?i)(?:^open\s+(?:the\s+|my\s+)?{fa}(?:\s+folder|\s+directory)?|^{fa}(?:\s+folder)?\s+(?:kholo|open\s+karo|dikhao|खोलो))\s*[.!?]?$", clean):
                 return StructuredAction(
                     action=ActionType.OPEN_FOLDER,
                     parameters={"target": fa.title()},
@@ -218,10 +224,10 @@ class ActionParser:
         # 10. DYNAMIC OPEN APPLICATION & RESOURCE COMMANDS (Hindi/Hinglish & English)
         # e.g. "Chrome kholo", "Chrome ko open karo", "Obsidian chala do", "Open Figma", "Launch VLC"
         m_app_hi = re.search(
-            r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|खोलो|चलाओ)(?:\s+|$|[.,!?])",
+            r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|dikhao|खोलो|चलाओ|दिखाओ)(?:\s+|$|[.,!?])",
             clean
         )
-        m_app_en = re.search(r"(?i)^(?:open|launch|start|run)\s+(?:the\s+|app\s+|my\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
+        m_app_en = re.search(r"(?i)^(?:open|launch|start|run|show)\s+(?:the\s+|app\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
 
         m_app_match = m_app_hi or m_app_en
         if m_app_match:
@@ -246,13 +252,16 @@ class ActionParser:
             is_explicit_folder = (
                 "folder" in clean_lower
                 or "directory" in clean_lower
-                or target_str.lower() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home"]
+                or target_str.lower().strip() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home", "explorer", "file explorer", "workspace", "c drive"]
                 or target_str.startswith(("/", "\\", "C:", "./", "../"))
             )
             if is_explicit_folder:
+                f_target = re.sub(r"(?i)\b(?:folder|directory|a|an|the|my|this|some)\b", "", target_str).strip()
+                if not f_target:
+                    f_target = "Desktop"
                 return StructuredAction(
                     action=ActionType.OPEN_FOLDER,
-                    parameters={"target": target_str},
+                    parameters={"target": f_target},
                     risk_level=RiskLevel.LOW,
                     requires_confirmation=False,
                     raw_input=raw,
@@ -260,7 +269,7 @@ class ActionParser:
 
             # Exclude non-executable generic words
             if target_str.lower() not in {
-                "the", "a", "my", "this", "deep learning", "cnn", "dbms",
+                "the", "a", "an", "my", "this", "deep learning", "cnn", "dbms",
                 "file", "folder", "url", "question", "problem", "solution"
             }:
                 return StructuredAction(

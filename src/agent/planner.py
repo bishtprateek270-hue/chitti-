@@ -139,6 +139,8 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
+
+
         # 6. VS CODE + PROJECT OPENING COMMANDS
         m_vscode_proj = re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\b", clean) or \
                         re.search(r"(?i)\bopen\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\s+in\s+(?:vs\s*code|vscode)\b", clean) or \
@@ -1007,19 +1009,25 @@ class ComputerAgentLoop:
 
 
             elif act == "OPEN_FOLDER":
-                target = params["target"]
-                p = self.fs.resolve_path(target)
-                if not p.exists():
-                    user_home = Path.home()
-                    cand = user_home / target
-                    if cand.exists():
-                        p = cand
-                    else:
-                        p.mkdir(parents=True, exist_ok=True)
+                target = params.get("target", "Desktop")
+                from src.agent.registry import FolderDiscovery
+                p = FolderDiscovery.resolve_folder_path(target)
+                if not p or not p.exists():
+                    p = self.fs.resolve_path(target)
+                    if not p.exists():
+                        user_home = Path.home()
+                        cand = user_home / target
+                        if cand.exists():
+                            p = cand
+                        else:
+                            p = user_home
                 try:
-                    os.startfile(str(p))
+                    if platform.system() == "Windows":
+                        os.startfile(str(p))
+                    else:
+                        subprocess.Popen(["xdg-open", str(p)])
                 except Exception as e:
-                    log_debug(f"os.startfile notice: {e}")
+                    log_debug(f"Folder launch notice: {e}")
                 return True, f"Opened folder {p}", f"Folder {p} opened"
 
             elif act == "SEARCH_WEB":

@@ -459,23 +459,30 @@ class ActionIntentAnalyzer:
         # 8. DYNAMIC RESOURCE & APPLICATION OPENING ("open X", "launch X", "start X", "X kholo", "X chalao")
         # -------------------------------------------------------------
         # English verb-first pattern: "open X", "launch X", "start X", "run X"
-        m_open_en = re.search(r"(?i)^(?:open|launch|start|run|visit|go\s+to)\s+(?:the\s+|app\s+|my\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
+        m_open_en = re.search(r"(?i)^(?:open|launch|start|run|visit|go\s+to|show)\s+(?:the\s+|app\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
         # Hindi/Hinglish target-first pattern: "X kholo", "X chalao", "X open karo"
-        m_open_hi = re.search(r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|खोलो|चलाओ)(?:\s+|$|[.,!?])", clean)
+        m_open_hi = re.search(r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|dikhao|खोलो|चलाओ|दिखाओ)\s*[.!?]?$", clean)
 
         m_open = m_open_en or m_open_hi
         if m_open:
             raw_target = m_open.group(1).strip().rstrip(".!? \t\n")
 
+            # Reject compound instructions that belong to multi-step planning or project generation
+            if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type|implement|banao|likho)\b", raw_target):
+                raw_target = ""
+
+        if m_open and raw_target:
             # Check if this target is explicitly a folder / directory
             is_explicit_folder = (
                 "folder" in clean_lower
                 or "directory" in clean_lower
-                or raw_target.lower() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home"]
+                or raw_target.lower().strip() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home", "explorer", "file explorer"]
                 or raw_target.startswith(("/", "\\", "C:", "./", "../"))
             )
             if is_explicit_folder:
-                f_name = raw_target.replace("folder", "").replace("directory", "").strip() or "Folder"
+                f_name = re.sub(r"(?i)\b(?:folder|directory|a|an|the|my|this|some)\b", "", raw_target).strip()
+                if not f_name or f_name.lower() in ("folder", "directory", "dir", "a", "the", "my"):
+                    f_name = "Desktop"
                 return ActionIntent(
                     intent=ActionIntentType.OPEN_FOLDER,
                     goal=f"Open folder '{f_name}'",

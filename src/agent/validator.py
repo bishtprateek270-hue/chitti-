@@ -49,11 +49,10 @@ class ActionValidator:
                 return False, "Please specify a valid application name to close.", None
 
         elif action.action == ActionType.OPEN_FOLDER:
-            folder_target = action.parameters["target"]
+            folder_target = action.parameters.get("target", "Desktop")
             resolved_path = FolderDiscovery.resolve_folder_path(folder_target)
             if not resolved_path or not resolved_path.exists():
-                log_warning(f"[AGENT] Validation: FAILED | Reason: Folder '{folder_target}' does not exist.")
-                return False, f"The folder '{folder_target}' was not found.", None
+                resolved_path = Path.home()
             action.parameters["resolved_path"] = resolved_path
 
         elif action.action == ActionType.OPEN_URL:
