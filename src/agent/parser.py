@@ -1,13 +1,14 @@
 """
 Chitti Laptop Agent Command Parser.
 Parses natural-language commands (English, Hindi, Hinglish) into deterministic StructuredAction objects.
+Dynamically handles open/close/create/delete/system operations without hardcoded application lists.
 """
 
 import re
 from typing import Optional
 
 from src.agent.actions import ActionType, RiskLevel, StructuredAction
-from src.agent.registry import DEFAULT_URL_MAP
+from src.agent.registry import AppDiscovery, FolderDiscovery, ResourceDiscovery, DEFAULT_URL_MAP
 from src.utils.logging import log_debug
 from src.utils.text import normalize_typos
 
@@ -21,7 +22,7 @@ class ActionParser:
         lower = raw.lower()
 
         # Clean Chitti invocation prefix if present & trailing fillers
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
         clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
@@ -151,8 +152,22 @@ class ActionParser:
                     raw_input=raw,
                 )
 
-        # 7. OPEN URL COMMANDS
-        # Check standard URL names (GitHub, Google, YouTube) or explicit http/https
+        # 7. CLOSE APPLICATION COMMANDS
+        m_close_app = re.search(r"(?i)^(?:close|exit|terminate|kill|shut\s+down)\s+([A-Za-z0-9_\-\s]+)", clean) or \
+                      re.search(r"(?i)^([A-Za-z0-9_\-\s]+?)\s+(?:band\s+karo|band\s+kar\s+do|close\s+karo|बंद\s+करो)(?:\s+|$|[.,!?])", clean)
+        if m_close_app:
+            app_target = m_close_app.group(1).strip().rstrip(".!? \t\n")
+            if app_target.lower() not in {"this", "window", "folder", "chitti"}:
+                return StructuredAction(
+                    action=ActionType.CLOSE_APPLICATION,
+                    parameters={"target": app_target},
+                    risk_level=RiskLevel.MEDIUM,
+                    requires_confirmation=False,
+                    raw_input=raw,
+                )
+
+        # 8. OPEN URL / BROWSER DESTINATION COMMANDS
+        # Check explicit http/https or www
         m_url = re.search(r"(?i)^(?:open|launch|visit|go\s+to)\s+(https?://\S+|www\.\S+)", clean)
         if m_url:
             url = m_url.group(1).strip()
@@ -167,7 +182,7 @@ class ActionParser:
             )
 
         for site_name, url in DEFAULT_URL_MAP.items():
-            if re.search(rf"(?i)(?:open\s+{site_name}|^{site_name}\s+(?:kholo|chalao|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
+            if re.search(rf"(?i)(?:^open\s+{site_name}|^{site_name}\s+(?:kholo|chalao|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
                 return StructuredAction(
                     action=ActionType.OPEN_URL,
                     parameters={"url": url, "site_name": site_name.title()},
@@ -176,7 +191,7 @@ class ActionParser:
                     raw_input=raw,
                 )
 
-        # 8. OPEN FOLDER COMMANDS
+        # 9. OPEN FOLDER COMMANDS
         m_folder = re.search(r"(?i)^(?:open\s+(?:the\s+)?([A-Za-z0-9_\-\s]+?)\s+folder|([A-Za-z0-9_\-\s]+?)\s+folder\s+(?:kholo|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean)
         if m_folder:
             target_folder = (m_folder.group(1) or m_folder.group(2)).strip()
@@ -200,54 +215,57 @@ class ActionParser:
                     raw_input=raw,
                 )
 
-        # 9. CLOSE APPLICATION COMMANDS
-        m_close_app = re.search(r"(?i)^(?:close|exit|terminate|kill|shut\s+down)\s+([A-Za-z0-9_\-\s]+)", clean) or \
-                      re.search(r"(?i)^([A-Za-z0-9_\-\s]+?)\s+(?:band\s+karo|band\s+kar\s+do|close\s+karo|बंद\s+करो)(?:\s+|$|[.,!?])", clean)
-        if m_close_app:
-            app_target = m_close_app.group(1).strip().rstrip(".!? \t\n")
-            if app_target.lower() not in {"this", "window", "folder", "chitti"}:
-                return StructuredAction(
-                    action=ActionType.CLOSE_APPLICATION,
-                    parameters={"target": app_target},
-                    risk_level=RiskLevel.MEDIUM,
-                    requires_confirmation=False,
-                    raw_input=raw,
-                )
-
-        # 10. OPEN APPLICATION COMMANDS (Hindi / Hinglish target-first patterns)
-        # e.g. "Chrome kholo", "Chrome ko open karo", "VS Code chala do", "Chrome खोलो"
+        # 10. DYNAMIC OPEN APPLICATION & RESOURCE COMMANDS (Hindi/Hinglish & English)
+        # e.g. "Chrome kholo", "Chrome ko open karo", "Obsidian chala do", "Open Figma", "Launch VLC"
         m_app_hi = re.search(
-            r"(?i)^([A-Za-z0-9_\-\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|खोलो|चलाओ)(?:\s+|$|[.,!?])",
+            r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|खोलो|चलाओ)(?:\s+|$|[.,!?])",
             clean
         )
-        if m_app_hi:
-            app_target = m_app_hi.group(1).strip().rstrip(".!? \t\n")
-            if app_target.lower() not in {"the", "a", "my", "this", "file", "folder", "url"}:
-                app_target = re.sub(r"^(?:the\s+|app\s+)", "", app_target, flags=re.IGNORECASE).strip()
+        m_app_en = re.search(r"(?i)^(?:open|launch|start|run)\s+(?:the\s+|app\s+|my\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
+
+        m_app_match = m_app_hi or m_app_en
+        if m_app_match:
+            target_str = m_app_match.group(1).strip().rstrip(".!? \t\n")
+
+            # Exclude compound phrases containing conjunctions or complex sub-actions
+            if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type)\b", target_str):
+                return None
+
+            # Check if target is a web URL/domain
+            if ResourceDiscovery.is_url(target_str):
+                url_val = ResourceDiscovery.to_url(target_str)
                 return StructuredAction(
-                    action=ActionType.OPEN_APPLICATION,
-                    parameters={"target": app_target},
+                    action=ActionType.OPEN_URL,
+                    parameters={"url": url_val, "site_name": target_str.title()},
                     risk_level=RiskLevel.LOW,
                     requires_confirmation=False,
                     raw_input=raw,
                 )
 
-        # 11. OPEN APPLICATION COMMANDS (English verb-first patterns)
-        # e.g. "Open Chrome", "Launch VS Code", "Start Calculator"
-        m_app_en = re.search(r"(?i)^(?:open|launch|start|run)\s+(?:the\s+|app\s+)?([A-Za-z0-9_\-\s]+)$", clean)
-        if m_app_en:
-            app_target = m_app_en.group(1).strip().rstrip(".!? \t\n")
-            # Exclude compound phrases containing conjunctions or action verbs
-            if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type)\b", app_target):
-                return None
-            # Exclude non-app words (e.g. general questions or verbs)
-            if app_target.lower() not in {
+            # Check if target is explicitly a folder
+            is_explicit_folder = (
+                "folder" in clean_lower
+                or "directory" in clean_lower
+                or target_str.lower() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home"]
+                or target_str.startswith(("/", "\\", "C:", "./", "../"))
+            )
+            if is_explicit_folder:
+                return StructuredAction(
+                    action=ActionType.OPEN_FOLDER,
+                    parameters={"target": target_str},
+                    risk_level=RiskLevel.LOW,
+                    requires_confirmation=False,
+                    raw_input=raw,
+                )
+
+            # Exclude non-executable generic words
+            if target_str.lower() not in {
                 "the", "a", "my", "this", "deep learning", "cnn", "dbms", "leetcode",
                 "file", "folder", "url", "question", "problem", "solution"
             }:
                 return StructuredAction(
                     action=ActionType.OPEN_APPLICATION,
-                    parameters={"target": app_target},
+                    parameters={"target": target_str},
                     risk_level=RiskLevel.LOW,
                     requires_confirmation=False,
                     raw_input=raw,

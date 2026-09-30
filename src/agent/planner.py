@@ -101,13 +101,19 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 3. YOUTUBE / SONG PLAYBACK COMMANDS
-        m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+youtube\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+youtube|youtube\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
-        if m_yt or (("youtube" in clean_lower or "yt" in clean_lower) and ("play" in clean_lower or "search" in clean_lower or "song" in clean_lower or "gaana" in clean_lower)):
-            if m_yt:
-                song_query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or "").strip()
-            else:
-                song_query = clean
+        # 3. BROWSER WEB SEARCH COMMANDS
+        if intent.intent == ActionIntentType.SEARCH_WEB:
+            query = intent.parameters.get("query") or intent.target or clean
+            state.steps = [
+                AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
+                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 4. YOUTUBE / SONG PLAYBACK COMMANDS
+        if intent.intent == ActionIntentType.PLAY_MEDIA:
+            song_query = intent.parameters.get("query") or intent.target or clean
             artist = BrowserController.normalize_artist_query(song_query)
             if not artist or artist == "Top Songs":
                 artist = "Sonu Nigam" if "sonu" in clean_lower else ("Shreya Ghoshal" if "shreya" in clean_lower else "Trending Music")
@@ -120,7 +126,18 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 4. VS CODE + PROJECT OPENING COMMANDS
+        # 5. DIRECT WEB URL / SERVICE NAVIGATION
+        if intent.intent == ActionIntentType.OPEN_URL and intent.destination:
+            dest_url = intent.destination
+            site_title = intent.target or intent.application or "Web Page"
+            state.steps = [
+                AgentStep(step_id=1, description=f"Open {site_title} ({dest_url}) in browser", action_type="OPEN_URL", parameters={"url": dest_url, "site_name": site_title}),
+                AgentStep(step_id=2, description=f"Verify {site_title} loaded in browser", action_type="VERIFY_PAGE_LOADED", parameters={"url": dest_url}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 6. VS CODE + PROJECT OPENING COMMANDS
         m_vscode_proj = re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\b", clean) or \
                         re.search(r"(?i)\bopen\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\s+in\s+(?:vs\s*code|vscode)\b", clean) or \
                         re.search(r"(?i)\bmera\s+([A-Za-z0-9_\-]+)\s+project\s+vs\s*code\s+me(?:in)?\s+kholo\b", clean)
@@ -135,7 +152,7 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 5. Multi-step: "Open Notepad and type <text>"
+        # 7. Multi-step: "Open Notepad and type <text>"
         m_notepad_type = re.search(r"(?i)\bopen\s+notepad\s+(?:and|aur)\s+type\s+(.*)", clean) or \
                          re.search(r"(?i)\bnotepad\s+(?:kholo|open\s+karo)\s+aur\s+(?:type\s+karo\s+|likho\s+)(.*)", clean)
         if m_notepad_type:
@@ -148,7 +165,7 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 6. Multi-step: "Create a folder called <name> on Desktop"
+        # 8. Multi-step: "Create a folder called <name> on Desktop"
         m_desktop_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean) or \
                             re.search(r"(?i)\bdesktop\s+(?:pe|par|me|mein)\s+(?:ek\s+)?([A-Za-z0-9_\-]+)\s+(?:naam\s+ka\s+)?folder\s+banao\b", clean)
         if m_desktop_folder:
@@ -164,50 +181,7 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        # 6. Multi-step: "Open Chrome and search for <query>"
-        m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
-                   re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser))\b", clean)
-        if m_search:
-            query = m_search.group(1).strip()
-            state.steps = [
-                AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
-                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}, depends_on=[1]),
-            ]
-            state.status = TaskStatus.PLAN_READY
-            return state
-
-        # 7. Multi-step: Direct Web Navigation "open <service/site>" (e.g. open youtube, open whatsapp, open reddit, open github)
-        m_web_nav = re.search(r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(whatsapp\s+web|whatsapp|youtube|yt|reddit|github|twitter|x\.com|wikipedia|amazon|gmail|chatgpt|netflix|spotify|google)\b", clean) or \
-                    re.search(r"(?i)\b(whatsapp\s+web|whatsapp|youtube|yt|reddit|github|twitter|x\.com|wikipedia|amazon|gmail|chatgpt|netflix|spotify|google)\s+(?:kholo|open|chalao|visit)\b", clean)
-        if m_web_nav:
-            service = m_web_nav.group(1).lower()
-            if service in ("yt", "youtube"):
-                service = "youtube"
-            url_map = {
-                "whatsapp web": "https://web.whatsapp.com",
-                "whatsapp": "https://web.whatsapp.com",
-                "youtube": "https://www.youtube.com",
-                "reddit": "https://reddit.com",
-                "github": "https://github.com",
-                "twitter": "https://twitter.com",
-                "x.com": "https://x.com",
-                "wikipedia": "https://wikipedia.org",
-                "amazon": "https://amazon.com",
-                "gmail": "https://mail.google.com",
-                "chatgpt": "https://chatgpt.com",
-                "netflix": "https://netflix.com",
-                "spotify": "https://open.spotify.com",
-                "google": "https://google.com",
-            }
-            target_url = url_map.get(service, f"https://{service}.com")
-            state.steps = [
-                AgentStep(step_id=1, description=f"Open {service.title()} ({target_url}) in browser", action_type="OPEN_URL", parameters={"url": target_url}),
-                AgentStep(step_id=2, description=f"Verify {service.title()} loaded in browser", action_type="VERIFY_PAGE_LOADED", parameters={"url": target_url}, depends_on=[1]),
-            ]
-            state.status = TaskStatus.PLAN_READY
-            return state
-
-        # 6. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
+        # 9. Multi-step: "Run the project and tell me if there are errors" / "Open the terminal and run the tests"
         m_tests = re.search(r"(?i)\b(?:run\s+(?:the\s+)?tests?|run\s+pytest|run\s+(?:the\s+)?project|test\s+chalao|is\s+program\s+ko\s+run\s+karo)\b", clean)
         if m_tests:
             state.steps = [
@@ -689,18 +663,30 @@ class ComputerAgentLoop:
             act_res = ActionResult(action=ActionType.OPEN_APPLICATION, success=success, message=message)
             v_outcome = self.verifier.verify_step(step, state, action_result=act_res)
 
-            # Print Structured Debug Log
+            # Print Structured Debug Log & Section 28 Diagnostics
             tool_name = getattr(step, "_last_tool_name", step.action_type.lower())
             tool_args = getattr(step, "_last_tool_args", step.parameters)
-            log_chitti(f"[STEP {step.step_id}] Action: {step.action_type}")
-            log_chitti(f"[EXECUTOR] Tool: {tool_name}")
-            log_chitti(f"[ARGS] {tool_args}")
+            step_target = step.parameters.get("target") or step.parameters.get("application") or step.parameters.get("query") or step.parameters.get("path") or "System"
+
+            log_chitti(f"[INTENT] {step.action_type}")
+            log_chitti(f"[TARGET] {step_target}")
+            log_chitti(f"[GOAL] {step.description}")
+            log_chitti(f"[AVAILABLE TOOLS] {list(self.tools.tools.keys())[:8]}...")
+            log_chitti(f"[SELECTED TOOL] {tool_name}")
+            log_chitti(f"[TOOL ARGUMENTS] {tool_args}")
             log_chitti(f"[TOOL RESULT] success={'true' if success else 'false'}")
             if observation:
                 log_chitti(f"[OBSERVATION] {observation}")
             if v_outcome.evidence:
                 log_chitti(f"[VERIFICATION] {v_outcome.evidence}")
-            log_chitti(f"[STEP RESULT] {'SUCCESS' if (success and v_outcome.verified) else 'FAILED'}")
+            step_status = "SUCCESS" if (success and v_outcome.verified) else "FAILED"
+            log_chitti(f"[FINAL STATUS] {step_status}")
+
+            # Backward-compatible step markers
+            log_chitti(f"[STEP {step.step_id}] Action: {step.action_type}")
+            log_chitti(f"[EXECUTOR] Tool: {tool_name}")
+            log_chitti(f"[ARGS] {tool_args}")
+            log_chitti(f"[STEP RESULT] {step_status}")
 
             if not success or not v_outcome.verified:
                 err_msg = v_outcome.evidence if not v_outcome.verified else message

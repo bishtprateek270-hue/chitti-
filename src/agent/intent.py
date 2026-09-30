@@ -1,7 +1,7 @@
 """
-Chitti Action Intent & User Goal Extraction Engine (Phase 5 & 6).
-Analyzes natural language requests to extract structured user goals, channels,
-targets, recipients, message content, preconditions, and safety requirements.
+Chitti Action Intent & User Goal Extraction Engine.
+Separates User Intent from Target dynamically without hardcoded application/website lists.
+Analyzes natural language requests into structured generic action models.
 """
 
 import re
@@ -9,8 +9,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from src.agent.registry import AppDiscovery, FolderDiscovery, ResourceDiscovery, DEFAULT_URL_MAP
 from src.utils.logging import log_chitti, log_debug, log_info
-from src.utils.text import clean_contact_query, strip_emojis
+from src.utils.text import clean_contact_query, normalize_typos, strip_emojis
 
 
 class ActionIntentType(str, Enum):
@@ -28,6 +29,7 @@ class ActionIntentType(str, Enum):
     OPEN_APPLICATION = "OPEN_APPLICATION"
     CLOSE_APPLICATION = "CLOSE_APPLICATION"
     TYPE_TEXT = "TYPE_TEXT"
+    CONTROL_APPLICATION = "CONTROL_APPLICATION"
 
     # Filesystem Actions
     CREATE_FILE = "CREATE_FILE"
@@ -35,6 +37,7 @@ class ActionIntentType(str, Enum):
     DELETE_FILE = "DELETE_FILE"
     DELETE_FOLDER = "DELETE_FOLDER"
     OPEN_FOLDER = "OPEN_FOLDER"
+    OPEN_FILE = "OPEN_FILE"
 
     # Project & Coding Actions (Phase 6)
     CREATE_PROJECT = "CREATE_PROJECT"
@@ -48,32 +51,35 @@ class ActionIntentType(str, Enum):
     SET_VOLUME = "SET_VOLUME"
     GET_SYSTEM_INFO = "GET_SYSTEM_INFO"
 
-    # Fallback
+    # Fallback / Informational
     CONVERSATIONAL = "CONVERSATIONAL"
     UNKNOWN = "UNKNOWN"
 
 
 @dataclass
 class ActionIntent:
+    """Generic Action Model representing a computer-use task independently of specific apps."""
     intent: ActionIntentType
-    goal: str
-    channel: Optional[str] = None
-    application: Optional[str] = None
+    goal: str = ""
     target: Optional[str] = None
+    destination: Optional[str] = None
     recipient: Optional[str] = None
     content: Optional[str] = None
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    execution_required: bool = True
+    verification_required: bool = True
+    channel: Optional[str] = None
+    application: Optional[str] = None
     subject: Optional[str] = None
     attachments: List[str] = field(default_factory=list)
-    parameters: Dict[str, Any] = field(default_factory=dict)
     preconditions: List[str] = field(default_factory=list)
     requires_browser: bool = False
     requires_authentication: bool = False
     requires_confirmation: bool = False
-    verification_required: bool = True
 
     def log_intent(self):
         """Emits structured observable logs for this action intent."""
-        log_chitti(f"[CHITTI] [GOAL]")
+        log_chitti("[CHITTI] [GOAL]")
         log_chitti(f"[CHITTI] Intent: {self.intent.value}")
         if self.application:
             log_chitti(f"[CHITTI] Application: {self.application}")
@@ -85,7 +91,7 @@ class ActionIntent:
             log_chitti(f"[CHITTI] Content: {self.content}")
         log_chitti(f"[CHITTI] Final Goal: {self.goal}")
 
-        # Also emit standard analyzer tags
+        # Standard analyzer tags for subsystem compatibility
         log_chitti(f"[CHITTI] [ACTION ANALYZER] Intent: {self.intent.value}")
         if self.application:
             log_chitti(f"[CHITTI] [ACTION ANALYZER] Application: {self.application}")
@@ -100,14 +106,13 @@ class ActionIntent:
 
 class ActionIntentAnalyzer:
     """
-    Extracts structured user goals and entities from arbitrary user requests.
+    Extracts structured user goals and entities dynamically from arbitrary requests.
     Decoupled from application-specific hardcoding.
     """
 
     @classmethod
     def _normalize_text(cls, text: str) -> str:
         """Corrects typos in common action verbs and application names."""
-        from src.utils.text import normalize_typos
         return normalize_typos(text)
 
     @classmethod
@@ -120,7 +125,7 @@ class ActionIntentAnalyzer:
         lower = normalized.lower()
 
         # Clean conversational prefixes and trailing fillers
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", normalized, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
         clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
@@ -129,7 +134,7 @@ class ActionIntentAnalyzer:
         # -------------------------------------------------------------
         email_addr_match = re.search(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", clean)
 
-        # 1A. Explicit Email Drafting ("write an email", "draft an email", "compose an email for me") WITHOUT actual send command
+        # 1A. Explicit Email Drafting ("write an email", "draft an email") WITHOUT actual send command
         is_draft_only = bool(re.search(r"(?i)\b(?:write|draft|generate|compose|suggest)\s+(?:an?\s+)?email\b", clean)) and not email_addr_match and not re.search(r"(?i)\b(?:send|shoot|dispatch|mail\s+this|email\s+this)\b", clean)
         if is_draft_only:
             m_target = re.search(r"(?i)\b(?:to|for)\s+([a-zA-Z0-9_\-\s]+?)(?:\s+asking|\s+about|\s+regarding|\s+with|\s*$)", clean)
@@ -139,13 +144,12 @@ class ActionIntentAnalyzer:
                 goal=f"Draft an email to {target_name}",
                 channel="Email",
                 target=target_name,
-                requires_browser=False,
-                requires_authentication=False,
-                requires_confirmation=False,
+                destination=target_name,
+                execution_required=True,
                 verification_required=False,
             )
 
-        # 1B. Real Actionable Email Sending ("send email to...", "email <msg> to <recipient>...", "mail this to...")
+        # 1B. Actionable Email Sending ("send email to...", "email <msg> to <recipient>...", "mail this to...")
         if email_addr_match or bool(re.search(r"(?i)\b(?:send\s+(?:an?\s+)?email|email\s+(?:this|the|a)?|mail\s+(?:this|the|a)?)\b", clean)):
             recipient = email_addr_match.group(1) if email_addr_match else ""
             if not recipient:
@@ -167,7 +171,6 @@ class ActionIntentAnalyzer:
             if not content or content.lower() in ("an email", "email", "a message", "message", "this"):
                 content = "Hello, I am reaching out to you."
 
-            # Clean trailing instructions like 'from my side'
             content = re.sub(r"(?i)\s+from\s+my\s+side$", "", content).strip()
 
             subject = "Message from Chitti"
@@ -182,9 +185,11 @@ class ActionIntentAnalyzer:
                 application="Gmail / Webmail",
                 recipient=recipient,
                 target=recipient,
+                destination=recipient,
                 content=content,
                 subject=subject,
                 parameters={"recipient": recipient, "subject": subject, "content": content},
+                execution_required=True,
                 requires_browser=True,
                 requires_authentication=True,
                 requires_confirmation=True,
@@ -192,10 +197,10 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 2. MESSAGING & CHAT APPS (WhatsApp, Telegram, Slack, Discord)
+        # 2. MESSAGING & CHAT APPS
         # -------------------------------------------------------------
         is_messaging = bool(
-            re.search(r"(?i)\b(?:whatsapp|watsapp|telegram|slack|discord)\b", clean) or
+            re.search(r"(?i)\b(?:whatsapp|watsapp|telegram|slack|discord|teams|signal)\b", clean) or
             re.search(r"(?i)\b(?:message|msg|send\s+message)\s+.*to\s+.*", clean) or
             re.search(r"(?i)\b.*ko\s+.*(?:message|bhejo|msg)\b", clean)
         )
@@ -207,10 +212,12 @@ class ActionIntentAnalyzer:
                 channel, app, base_url = "Slack", "Slack", "https://app.slack.com"
             elif "discord" in lower:
                 channel, app, base_url = "Discord", "Discord", "https://discord.com/app"
+            elif "teams" in lower:
+                channel, app, base_url = "Teams", "Microsoft Teams", "https://teams.microsoft.com"
             else:
                 channel, app, base_url = "WhatsApp", "WhatsApp Web", "https://web.whatsapp.com"
 
-            # Check if this is merely opening the service or sending a real message
+            # Check if this is sending a real message or merely opening the app
             m_msg_to = re.search(r"(?i)\b(?:open\s+.*(?:and|aur)\s+)?(?:message|msg|send(?:\s+a)?\s+message|send)\s+(?P<msg>[\"'][^\"']+[\"']|[^\s\"']+(?:\s+[^\s\"']+)?)\s+to\s+(?P<contact>[^\n\r,;:.]+)", clean)
             m_contact_ko = re.search(r"(?i)(?:(?:whatsapp|watsapp)\s+(?:par|pe)?\s*)?(?P<contact>[^\n\r,;:.]+?)\s+ko\s+(?P<msg>[\"']?[^\"']+?[\"']?)\s*(?:message\s+karo|bhejo|send\s+karo|message\s+kar|msg\s+bhejo)", clean)
             m_send_contact_msg = re.search(r"(?i)\b(?:send|message|msg)\s+(?:to\s+)?(?P<contact>[^\n\r,;:'\"]+?)\s*(?:saying|that|message|msg|:)\s*(?P<msg>[\"']?[^\"']+?[\"']?)$", clean) or \
@@ -236,22 +243,26 @@ class ActionIntentAnalyzer:
                     channel=channel,
                     application=app,
                     target=contact_name,
+                    recipient=contact_name,
+                    destination=contact_name,
                     content=msg_text,
                     parameters={"url": base_url, "contact": contact_name, "search_contact": search_query, "text": msg_text},
+                    execution_required=True,
                     requires_browser=True,
                     requires_authentication=True,
                     requires_confirmation=False,
                     verification_required=True,
                 )
             else:
-                # Merely opening the messaging service
                 return ActionIntent(
                     intent=ActionIntentType.OPEN_URL,
                     goal=f"Open {app} in browser",
                     channel=channel,
                     application=app,
                     target=app,
+                    destination=base_url,
                     parameters={"url": base_url},
+                    execution_required=True,
                     requires_browser=True,
                     requires_authentication=True,
                     verification_required=True,
@@ -278,65 +289,35 @@ class ActionIntentAnalyzer:
                 channel="Browser",
                 application="YouTube",
                 target=query,
+                destination="YouTube",
                 content=query,
                 parameters={"query": query},
+                execution_required=True,
                 requires_browser=True,
                 verification_required=True,
             )
 
         # -------------------------------------------------------------
-        # 4. BROWSER WEB SEARCH & URL NAVIGATION
+        # 4. BROWSER WEB SEARCH
         # -------------------------------------------------------------
         m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
                    re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser|web|bing))\b", clean) or \
                    re.search(r"(?i)\b(?:google|search)\s+(?:for\s+)?(.*)\b", clean)
-        if m_search and not any(w in lower for w in ["youtube", "create", "build", "make"]):
+        if m_search and not any(w in lower for w in ["create", "build", "make", "banao", "likho"]):
             search_query = m_search.group(1).strip()
-            return ActionIntent(
-                intent=ActionIntentType.SEARCH_WEB,
-                goal=f"Search web for '{search_query}'",
-                channel="Browser",
-                application="Chrome",
-                target=search_query,
-                content=search_query,
-                parameters={"query": search_query},
-                requires_browser=True,
-                verification_required=True,
-            )
-
-        # Direct Web URL or famous site navigation (e.g. open youtube, open reddit, open github)
-        m_site = re.search(r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?|youtube|yt|reddit|github|twitter|x\.com|wikipedia|amazon|netflix|spotify|chatgpt|gmail|google)\b", clean) or \
-                 re.search(r"(?i)\b(?:youtube|yt|reddit|github|twitter|wikipedia|amazon|netflix|spotify|chatgpt|gmail)\s+(?:kholo|open|chalao|visit)\b", clean)
-        if m_site:
-            site_raw = m_site.group(1).lower().strip()
-            if site_raw in ("yt", "youtube"):
-                site_raw = "youtube"
-            url_map = {
-                "youtube": "https://youtube.com",
-                "reddit": "https://reddit.com",
-                "github": "https://github.com",
-                "twitter": "https://twitter.com",
-                "x.com": "https://x.com",
-                "wikipedia": "https://wikipedia.org",
-                "amazon": "https://amazon.com",
-                "netflix": "https://netflix.com",
-                "spotify": "https://open.spotify.com",
-                "chatgpt": "https://chatgpt.com",
-                "gmail": "https://mail.google.com",
-                "google": "https://google.com",
-            }
-            target_url = url_map.get(site_raw, site_raw if site_raw.startswith("http") else f"https://{site_raw}")
-            site_name = site_raw.title()
-            return ActionIntent(
-                intent=ActionIntentType.OPEN_URL,
-                goal=f"Open {site_name} in browser",
-                channel="Browser",
-                application="Browser",
-                target=site_name,
-                parameters={"url": target_url, "site_name": site_name},
-                requires_browser=True,
-                verification_required=True,
-            )
+            if search_query:
+                return ActionIntent(
+                    intent=ActionIntentType.SEARCH_WEB,
+                    goal=f"Search web for '{search_query}'",
+                    channel="Browser",
+                    application="Browser",
+                    target=search_query,
+                    content=search_query,
+                    parameters={"query": search_query},
+                    execution_required=True,
+                    requires_browser=True,
+                    verification_required=True,
+                )
 
         # -------------------------------------------------------------
         # 5. PROJECT CREATION / CODING ACTIONS (Phase 6)
@@ -354,77 +335,46 @@ class ActionIntentAnalyzer:
                 channel="Project Agent",
                 application="Visual Studio Code",
                 target="Project",
+                execution_required=True,
                 verification_required=True,
             )
 
         # -------------------------------------------------------------
-        # 6. DESKTOP APPLICATION LAUNCH & CONTROLS
+        # 6. SYSTEM CONTROLS (Screenshot, Volume, System Info)
         # -------------------------------------------------------------
-        m_notepad_type = re.search(r"(?i)\bopen\s+notepad\s+(?:and|aur)\s+type\s+(.*)", clean) or \
-                         re.search(r"(?i)\bnotepad\s+(?:kholo|open\s+karo)\s+aur\s+(?:type\s+karo\s+|likho\s+)(.*)", clean)
-        if m_notepad_type:
-            text_val = m_notepad_type.group(1).strip()
-            return ActionIntent(
-                intent=ActionIntentType.TYPE_TEXT,
-                goal=f"Open Notepad and type '{text_val}'",
-                channel="Desktop",
-                application="Notepad",
-                target="Notepad",
-                content=text_val,
-                parameters={"target": "Notepad", "text": text_val},
-                verification_required=True,
-            )
-
-        m_app = re.search(r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:the\s+|app\s+)?(vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell|cmd|explorer|paint|mspaint|task\s*manager|taskmgr|spotify|word|excel|powerpoint)\b", clean)
-        if m_app:
-            app_raw = m_app.group(1).lower().strip()
-            app_map = {
-                "vs code": "Visual Studio Code",
-                "vscode": "Visual Studio Code",
-                "notepad": "Notepad",
-                "chrome": "Google Chrome",
-                "browser": "Browser",
-                "edge": "Microsoft Edge",
-                "calculator": "Calculator",
-                "terminal": "Terminal",
-                "powershell": "PowerShell",
-                "cmd": "Command Prompt",
-                "explorer": "File Explorer",
-                "paint": "Paint",
-                "mspaint": "Paint",
-                "task manager": "Task Manager",
-                "taskmgr": "Task Manager",
-                "spotify": "Spotify",
-                "word": "Microsoft Word",
-                "excel": "Microsoft Excel",
-                "powerpoint": "Microsoft PowerPoint",
-            }
-            app_name = app_map.get(app_raw, app_raw.title())
-            return ActionIntent(
-                intent=ActionIntentType.OPEN_APPLICATION,
-                goal=f"Open {app_name}",
-                channel="Desktop",
-                application=app_name,
-                target=app_name,
-                parameters={"application": app_name},
-                verification_required=True,
-            )
-
-        # -------------------------------------------------------------
-        # 7. SYSTEM CONTROLS (Screenshot, Volume)
-        # -------------------------------------------------------------
-        if bool(re.search(r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot|screenshot\s+(?:le\s+lo|kheecho)\b", clean)):
+        if bool(re.search(r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot|screenshot\s+(?:le\s+lo|kheecho|lo)\b", clean)):
             return ActionIntent(
                 intent=ActionIntentType.TAKE_SCREENSHOT,
                 goal="Capture display screenshot",
                 channel="System",
                 application="Screen Capture",
                 target="Screen",
+                execution_required=True,
                 verification_required=True,
             )
 
+        if bool(re.search(r"(?i)\b(?:increase|decrease|raise|lower|turn\s+up|turn\s+down|mute|unmute)\s+volume|volume\s+(?:kam|badhao|mute)\b", clean)):
+            return ActionIntent(
+                intent=ActionIntentType.SET_VOLUME,
+                goal="Adjust system audio volume",
+                channel="System",
+                target="Volume",
+                execution_required=True,
+                verification_required=False,
+            )
+
+        if bool(re.search(r"(?i)\b(?:how\s+much\s+(?:ram|storage|disk)|what\s+is\s+my\s+(?:ram|gpu|cpu|os|specs)|system\s+info)\b", clean)):
+            return ActionIntent(
+                intent=ActionIntentType.GET_SYSTEM_INFO,
+                goal="Retrieve system specifications",
+                channel="System",
+                target="Specs",
+                execution_required=True,
+                verification_required=False,
+            )
+
         # -------------------------------------------------------------
-        # 8. FILESYSTEM OPERATIONS
+        # 7. FILESYSTEM OPERATIONS (Create, Delete, Open Folders/Files)
         # -------------------------------------------------------------
         m_desk_folder = re.search(r"(?i)\bcreate\s+(?:a\s+)?folder\s+(?:called|named)?\s*([A-Za-z0-9_\-]+)\s+(?:on|in)\s+(?:my\s+)?desktop\b", clean)
         if m_desk_folder:
@@ -434,18 +384,152 @@ class ActionIntentAnalyzer:
                 goal=f"Create folder '{f_name}' on Desktop",
                 channel="Filesystem",
                 target=f_name,
+                destination="Desktop",
                 parameters={"name": f_name, "location": "Desktop"},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        m_create_file = re.search(r"(?i)\b(?:create|make)\s+(?:a\s+)?(?:text\s+)?file\s+([A-Za-z0-9_\-\.]+)(?:\s+with\s+(?:content|text)\s+(.*))?", clean)
+        if m_create_file:
+            fname = m_create_file.group(1).strip()
+            fcont = m_create_file.group(2).strip() if m_create_file.group(2) else ""
+            return ActionIntent(
+                intent=ActionIntentType.CREATE_FILE,
+                goal=f"Create file '{fname}'",
+                channel="Filesystem",
+                target=fname,
+                content=fcont,
+                parameters={"name": fname, "content": fcont},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        m_del_folder = re.search(r"(?i)\b(?:delete|remove)\s+(?:the\s+)?folder\s+([A-Za-z0-9_\-\.\s]+)", clean)
+        if m_del_folder:
+            f_target = m_del_folder.group(1).strip()
+            return ActionIntent(
+                intent=ActionIntentType.DELETE_FOLDER,
+                goal=f"Delete folder '{f_target}'",
+                channel="Filesystem",
+                target=f_target,
+                parameters={"target": f_target},
+                execution_required=True,
+                requires_confirmation=True,
+                verification_required=True,
+            )
+
+        m_del_file = re.search(r"(?i)\b(?:delete|remove)\s+(?:the\s+)?file\s+([A-Za-z0-9_\-\.\s]+)", clean)
+        if m_del_file:
+            f_target = m_del_file.group(1).strip()
+            return ActionIntent(
+                intent=ActionIntentType.DELETE_FILE,
+                goal=f"Delete file '{f_target}'",
+                channel="Filesystem",
+                target=f_target,
+                parameters={"target": f_target},
+                execution_required=True,
+                requires_confirmation=True,
                 verification_required=True,
             )
 
         # -------------------------------------------------------------
-        # 9. FALLBACK
+        # 8. DYNAMIC RESOURCE & APPLICATION OPENING ("open X", "launch X", "start X", "X kholo", "X chalao")
+        # -------------------------------------------------------------
+        # English verb-first pattern: "open X", "launch X", "start X", "run X"
+        m_open_en = re.search(r"(?i)^(?:open|launch|start|run|visit|go\s+to)\s+(?:the\s+|app\s+|my\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
+        # Hindi/Hinglish target-first pattern: "X kholo", "X chalao", "X open karo"
+        m_open_hi = re.search(r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|खोलो|चलाओ)(?:\s+|$|[.,!?])", clean)
+
+        m_open = m_open_en or m_open_hi
+        if m_open:
+            raw_target = m_open.group(1).strip().rstrip(".!? \t\n")
+
+            # Check if this target is explicitly a folder / directory
+            is_explicit_folder = (
+                "folder" in clean_lower
+                or "directory" in clean_lower
+                or raw_target.lower() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home"]
+                or raw_target.startswith(("/", "\\", "C:", "./", "../"))
+            )
+            if is_explicit_folder:
+                f_name = raw_target.replace("folder", "").replace("directory", "").strip() or "Folder"
+                return ActionIntent(
+                    intent=ActionIntentType.OPEN_FOLDER,
+                    goal=f"Open folder '{f_name}'",
+                    channel="Filesystem",
+                    target=f_name,
+                    destination=f_name,
+                    parameters={"target": f_name},
+                    execution_required=True,
+                    verification_required=True,
+                )
+
+            # Check if this target is a URL / Website / Web Service
+            if ResourceDiscovery.is_url(raw_target) or "browser" in clean_lower or "website" in clean_lower or "site" in clean_lower or "web" in clean_lower:
+                target_url = ResourceDiscovery.to_url(raw_target)
+                site_name = raw_target.title()
+                return ActionIntent(
+                    intent=ActionIntentType.OPEN_URL,
+                    goal=f"Open {site_name} in browser",
+                    channel="Browser",
+                    application="Browser",
+                    target=site_name,
+                    destination=target_url,
+                    parameters={"url": target_url, "site_name": site_name},
+                    execution_required=True,
+                    requires_browser=True,
+                    verification_required=True,
+                )
+
+            # Default to dynamic application launch
+            app_title = raw_target.title()
+            if raw_target.lower() in ("vs code", "vscode", "visual studio code"):
+                app_title = "Visual Studio Code"
+            elif raw_target.lower() in ("chrome", "google chrome"):
+                app_title = "Google Chrome"
+            elif raw_target.lower() in ("edge", "microsoft edge"):
+                app_title = "Microsoft Edge"
+
+            return ActionIntent(
+                intent=ActionIntentType.OPEN_APPLICATION,
+                goal=f"Open {app_title}",
+                channel="Desktop",
+                application=app_title,
+                target=raw_target,
+                destination=raw_target,
+                parameters={"application": raw_target, "target": raw_target},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        # -------------------------------------------------------------
+        # 9. CLOSE APPLICATION COMMANDS
+        # -------------------------------------------------------------
+        m_close_app = re.search(r"(?i)^(?:close|exit|terminate|kill|shut\s+down)\s+(?:the\s+|app\s+)?([A-Za-z0-9_\-\s]+)", clean) or \
+                      re.search(r"(?i)^([A-Za-z0-9_\-\s]+?)\s+(?:band\s+karo|band\s+kar\s+do|close\s+karo|बंद\s+करो)(?:\s+|$|[.,!?])", clean)
+        if m_close_app:
+            app_target = m_close_app.group(1).strip().rstrip(".!? \t\n")
+            if app_target.lower() not in {"this", "window", "folder", "chitti"}:
+                return ActionIntent(
+                    intent=ActionIntentType.CLOSE_APPLICATION,
+                    goal=f"Close {app_target}",
+                    channel="Desktop",
+                    application=app_target,
+                    target=app_target,
+                    parameters={"target": app_target},
+                    execution_required=True,
+                    verification_required=True,
+                )
+
+        # -------------------------------------------------------------
+        # 10. FALLBACK (Conversational)
         # -------------------------------------------------------------
         return ActionIntent(
             intent=ActionIntentType.CONVERSATIONAL,
             goal=clean,
             channel="Chat",
             target="Conversation",
+            execution_required=False,
             verification_required=False,
         )
-

@@ -105,18 +105,18 @@ class TaskClassifier:
     # 6. Computer Control & Application Patterns
     COMPUTER_CONTROL_PATTERNS = [
         r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send\s+message)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg))\b",
-        r"(?i)\b(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|x\.com|github|wikipedia|amazon|flipkart|netflix|spotify|chatgpt)\b.*(?:kholo|open|chalao|visit|message|send|search|browse)",
-        r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|browser|web)\b",
-        r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell)\b",
-        r"(?i)\b(?:open|launch|kholo|chalao|show)\s+(?:the\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:folder|directory)\b",
-        r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:downloads|documents|desktop|pictures|music|videos)\b",
         r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)(?:\s+in\s+browser)?\b",
         r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot\b",
         r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|youtube\s+pe.*chalao|gaana\s+chalao|search\s+youtube\s+for)\b",
         r"(?i)\b(?:search\s+(?:for\s+)?.*on\s+(?:google|chrome|browser|bing))\b",
-        r"(?i)\b(?:type\s+.*into\s+notepad|open\s+notepad\s+and\s+type)\b",
-        r"(?i)\b(?:create\s+(?:a\s+)?folder\s+.*on\s+desktop|delete\s+(?:folder|file)\s+)\b",
-        r"(?i)\b(?:open\s+(?:the\s+)?folder\s+[a-zA-Z0-9_\-]+\s+and\s+create\s+[a-zA-Z0-9_\-\.]+)\b",
+        r"(?i)\b(?:type\s+.*into\s+[a-zA-Z0-9_\-]+|open\s+[a-zA-Z0-9_\-]+\s+and\s+type)\b",
+        r"(?i)\b(?:create|make|delete|remove|rename|move)\s+(?:folder|directory|file)\b",
+        r"(?i)\b(?:open|launch|kholo|chalao|show)\s+(?:the\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:folder|directory)\b",
+        r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:downloads|documents|desktop|pictures|music|videos)\b",
+        r"(?i)^(?:open|launch|start|run|visit|go\s+to)\s+(?:the\s+|app\s+|my\s+)?([a-zA-Z0-9_\-\.\:\/\s]+)$",
+        r"(?i)^([a-zA-Z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|खोलो|चलाओ)(?:\s+|$|[.,!?])",
+        r"(?i)^(?:close|exit|terminate|kill|shut\s+down)\s+(?:the\s+|app\s+)?([a-zA-Z0-9_\-\s]+)",
+        r"(?i)^([a-zA-Z0-9_\-\s]+?)\s+(?:band\s+karo|band\s+kar\s+do|close\s+karo|बंद\s+करो)(?:\s+|$|[.,!?])",
     ]
 
     @classmethod

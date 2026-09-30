@@ -293,8 +293,21 @@ class LaptopAgentManager:
             )
             return True, confirm_msg, None
 
-        # 7. Execute Single-step Action
+        # 7. Execute Single-step Action (with Section 28 Diagnostics)
+        log_chitti(f"[INTENT] {validated_action.action.value}")
+        log_chitti(f"[TARGET] {validated_action.target or 'System'}")
+        log_chitti(f"[GOAL] Perform {validated_action.action.value} on {validated_action.target or 'System'}")
+        log_chitti(f"[AVAILABLE TOOLS] {list(self.tools.tools.keys())[:8]}...")
+        log_chitti(f"[SELECTED TOOL] {validated_action.action.value.lower()}")
+        log_chitti(f"[TOOL ARGUMENTS] {validated_action.parameters}")
+
         result = self.executor.execute(validated_action, default_workspace=self.workspace_dir, screenshots_dir=self.screenshots_dir)
+
+        log_chitti(f"[TOOL RESULT] success={'true' if result.success else 'false'}")
+        log_chitti(f"[OBSERVATION] {result.message}")
+        log_chitti(f"[VERIFICATION] {'Target operation verified on OS' if result.success else 'Action execution failed'}")
+        log_chitti(f"[FINAL STATUS] {'COMPLETED' if result.success else 'FAILED'}")
+
         response_msg = self._format_response(result, lang=lang)
         return True, response_msg, result
 

@@ -124,14 +124,19 @@ class MasterRouter:
         (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|youtube|yt|browser|web)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:search\s+(?:for\s+)?.*on\s+(?:google|chrome|browser|bing|youtube|web)|open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+.*)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)(?:\s+in\s+browser)?\b", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)\s+(?:kholo|open|chalao|visit|open\s+karo)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|go\s+to\s+youtube\s+and\s+play|youtube\s+(?:pe|par).*chalao|gaana\s+chalao|search\s+youtube\s+for)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:take|capture)\s+(?:a\s+)?screenshot|screenshot\s+(?:le\s+lo|kheecho)\b", MasterRoute.SYSTEM_TASK),
         (r"(?i)\b(?:increase|decrease|mute|unmute)\s+volume|volume\s+(?:kam|badhao|mute)\b", MasterRoute.SYSTEM_TASK),
         (r"(?i)\b(?:create|make|delete|remove|rename|move)\s+(?:folder|directory|file)\b", MasterRoute.FILE_OPERATION),
         (r"(?i)\b(?:open|launch|kholo|chalao|show)\s+(?:the\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:folder|directory)\b", MasterRoute.FILE_OPERATION),
         (r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:downloads|documents|desktop|pictures|music|videos)\b", MasterRoute.FILE_OPERATION),
-        (r"(?i)\b(?:type\s+.*into\s+notepad|open\s+notepad\s+and\s+type)\b", MasterRoute.COMPUTER_TASK),
-        (r"(?i)\b(?:open|launch|kholo|chalao)\s+(?:vs\s*code|vscode|notepad|chrome|browser|edge|calculator|terminal|powershell|explorer|cmd|paint|spotify|word|excel|task\s*manager)\b", MasterRoute.COMPUTER_TASK),
+        # Dynamic Application / Resource Launch & Control Commands (English & Hindi)
+        (r"(?i)\b(?:type\s+.*into\s+[a-zA-Z0-9_\-]+|open\s+[a-zA-Z0-9_\-]+\s+and\s+type)\b", MasterRoute.COMPUTER_TASK),
+        (r"(?i)^(?:open|launch|start|run|visit|go\s+to)\s+(?:the\s+|app\s+|my\s+)?([a-zA-Z0-9_\-\.\:\/\s]+)$", MasterRoute.COMPUTER_TASK),
+        (r"(?i)^([a-zA-Z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|खोलो|चलाओ)(?:\s+|$|[.,!?])", MasterRoute.COMPUTER_TASK),
+        (r"(?i)^(?:close|exit|terminate|kill|shut\s+down)\s+(?:the\s+|app\s+)?([a-zA-Z0-9_\-\s]+)", MasterRoute.COMPUTER_TASK),
+        (r"(?i)^([a-zA-Z0-9_\-\s]+?)\s+(?:band\s+karo|band\s+kar\s+do|close\s+karo|बंद\s+करो)(?:\s+|$|[.,!?])", MasterRoute.COMPUTER_TASK),
         # Agent confirmation responses (e.g. Yes, No, Proceed, Cancel, Haan)
         (r"(?i)^\s*(?:yes|proceed|confirm|sure|do\s+it|yep|yeah|haan|sahi|ha|ha\s+kar\s+do|no|cancel|stop|abort|don'?t|nope|nahi|nahin|mat\s+karo)\s*$", MasterRoute.COMPUTER_TASK),
     ]
