@@ -98,6 +98,23 @@ class TestMessagingEngine(unittest.TestCase):
         self.assertEqual(intent.recipient, "boss@company.com")
         self.assertEqual(intent.content, "project is ready")
 
+    def test_email_user_natural_phrasing(self):
+        # The user's exact reported query:
+        intent1 = ActionIntentAnalyzer.extract_intent("send ho how are u email to ayusharyaa618@gmail.com")
+        self.assertEqual(intent1.intent, ActionIntentType.SEND_EMAIL)
+        self.assertEqual(intent1.recipient, "ayusharyaa618@gmail.com")
+        self.assertEqual(intent1.content, "ho how are u")
+        self.assertNotIn("email", intent1.content.lower())
+
+        intent2 = ActionIntentAnalyzer.extract_intent("send how are you email to user@test.com")
+        self.assertEqual(intent2.recipient, "user@test.com")
+        self.assertEqual(intent2.content, "how are you")
+        self.assertNotIn("email", intent2.content.lower())
+
+        intent3 = ActionIntentAnalyzer.extract_intent("send email to user@test.com: hello there")
+        self.assertEqual(intent3.recipient, "user@test.com")
+        self.assertEqual(intent3.content, "hello there")
+
     def test_planner_creates_prefilled_email_plan(self):
         projects = MagicMock(spec=ProjectRegistry)
         planner = AgentPlanner(project_registry=projects)

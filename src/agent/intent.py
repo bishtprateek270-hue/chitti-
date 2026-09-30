@@ -156,27 +156,40 @@ class ActionIntentAnalyzer:
                 m_rec = re.search(r"(?i)\b(?:to|ko)\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|[a-zA-Z0-9_\-]+)", clean)
                 recipient = m_rec.group(1).strip() if m_rec else "Recipient"
 
-            # Extract message content / body
-            content = ""
-            m_saying = re.search(r"(?i)\b(?:with\s+message|saying|body|with\s+body)\s+([\"']?.+?[\"']?)(?:\s+from\s+my\s+side|\s*$)", clean)
-            if m_saying:
-                content = m_saying.group(1).strip().strip("\"'")
-            else:
-                m_msg_body = re.search(r"(?i)\b(?:email|send|mail)\s+(?:message\s+|msg\s+)?([\"'][^\"']+[\"'])(?:\s+(?:message\s+|msg\s+)?to\b|\s*$)", clean) or \
-                             re.search(r"(?i)\b(?:email|send|mail)\s+(?:message\s+|msg\s+)?(?!(?:an?\s+)?(?:email|mail|message)\s+to)(.+?)\s+(?:message\s+|msg\s+)?to\s+", clean)
-                if m_msg_body:
-                    content = m_msg_body.group(1).strip().strip("\"'")
-                    content = re.sub(r"(?i)\s+(?:message|msg)$", "", content).strip()
-            
-            if not content or content.lower() in ("an email", "email", "a message", "message", "this"):
-                content = "Hello, I am reaching out to you."
-
-            content = re.sub(r"(?i)\s+from\s+my\s+side$", "", content).strip()
-
+            # Extract subject if specified
             subject = "Message from Chitti"
             m_sub = re.search(r"(?i)\b(?:subject|regarding|about)\s+[\"']?([^\"',]+)[\"']?", clean)
             if m_sub:
                 subject = m_sub.group(1).strip().title()
+                clean_no_sub = re.sub(r"(?i)\b(?:with\s+)?(?:subject|regarding|about)\s+[\"']?[^\"',]+[\"']?", "", clean).strip()
+            else:
+                clean_no_sub = clean
+
+            # Extract message content / body
+            content = ""
+            m_saying = re.search(r"(?i)\b(?:with\s+message|saying|body|with\s+body|that)\s+([\"']?.+?[\"']?)(?:\s+from\s+my\s+side|\s*$)", clean_no_sub)
+            if m_saying:
+                content = m_saying.group(1).strip().strip("\"'")
+            else:
+                # Pattern 1: send <msg> [email] to <recipient>
+                m_msg_before_to = re.search(r"(?i)\b(?:email|send|mail)\s+(?:an?\s+)?(?:message\s+|msg\s+|email\s+)?(?!(?:an?\s+)?(?:email|mail|message)\s+to)(.+?)\s+(?:an?\s+)?(?:message\s+|msg\s+|email\s+)?to\s+", clean_no_sub)
+                # Pattern 2: send email to <recipient> [:] <msg>
+                m_msg_after_to = re.search(r"(?i)\b(?:to|ko)\s+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\s*[:,\-]?\s*)(.+)$", clean_no_sub)
+                
+                if m_msg_before_to:
+                    content = m_msg_before_to.group(1).strip().strip("\"'")
+                elif m_msg_after_to:
+                    content = m_msg_after_to.group(1).strip().strip("\"'")
+
+            # Thorough cleanup of extracted content
+            if content:
+                content = re.sub(r"(?i)\s+(?:an?\s+)?(?:email|mail|message|msg|text)$", "", content).strip()
+                content = re.sub(r"(?i)^(?:an?\s+)?(?:email|mail|message|msg|text)\s+(?:saying|that|with\s+body|body)?\s*", "", content).strip()
+                content = re.sub(r"(?i)^(?:saying|that|body|with\s+message|with\s+body|:)\s*", "", content).strip()
+                content = re.sub(r"(?i)\s+from\s+my\s+side$", "", content).strip()
+
+            if not content or content.lower() in ("an email", "email", "a message", "message", "this", "mail"):
+                content = "Hello, I am reaching out to you."
 
             return ActionIntent(
                 intent=ActionIntentType.SEND_EMAIL,
@@ -233,6 +246,7 @@ class ActionIntentAnalyzer:
                 contact_name = (m_msg_matched.group("contact") or "").strip().strip("\"'")
 
                 # Clean message text and contact name
+                msg_text = re.sub(r"(?i)\s+(?:an?\s+)?(?:email|mail|message|msg|text)$", "", msg_text).strip()
                 msg_text = re.sub(r"(?i)^(?:saying|that|:)\s*", "", msg_text).strip()
                 msg_text = re.sub(r"(?i)\s+(?:message|msg|text)$", "", msg_text).strip()
                 msg_text = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", msg_text).strip() or "Hi"
