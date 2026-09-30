@@ -15,8 +15,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.utils.logging import log_debug, log_info, log_warn
 
 # Try importing standard GUI libraries with robust ctypes/win32 fallbacks
+import importlib
+
 try:
-    import pyautogui
+    pyautogui = importlib.import_module("pyautogui")
     pyautogui.FAILSAFE = True
     pyautogui.PAUSE = 0.05
     HAS_PYAUTOGUI = True
@@ -25,14 +27,14 @@ except Exception:
     HAS_PYAUTOGUI = False
 
 try:
-    import pyperclip
+    pyperclip = importlib.import_module("pyperclip")
     HAS_PYPERCLIP = True
 except Exception:
     pyperclip = None
     HAS_PYPERCLIP = False
 
 try:
-    import pygetwindow as gw
+    gw = importlib.import_module("pygetwindow")
     HAS_PYGETWINDOW = True
 except Exception:
     gw = None
