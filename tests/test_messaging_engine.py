@@ -8,6 +8,7 @@ Verifies:
 5. Multi-step agent planning for email and WhatsApp messaging without regressions.
 """
 
+import re
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -86,34 +87,35 @@ class TestMessagingEngine(unittest.TestCase):
         intent_name = ActionIntentAnalyzer.extract_intent("send hi to ayush on whatsapp")
         self.assertEqual(intent_name.intent, ActionIntentType.SEND_MESSAGE)
         self.assertEqual(intent_name.target, "ayush")
-        self.assertEqual(intent_name.content, "hi")
+        self.assertEqual(intent_name.content, "Hi")
 
         intent_phone = ActionIntentAnalyzer.extract_intent("send message to 9876543210 saying meeting is confirmed on whatsapp")
         self.assertEqual(intent_phone.intent, ActionIntentType.SEND_MESSAGE)
-        self.assertEqual(intent_phone.content, "meeting is confirmed")
+        self.assertEqual(intent_phone.content, "Meeting is confirmed")
 
     def test_agent_intent_email_extraction(self):
         intent = ActionIntentAnalyzer.extract_intent("send email to boss@company.com saying project is ready")
         self.assertEqual(intent.intent, ActionIntentType.SEND_EMAIL)
         self.assertEqual(intent.recipient, "boss@company.com")
-        self.assertEqual(intent.content, "project is ready")
+        self.assertEqual(intent.content, "Project is ready")
 
     def test_email_user_natural_phrasing(self):
-        # The user's exact reported query:
+        # The user's exact reported query with typo 'ho' and shorthand 'u':
         intent1 = ActionIntentAnalyzer.extract_intent("send ho how are u email to ayusharyaa618@gmail.com")
         self.assertEqual(intent1.intent, ActionIntentType.SEND_EMAIL)
         self.assertEqual(intent1.recipient, "ayusharyaa618@gmail.com")
-        self.assertEqual(intent1.content, "ho how are u")
+        self.assertEqual(intent1.content, "Hi, how are you?")
         self.assertNotIn("email", intent1.content.lower())
+        self.assertFalse(re.search(r"\bho\b", intent1.content, re.I))
 
         intent2 = ActionIntentAnalyzer.extract_intent("send how are you email to user@test.com")
         self.assertEqual(intent2.recipient, "user@test.com")
-        self.assertEqual(intent2.content, "how are you")
+        self.assertEqual(intent2.content, "How are you?")
         self.assertNotIn("email", intent2.content.lower())
 
         intent3 = ActionIntentAnalyzer.extract_intent("send email to user@test.com: hello there")
         self.assertEqual(intent3.recipient, "user@test.com")
-        self.assertEqual(intent3.content, "hello there")
+        self.assertEqual(intent3.content, "Hello there")
 
     def test_planner_creates_prefilled_email_plan(self):
         projects = MagicMock(spec=ProjectRegistry)

@@ -398,7 +398,7 @@ def test_phase5_intent_extraction_and_routing_cases():
     assert t3_intent.intent == ActionIntentType.SEND_MESSAGE
     assert t3_intent.application == "WhatsApp Web"
     assert t3_intent.target == "ayush"
-    assert t3_intent.content == "hi"
+    assert t3_intent.content.lower() == "hi"
     assert t3_intent.requires_browser is True
     assert t3_intent.verification_required is True
 
@@ -420,7 +420,7 @@ def test_phase5_intent_extraction_and_routing_cases():
     t4_intent1 = ActionIntentAnalyzer.extract_intent(t4_text1)
     assert t4_intent1.intent == ActionIntentType.SEND_EMAIL
     assert t4_intent1.recipient == "ayusharyaa618@gmail.com"
-    assert "hi, what are you doing?" in t4_intent1.content
+    assert "hi, what are you doing?" in t4_intent1.content.lower()
     assert t4_intent1.requires_confirmation is True
 
     t4_text2 = "email hi, what are you doing?? message to ayusharyaa618@gmail.com from my side"

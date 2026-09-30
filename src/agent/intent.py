@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from src.agent.registry import AppDiscovery, FolderDiscovery, ResourceDiscovery, DEFAULT_URL_MAP
 from src.utils.logging import log_chitti, log_debug, log_info
-from src.utils.text import clean_contact_query, normalize_typos, strip_emojis
+from src.utils.text import clean_contact_query, normalize_typos, polish_message_text, strip_emojis
 
 
 class ActionIntentType(str, Enum):
@@ -187,6 +187,7 @@ class ActionIntentAnalyzer:
                 content = re.sub(r"(?i)^(?:an?\s+)?(?:email|mail|message|msg|text)\s+(?:saying|that|with\s+body|body)?\s*", "", content).strip()
                 content = re.sub(r"(?i)^(?:saying|that|body|with\s+message|with\s+body|:)\s*", "", content).strip()
                 content = re.sub(r"(?i)\s+from\s+my\s+side$", "", content).strip()
+                content = polish_message_text(content)
 
             if not content or content.lower() in ("an email", "email", "a message", "message", "this", "mail"):
                 content = "Hello, I am reaching out to you."
@@ -250,6 +251,7 @@ class ActionIntentAnalyzer:
                 msg_text = re.sub(r"(?i)^(?:saying|that|:)\s*", "", msg_text).strip()
                 msg_text = re.sub(r"(?i)\s+(?:message|msg|text)$", "", msg_text).strip()
                 msg_text = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", msg_text).strip() or "Hi"
+                msg_text = polish_message_text(msg_text)
                 
                 contact_name = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", contact_name).strip()
                 contact_name = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+.*$", "", contact_name).strip()

@@ -110,3 +110,70 @@ def normalize_typos(text: str) -> str:
     
     return normalized
 
+
+def polish_message_text(text: str) -> str:
+    """
+    Polishes and auto-corrects basic spelling, typographical, and grammatical mistakes
+    in user message bodies (e.g. 'ho how are u' -> 'Hi, how are you?').
+    """
+    if not text:
+        return ""
+    
+    msg = text.strip()
+
+    # 1. Fix common greeting typos
+    msg = re.sub(r"(?i)\b(?:ho|hlo|hlw|helllo|helo|hiii+|hii)\b", "Hi", msg)
+    msg = re.sub(r"(?i)\bhye\b", "Hey", msg)
+    msg = re.sub(r"(?i)\bgood\s*mrng\b", "Good morning", msg)
+    msg = re.sub(r"(?i)\bgood\s*evng\b", "Good evening", msg)
+    msg = re.sub(r"(?i)\bgood\s*nyt|gud\s*nyt\b", "Good night", msg)
+
+    # 2. Expand SMS shorthand & contractions
+    msg = re.sub(r"\b[uU]\b", "you", msg)
+    msg = re.sub(r"(?i)\bur\b", "your", msg)
+    msg = re.sub(r"\b[rR]\b", "are", msg)
+    msg = re.sub(r"(?i)\b(?:plz|pls)\b", "please", msg)
+    msg = re.sub(r"(?i)\b(?:thx|thnx|tq|ty)\b", "thanks", msg)
+    msg = re.sub(r"(?i)\bbtw\b", "by the way", msg)
+    msg = re.sub(r"(?i)\basap\b", "as soon as possible", msg)
+    msg = re.sub(r"(?i)\bbcz|cuz|coz\b", "because", msg)
+    msg = re.sub(r"(?i)\bwont\b", "won't", msg)
+    msg = re.sub(r"(?i)\bdont\b", "don't", msg)
+    msg = re.sub(r"(?i)\bcant\b", "can't", msg)
+    msg = re.sub(r"(?i)\bdidnt\b", "didn't", msg)
+    msg = re.sub(r"(?i)\bisnt\b", "isn't", msg)
+    msg = re.sub(r"(?i)\barent\b", "aren't", msg)
+    msg = re.sub(r"(?i)\bim\b", "I'm", msg)
+    msg = re.sub(r"\bi\b", "I", msg)
+
+    # 3. Fix common spelling errors
+    msg = re.sub(r"(?i)\bcomming\b", "coming", msg)
+    msg = re.sub(r"(?i)\brecieved\b", "received", msg)
+    msg = re.sub(r"(?i)\btommorow|tomorow\b", "tomorrow", msg)
+    msg = re.sub(r"(?i)\byesterdayy\b", "yesterday", msg)
+    msg = re.sub(r"(?i)\bdefinately|definitly\b", "definitely", msg)
+    msg = re.sub(r"(?i)\bseperate\b", "separate", msg)
+    msg = re.sub(r"(?i)\buntill\b", "until", msg)
+    msg = re.sub(r"(?i)\bwich\b", "which", msg)
+    msg = re.sub(r"(?i)\bther\b", "there", msg)
+    msg = re.sub(r"(?i)\bthier\b", "their", msg)
+    msg = re.sub(r"(?i)\bavailble|avialable\b", "available", msg)
+    msg = re.sub(r"(?i)\bintrested|intrest\b", "interested", msg)
+
+    # 4. Normalize greeting structure: e.g. "Hi how are you" -> "Hi, how are you"
+    msg = re.sub(r"(?i)^(Hi|Hello|Hey)\s+(how\s+are\s+you)", r"\1, \2", msg)
+    
+    # 5. Fix Question mark for common question openers if punctuation missing
+    if re.search(r"(?i)^(?:how\s+are\s+you|what\s+is|when\s+is|where\s+is|can\s+you|could\s+you|are\s+you)\b", msg) and not msg.endswith(("?", ".", "!")):
+        msg = f"{msg}?"
+    elif re.search(r"(?i)\bhow\s+are\s+you$", msg) and not msg.endswith(("?", ".", "!")):
+        msg = f"{msg}?"
+
+    # 6. Capitalize first character
+    if msg and msg[0].islower():
+        msg = msg[0].upper() + msg[1:]
+
+    # Clean multiple spaces
+    msg = re.sub(r"\s+", " ", msg).strip()
+    return msg
+
