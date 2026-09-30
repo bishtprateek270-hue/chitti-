@@ -442,6 +442,15 @@ class ToolEngine:
             },
             self._tool_search_files,
         )
+        self._register(
+            "list_directory",
+            "Lists files and folders in a specified directory or workspace.",
+            {
+                "path": {"type": "string", "description": "Directory path (optional, defaults to current directory)", "optional": True},
+                "recursive": {"type": "boolean", "description": "Whether to list recursively", "optional": True},
+            },
+            self._tool_list_directory,
+        )
 
         # 6. TERMINAL & SERVER RUNTIME TOOLS
         self._register(
@@ -697,6 +706,14 @@ class ToolEngine:
     def _tool_search_files(self, pattern: str, root: Optional[str] = None) -> Dict[str, Any]:
         matches = self.fs.search_files(pattern, root_path=root)
         return {"success": True, "pattern": pattern, "matches": matches, "count": len(matches)}
+
+    def _tool_list_directory(self, path: Optional[str] = None, recursive: bool = False) -> Dict[str, Any]:
+        try:
+            items = self.fs.list_directory(dir_path=path, recursive=recursive)
+            files = [{"name": i.name, "path": i.path, "is_dir": i.is_dir, "size_bytes": i.size_bytes} for i in items]
+            return {"success": True, "path": str(self.fs.resolve_path(path or "")), "items": files, "count": len(files)}
+        except Exception as e:
+            return {"success": False, "error": str(e), "items": [], "count": 0}
 
     def _tool_execute_terminal(self, command: str, cwd: Optional[str] = None) -> Dict[str, Any]:
         res = self.terminal.execute_command(command, cwd=cwd)

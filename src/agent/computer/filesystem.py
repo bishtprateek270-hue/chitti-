@@ -29,15 +29,51 @@ class FilesystemController:
         self.default_workspace.mkdir(parents=True, exist_ok=True)
 
     def resolve_path(self, path_str: str) -> Path:
-        """Resolves path string relative to workspace or as absolute path."""
-        p = Path(path_str.strip())
+        """Resolves path string relative to workspace or standard PC locations."""
+        raw = path_str.strip().strip('"\'')
+        if not raw:
+            return self.default_workspace
+
+        p = Path(raw)
         if p.is_absolute():
             return p.resolve()
-        return (self.default_workspace / p).resolve()
+
+        if raw.startswith("~"):
+            return Path(raw).expanduser().resolve()
+
+        # If an explicit custom workspace is set (e.g. test tmp_path or project workspace)
+        if self.default_workspace != Path("data/workspace") and not str(self.default_workspace).endswith("data/workspace"):
+            return (self.default_workspace / p).resolve()
+
+        # 1. Check if relative to default_workspace
+        ws_path = (self.default_workspace / p).resolve()
+        if ws_path.exists():
+            return ws_path
+
+        home = Path.home()
+        desktop = (home / "OneDrive" / "Desktop") if (home / "OneDrive" / "Desktop").exists() else (home / "Desktop")
+        documents = (home / "OneDrive" / "Documents") if (home / "OneDrive" / "Documents").exists() else (home / "Documents")
+        downloads = home / "Downloads"
+
+        # Check candidate locations across PC in order of priority
+        candidates = [
+            Path.cwd() / p,
+            desktop / p,
+            downloads / p,
+            documents / p,
+            home / p,
+        ]
+
+        for cand in candidates:
+            if cand.exists():
+                return cand.resolve()
+
+        # If creating a new file/folder with relative path, default to default_workspace
+        return ws_path
 
     def list_directory(self, dir_path: Optional[str] = None, recursive: bool = False) -> List[FileInfo]:
         """Lists files and subdirectories."""
-        target = self.resolve_path(dir_path) if dir_path else self.default_workspace
+        target = self.resolve_path(dir_path) if dir_path else Path.cwd()
         if not target.exists() or not target.is_dir():
             raise FileNotFoundError(f"Directory not found: {target}")
 
@@ -171,11 +207,35 @@ class FilesystemController:
         return True
 
     def search_files(self, pattern: str, root_path: Optional[str] = None) -> List[str]:
-        """Searches for files matching a glob pattern (e.g. '*.pdf', '*.py')."""
-        root = self.resolve_path(root_path) if root_path else self.default_workspace
-        if not root.exists():
-            return []
-        matches = [str(p.resolve()) for p in root.rglob(pattern)]
+        """Searches for files matching a glob pattern (e.g. '*.pdf', '*.py', 'report.docx')."""
+        if root_path:
+            root = self.resolve_path(root_path)
+            if not root.exists():
+                return []
+            return [str(p.resolve()) for p in root.rglob(pattern)]
+
+        # Search across primary PC locations
+        home = Path.home()
+        desktop = (home / "OneDrive" / "Desktop") if (home / "OneDrive" / "Desktop").exists() else (home / "Desktop")
+        documents = (home / "OneDrive" / "Documents") if (home / "OneDrive" / "Documents").exists() else (home / "Documents")
+        downloads = home / "Downloads"
+
+        search_roots = [Path.cwd(), desktop, downloads, documents, self.default_workspace]
+        matches: List[str] = []
+        seen = set()
+
+        for r in search_roots:
+            if not r or not r.exists():
+                continue
+            try:
+                for p in r.rglob(pattern):
+                    resolved_str = str(p.resolve())
+                    if resolved_str not in seen:
+                        seen.add(resolved_str)
+                        matches.append(resolved_str)
+            except Exception:
+                continue
+
         return matches
 
     def get_file_info(self, file_path: str) -> FileInfo:
