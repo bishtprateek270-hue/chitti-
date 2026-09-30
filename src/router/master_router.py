@@ -148,7 +148,23 @@ class MasterRouter:
         r"(?i)^(?:thank\s+you|thanks|shukriya|dhanyawad|bye|goodbye|alvida|tata)\b",
     ]
 
-    # 8. Technical Knowledge Inquiries (How-to, explanation, concept definition)
+    # 8. Vision Grounding & Screen Reasoning (Phase 1)
+    VISION_TASK_PATTERNS = [
+        r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+my\s+screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+what\s+is\s+on\s+(?:my\s+)?screen|inspect\s+(?:the\s+)?active\s+window|read\s+my\s+screen)\b",
+        r"(?i)\b(?:meri\s+screen\s+dekho|screen\s+(?:pe\s+)?kya\s+hai(?:\s+batao)?|screen\s+(?:ko\s+)?summarize\s+karo|screen\s+(?:ko\s+)?explain\s+karo|screen\s+dekho)\b",
+        r"(?i)\b(?:explain\s+(?:the\s+|this\s+)?error\s+on\s+screen|why\s+(?:is\s+my\s+code\s+failing|did\s+it\s+fail|is\s+there\s+an\s+error)|diagnose\s+(?:the\s+)?(?:screen|error)|what\s+is\s+wrong\s+with\s+(?:my\s+code|this))\b",
+        r"(?i)\b(?:screen\s+pe\s+(?:kya\s+error\s+hai|error\s+dekho|error\s+batao|kya\s+gadbad\s+hai)|meri\s+screen\s+dekho\s+aur\s+error\s+batao|error\s+solve\s+karo\s+screen\s+dekh\s+ke)\b",
+        r"(?i)\b(?:find|locate)\s+(?:the\s+)?([A-Za-z0-9_\-\s]+?)\s+(?:button|input|icon|control|link)\s+on\s+screen\b",
+        r"(?i)\bscreen\s+pe\s+([A-Za-z0-9_\-\s]+?)\s+(?:button|dhoondo|kahan\s+hai)\b",
+    ]
+
+    # 9. Next-Gen Roadmap Inquiries
+    ROADMAP_PATTERNS = [
+        r"(?i)\b(?:roadmap|future\s+plans|next\s+features|next\s+gen|phases|architecture\s+roadmap)\b",
+        r"(?i)\b(?:roadmap\s+(?:ke\s+baare\s+me|k\s+bare\s+m|kya\s+hai|batao)|aage\s+kya\s+features\s+aane\s+waale\s+hain)\b",
+    ]
+
+    # 10. Technical Knowledge Inquiries (How-to, explanation, concept definition)
     TECHNICAL_KNOWLEDGE_PATTERNS = [
         r"(?i)^(?:what\s+is|what\s+are|explain|define|meaning\s+of|difference\s+between|why\s+is|how\s+does)\s+(?:a\s+|an\s+|the\s+)?(?:[a-zA-Z0-9_\+\#\-\s]+)\??$",
         r"(?i)^(?:how\s+(?:do\s+i|can\s+i|to)|how\s+would\s+i)\s+(?:write|create|make|build|code|implement|use|setup|install)\b",
@@ -238,6 +254,30 @@ class MasterRouter:
                 requires_phase5=False,
                 requires_phase6=False,
                 explanation="User requested drafting/writing email content (conversational assistance)",
+            )
+
+        # 4C. Check for Real-Time Vision Grounding & Screen Reasoning (Phase 1)
+        if any(re.search(pat, clean) for pat in cls.VISION_TASK_PATTERNS):
+            return cls._make_decision(
+                route=MasterRoute.VISION_TASK,
+                confidence=0.98,
+                requires_memory=False,
+                requires_computer=True,
+                requires_phase5=True,
+                requires_phase6=False,
+                explanation="Real-time screen vision, active window analysis, or on-screen error diagnosis",
+            )
+
+        # 4D. Check for Architecture Roadmap Inquiries
+        if any(re.search(pat, clean) for pat in cls.ROADMAP_PATTERNS):
+            return cls._make_decision(
+                route=MasterRoute.TECHNICAL_KNOWLEDGE,
+                confidence=0.96,
+                requires_memory=False,
+                requires_computer=False,
+                requires_phase5=False,
+                requires_phase6=False,
+                explanation="User inquiring about Chitti architecture and next-gen roadmap",
             )
 
         # 5. Check for Technical / Conversational "How-to" vs Project Creation

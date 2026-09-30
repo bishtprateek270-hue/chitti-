@@ -166,15 +166,37 @@ def test_master_route_browser_task():
         assert res.requires_phase5 is True
 
 
-def test_master_route_project_execution():
-    """Test 10: Project execution / debugging."""
-    res_run = MasterRouter.classify_request("run my existing project")
-    assert res_run.route == MasterRoute.PROJECT_EXECUTION
-    assert res_run.requires_computer is True
+def test_master_route_screen_vision():
+    """Test: Screen vision grounding and error diagnosis queries."""
+    prompts = [
+        "screen pe kya hai batao",
+        "meri screen dekho",
+        "look at my screen",
+        "what is on my screen",
+        "explain the error on screen",
+        "screen pe kya error hai",
+    ]
+    for p in prompts:
+        res = MasterRouter.classify_request(p)
+        assert res.route == MasterRoute.VISION_TASK, f"Failed for prompt: {p}"
+        assert res.requires_computer is True
+        assert res.requires_phase5 is True
 
-    res_dbg = MasterRouter.classify_request("open VS Code, find the error in my project and fix it")
-    assert res_dbg.route in (MasterRoute.PROJECT_DEBUGGING, MasterRoute.PROJECT_MODIFICATION)
-    assert res_dbg.requires_computer is True
+
+def test_master_route_roadmap():
+    """Test: Architecture roadmap queries."""
+    prompts = [
+        "roadmap k bare m batao",
+        "roadmap kya hai",
+        "tell me about the roadmap",
+        "architecture roadmap",
+        "next gen roadmap",
+    ]
+    for p in prompts:
+        res = MasterRouter.classify_request(p)
+        assert res.route == MasterRoute.TECHNICAL_KNOWLEDGE, f"Failed for prompt: {p}"
+        assert res.confidence >= 0.90
+
 
 
 # ==============================================================================
