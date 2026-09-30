@@ -169,7 +169,8 @@ class WhatsAppDispatcher:
     def send_via_pywhatkit(cls, phone: str, message: str) -> DispatchResult:
         """Attempts dispatch via pywhatkit if installed on the system."""
         try:
-            import pywhatkit
+            import importlib
+            pywhatkit = importlib.import_module("pywhatkit")
             norm_phone = "+" + cls.normalize_phone_number(phone)
             log_info(f"[WHATSAPP] Dispatching message to {norm_phone} via pywhatkit...")
             pywhatkit.sendwhatmsg_instantly(norm_phone, message, wait_time=10, tab_close=True, close_time=3)
@@ -180,7 +181,7 @@ class WhatsAppDispatcher:
                 channel="WhatsApp",
                 method="pywhatkit",
             )
-        except ImportError:
+        except (ImportError, ModuleNotFoundError):
             return DispatchResult(
                 success=False,
                 message="pywhatkit not installed.",

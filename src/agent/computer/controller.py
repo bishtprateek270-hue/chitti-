@@ -158,16 +158,40 @@ class ComputerController:
             log_warn(f"Failed to scroll: {e}")
             return False
 
-    def drag(self, x: int, y: int, duration: float = 0.5) -> bool:
-        """Drags mouse to (x, y)."""
+    def drag(
+        self,
+        x: int = 0,
+        y: int = 0,
+        duration: float = 0.5,
+        from_x: Optional[int] = None,
+        from_y: Optional[int] = None,
+        to_x: Optional[int] = None,
+        to_y: Optional[int] = None,
+    ) -> bool:
+        """Drags mouse from (from_x, from_y) to (to_x, to_y) or from current position to (x, y)."""
+        target_x = to_x if to_x is not None else x
+        target_y = to_y if to_y is not None else y
+        if from_x is not None and from_y is not None:
+            self.move_mouse(from_x, from_y)
         try:
             if HAS_PYAUTOGUI:
-                pyautogui.dragTo(x, y, duration=duration, button="left")
+                pyautogui.dragTo(target_x, target_y, duration=duration, button="left")
                 return True
             return False
         except Exception as e:
             log_warn(f"Failed to drag mouse: {e}")
             return False
+
+    def drag_mouse(
+        self,
+        from_x: int,
+        from_y: int,
+        to_x: int,
+        to_y: int,
+        duration: float = 0.5,
+    ) -> bool:
+        """Drags mouse from (from_x, from_y) to (to_x, to_y)."""
+        return self.drag(from_x=from_x, from_y=from_y, to_x=to_x, to_y=to_y, duration=duration)
 
     # -------------------------------------------------------------
     # KEYBOARD CONTROLS
