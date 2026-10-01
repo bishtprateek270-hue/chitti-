@@ -10,5 +10,6 @@ if "%ERRORLEVEL%"=="1" (
 )
 
 REM Start Chitti Main Process
+set PYTHONIOENCODING=utf-8
 set PYTHONUNBUFFERED=1
 python src\main.py

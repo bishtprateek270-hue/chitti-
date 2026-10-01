@@ -36,6 +36,13 @@ def setup_logger(name: str = "chitti", level: str = "INFO") -> logging.Logger:
 
     # Avoid duplicate handlers if reconfigured
     if not logger.handlers:
+        import io
+        stream = sys.stdout
+        if hasattr(sys.stdout, "reconfigure"):
+            try:
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(numeric_level)
         handler.setFormatter(CustomFormatter())
