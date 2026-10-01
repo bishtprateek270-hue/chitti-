@@ -35,6 +35,10 @@ from src.language.language_models import IntentCategory
 from src.agent.manager import LaptopAgentManager
 from src.agent.task_state import TaskStatus
 from src.router.master_router import MasterRouter, MasterRoute, MasterRouteDecision
+from src.brain.knowledge_graph import KnowledgeGraph
+from src.brain.proactive_scheduler import ProactiveScheduler
+from src.brain.context_synthesizer import ContextSynthesizer
+from src.ui import FloatingHUD, GlobalHotkeyManager, HUDMode
 
 
 BANNER = r"""
@@ -68,6 +72,13 @@ class ChittiController:
         self.language_normalizer = LanguageNormalizer(self.language_detector)
         self.translator = None
         self.session_response_language = None
+
+        # Phase 3 & 4 Subsystems
+        self.knowledge_graph = KnowledgeGraph()
+        self.scheduler = ProactiveScheduler()
+        self.context_synthesizer = ContextSynthesizer(memory_db=None, knowledge_graph=self.knowledge_graph, scheduler=self.scheduler)
+        self.hotkey_manager = GlobalHotkeyManager()
+        self.hud = FloatingHUD(on_command_submit=self.process_user_input)
 
     def initialize(self):
         """Initializes all hardware and AI subsystems."""
@@ -171,10 +182,15 @@ class ChittiController:
             except Exception as e:
                 log_error(f"Laptop agent initialization failed: {e}")
                 self.agent = None
-        else:
-            log_chitti("Laptop agent subsystem is disabled in configuration.")
+        # 9. Initialize Phase 3 & 4 Services (Scheduler, Knowledge Graph, Hotkeys, HUD)
+        if self.memory:
+            self.context_synthesizer.memory_db = self.memory.db
+        self.scheduler.register_listener(lambda task: self.speak(f"Reminder: {task.title}. {task.message}"))
+        self.scheduler.start()
+        self.hotkey_manager.register_hotkey(callback=self.hud.toggle)
+        self.hotkey_manager.start()
 
-        log_chitti("System initialization complete. Ready for interaction!\n")
+        log_chitti("System initialization complete. Ready for interaction! (Press Alt+Space for Floating HUD)\n")
 
     def speak(self, text: str):
         """Speaks the response using TTS if available."""
