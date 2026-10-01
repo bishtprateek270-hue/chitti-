@@ -40,6 +40,7 @@ from src.brain.knowledge_graph import KnowledgeGraph
 from src.brain.proactive_scheduler import ProactiveScheduler
 from src.brain.context_synthesizer import ContextSynthesizer
 from src.ui import FloatingHUD, GlobalHotkeyManager, HUDMode
+from src.rl import PolicyOptimizer, RewardEvaluator, TaskOutcome
 
 
 BANNER = r"""
@@ -82,6 +83,7 @@ class ChittiController:
         self.hotkey_manager = GlobalHotkeyManager()
         self.hud = FloatingHUD(on_command_submit=self.process_user_input)
         self.ambient_listener = None
+        self.rl_policy = PolicyOptimizer()
 
     def initialize(self):
         """Initializes all hardware and AI subsystems."""
@@ -273,12 +275,23 @@ class ChittiController:
                 self.hud.set_mode(HUDMode.IDLE)
             return
 
+        # 1.4. RL User Feedback & Policy Guidance Interceptor
+        user_reward = RewardEvaluator.evaluate_user_feedback(user_text)
+        if user_reward is not None:
+            log_chitti(f"[RL FEEDBACK] Recorded user feedback score: {user_reward:+.1f}")
+
         # 1.5. Unified Top-Level Master Routing Layer
         master_decision = MasterRouter.classify_request(user_text)
         if master_decision.route == MasterRoute.UNKNOWN and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
             alt_decision = MasterRouter.classify_request(parsed_intent.normalized_text)
             if alt_decision.route != MasterRoute.UNKNOWN:
                 master_decision = alt_decision
+
+        # Start tracking current execution episode in RL
+        self.rl_policy.start_episode(task_description=user_text, domain=master_decision.route.value)
+        policy_guidance = self.rl_policy.get_policy_guidance(user_text, domain=master_decision.route.value)
+        if policy_guidance:
+            log_chitti(f"[RL POLICY] Injected learned policy guardrails for '{user_text}'")
 
         # 2. Check for Dedicated Translation Request
         if master_decision.route == MasterRoute.TRANSLATION_TASK or parsed_intent.intent_category == IntentCategory.TRANSLATION.value:
