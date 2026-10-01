@@ -23,6 +23,7 @@ from src.agent.computer import (
 )
 from src.agent.projects import ProjectRegistry
 from src.agent.vision import VisionGroundingEngine
+from src.agent.debugger import CodeExecutionSandbox, SelfHealingDebugger, TracebackParser
 from src.utils.logging import log_debug, log_info, log_warn
 
 
@@ -264,6 +265,37 @@ class ToolEngine:
             "Saves the active editor file via hotkey Ctrl+S.",
             {"application": {"type": "string", "description": "Application name e.g. 'Visual Studio Code'", "optional": True}},
             self._tool_save_editor,
+        )
+
+        # 11. AUTONOMOUS CODE SELF-HEALING & TEST RUNNER TOOLS (Phase 2)
+        self._register(
+            "run_code_tests",
+            "Executes automated unit tests (pytest, jest, unittest) in sandboxed environment.",
+            {
+                "target": {"type": "string", "description": "Target test file or directory path"},
+                "framework": {"type": "string", "description": "Test framework (pytest/unittest/jest)", "optional": True},
+                "cwd": {"type": "string", "description": "Working directory", "optional": True},
+            },
+            self._tool_run_code_tests,
+        )
+        self._register(
+            "self_heal_code",
+            "Executes the autonomous code self-healing loop to diagnose, patch, and verify broken code.",
+            {
+                "target": {"type": "string", "description": "Target script file or project directory"},
+                "test_file": {"type": "string", "description": "Optional test file path", "optional": True},
+                "max_iterations": {"type": "integer", "description": "Maximum healing iterations (default 3)", "optional": True},
+            },
+            self._tool_self_heal_code,
+        )
+        self._register(
+            "diagnose_code_error",
+            "Parses a compiler or runtime error traceback and returns structured diagnosis with fix suggestions.",
+            {
+                "error_output": {"type": "string", "description": "Raw traceback or compiler output"},
+                "target_file": {"type": "string", "description": "Target source file", "optional": True},
+            },
+            self._tool_diagnose_code_error,
         )
 
         # 4. MOUSE & KEYBOARD TOOLS
@@ -910,6 +942,63 @@ class ToolEngine:
     def _tool_clipboard_write(self, text: str) -> Dict[str, Any]:
         ok = self.computer.set_clipboard_text(text)
         return {"success": ok, "text": text}
+
+    # ---------------------------------------------------------
+    # 11. SELF-HEALING & TEST RUNNER HANDLERS (Phase 2)
+    # ---------------------------------------------------------
+
+    def _tool_run_code_tests(
+        self,
+        target: str,
+        framework: Optional[str] = None,
+        cwd: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        res = CodeExecutionSandbox.run_tests(target_path=target, framework=framework, cwd=cwd)
+        return {
+            "success": res.success,
+            "exit_code": res.exit_code,
+            "stdout": res.stdout,
+            "stderr": res.stderr,
+            "duration_ms": res.duration_ms,
+            "message": f"Tests {'PASSED' if res.success else 'FAILED'} (Exit code {res.exit_code})",
+        }
+
+    def _tool_self_heal_code(
+        self,
+        target: str,
+        test_file: Optional[str] = None,
+        max_iterations: int = 3,
+    ) -> Dict[str, Any]:
+        p = Path(target)
+        healer = SelfHealingDebugger()
+        if p.is_dir():
+            res = healer.heal_project(project_dir=target, test_file=test_file, max_iterations=max_iterations)
+        else:
+            res = healer.heal_file(target_file=target, test_file=test_file, max_iterations=max_iterations)
+
+        return {
+            "success": res.success,
+            "iterations": res.iterations,
+            "diagnosis": res.diagnosis,
+            "files_modified": res.files_modified,
+            "message": res.summary(),
+        }
+
+    def _tool_diagnose_code_error(
+        self,
+        error_output: str,
+        target_file: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        err_info = TracebackParser.parse(output_text=error_output, default_file=target_file)
+        return {
+            "success": True,
+            "error_type": err_info.error_type,
+            "error_message": err_info.error_message,
+            "file_path": err_info.file_path,
+            "line_number": err_info.line_number,
+            "suggested_fix": err_info.suggested_fix_summary,
+            "summary": err_info.summary(),
+        }
 
     # ---------------------------------------------------------
     # DISPATCHER

@@ -20,6 +20,9 @@ class ActionType(str, Enum):
     ANALYZE_SCREEN = "ANALYZE_SCREEN"
     DIAGNOSE_SCREEN_ERROR = "DIAGNOSE_SCREEN_ERROR"
     FIND_UI_ELEMENT = "FIND_UI_ELEMENT"
+    RUN_CODE_TESTS = "RUN_CODE_TESTS"
+    SELF_HEAL_CODE = "SELF_HEAL_CODE"
+    DEBUG_CODE = "DEBUG_CODE"
     GET_SYSTEM_INFO = "GET_SYSTEM_INFO"
     SET_VOLUME = "SET_VOLUME"
     DELETE_FILE = "DELETE_FILE"
@@ -148,6 +151,30 @@ class ActionRegistry:
             risk_level=RiskLevel.LOW,
             requires_confirmation=False,
             required_parameters=["element"],
+        ),
+        ActionType.RUN_CODE_TESTS: ActionDefinition(
+            action_type=ActionType.RUN_CODE_TESTS,
+            description="Runs automated test suite (pytest, jest, unittest) in sandboxed environment.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            required_parameters=["target"],
+            optional_parameters=["framework", "cwd"],
+        ),
+        ActionType.SELF_HEAL_CODE: ActionDefinition(
+            action_type=ActionType.SELF_HEAL_CODE,
+            description="Executes autonomous code self-healing loop on broken scripts or multi-file projects.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            required_parameters=["target"],
+            optional_parameters=["test_file", "max_iterations"],
+        ),
+        ActionType.DEBUG_CODE: ActionDefinition(
+            action_type=ActionType.DEBUG_CODE,
+            description="Diagnoses, debugs, and patches runtime errors or compilation failures in code.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            required_parameters=["target"],
+            optional_parameters=["error_message"],
         ),
         ActionType.GET_SYSTEM_INFO: ActionDefinition(
             action_type=ActionType.GET_SYSTEM_INFO,

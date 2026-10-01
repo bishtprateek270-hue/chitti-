@@ -26,6 +26,7 @@ from src.agent.projects import ProjectRegistry
 from src.agent.task_state import ExecutionFlag, StepStatus, TaskContext, TaskState, TaskStatus
 from src.agent.tools import ToolEngine
 from src.agent.validator import ActionValidator
+from src.agent.debugger import SelfHealingDebugger
 from src.brain.llm import BaseLLM
 from src.config import get_config
 from src.utils.logging import log_chitti, log_debug, log_error, log_info, log_warning
@@ -83,6 +84,7 @@ class LaptopAgentManager:
             projects=self.projects,
             llm=self.llm,
         )
+        self.debugger = SelfHealingDebugger(llm=self.llm)
 
         # State tracking & Short-term session context
         self.pending_destructive_action: Optional[StructuredAction] = None

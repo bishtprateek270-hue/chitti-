@@ -39,12 +39,15 @@ class ActionIntentType(str, Enum):
     OPEN_FOLDER = "OPEN_FOLDER"
     OPEN_FILE = "OPEN_FILE"
 
-    # Project & Coding Actions (Phase 6)
+    # Project & Coding Actions (Phase 2 & Phase 6)
     CREATE_PROJECT = "CREATE_PROJECT"
     MODIFY_PROJECT = "MODIFY_PROJECT"
     RUN_PROJECT = "RUN_PROJECT"
     DEBUG_PROJECT = "DEBUG_PROJECT"
     TEST_PROJECT = "TEST_PROJECT"
+    RUN_CODE_TESTS = "RUN_CODE_TESTS"
+    SELF_HEAL_CODE = "SELF_HEAL_CODE"
+    DEBUG_CODE = "DEBUG_CODE"
 
     # System Control Actions
     TAKE_SCREENSHOT = "TAKE_SCREENSHOT"
@@ -397,6 +400,47 @@ class ActionIntentAnalyzer:
                     requires_browser=True,
                     verification_required=True,
                 )
+
+        # -------------------------------------------------------------
+        # 5B. AUTONOMOUS CODE SELF-HEALING & DEBUGGING LOOP (Phase 2)
+        # -------------------------------------------------------------
+        # 5B.1 Self-healing loop intent ("run tests and fix", "self heal", "fix broken tests")
+        is_self_heal = bool(
+            re.search(r"(?i)\b(?:self[\s\-_]?heal|fix\s+(?:whatever\s+is\s+)?broken|run\s+(?:the\s+)?tests?\s+(?:and|aur)\s+fix|auto[\s\-_]?fix\s+(?:the\s+)?code|debug\s+and\s+fix|heal\s+(?:this\s+)?(?:project|code|script))\b", clean) or
+            re.search(r"(?i)\b(?:tests?\s+run\s+karo\s+aur\s+fix\s+karo|code\s+ko\s+self\s+heal\s+karo|bugs\s+fix\s+karke\s+run\s+karo)\b", clean)
+        )
+        if is_self_heal:
+            m_target = re.search(r"(?i)\b(?:in|of|for|on)\s+(?:folder\s+|directory\s+|file\s+|project\s+)?([A-Za-z0-9_\-\.\/\\:]+)", clean)
+            target_loc = m_target.group(1).strip() if m_target else "."
+            return ActionIntent(
+                intent=ActionIntentType.SELF_HEAL_CODE,
+                goal=f"Execute autonomous self-healing loop on '{target_loc}'",
+                channel="Debugger",
+                application="Self-Healing Engine",
+                target=target_loc,
+                parameters={"target": target_loc},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        # 5B.2 Run automated tests intent ("run tests in this folder", "execute pytest")
+        is_run_tests = bool(
+            re.search(r"(?i)\b(?:run\s+(?:the\s+)?tests?|execute\s+(?:the\s+)?tests?|run\s+pytest|run\s+test\s+suite)\b", clean) or
+            re.search(r"(?i)\b(?:is\s+folder\s+ke\s+tests\s+chalao|tests\s+run\s+karo)\b", clean)
+        )
+        if is_run_tests and not is_self_heal:
+            m_target = re.search(r"(?i)\b(?:in|of|for|on)\s+(?:folder\s+|directory\s+|file\s+)?([A-Za-z0-9_\-\.\/\\:]+)", clean)
+            target_loc = m_target.group(1).strip() if m_target else "."
+            return ActionIntent(
+                intent=ActionIntentType.RUN_CODE_TESTS,
+                goal=f"Run automated test suite for '{target_loc}'",
+                channel="Debugger",
+                application="Test Runner",
+                target=target_loc,
+                parameters={"target": target_loc},
+                execution_required=True,
+                verification_required=True,
+            )
 
         # -------------------------------------------------------------
         # 6. PROJECT CREATION / CODING ACTIONS (Phase 6)

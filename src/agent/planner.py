@@ -167,6 +167,27 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
+        # 5D. AUTONOMOUS CODE SELF-HEALING & DEBUGGING LOOP (Phase 2)
+        if intent.intent == ActionIntentType.SELF_HEAL_CODE:
+            target_path = intent.parameters.get("target") or intent.target or "."
+            state.steps = [
+                AgentStep(step_id=1, description=f"Initialize self-healing environment for '{target_path}'", action_type="PREPARE_DEBUG_ENVIRONMENT", parameters={"target": target_path}),
+                AgentStep(step_id=2, description=f"Execute autonomous self-healing and repair loop on '{target_path}'", action_type="SELF_HEAL_CODE", parameters={"target": target_path}, depends_on=[1]),
+                AgentStep(step_id=3, description="Verify test suite passes with zero errors", action_type="VERIFY_HEALED_STATE", parameters={"target": target_path}, depends_on=[2]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 5E. RUN CODE TESTS IN SANDBOX (Phase 2)
+        if intent.intent == ActionIntentType.RUN_CODE_TESTS:
+            target_path = intent.parameters.get("target") or intent.target or "."
+            state.steps = [
+                AgentStep(step_id=1, description=f"Run automated test suite on '{target_path}'", action_type="RUN_CODE_TESTS", parameters={"target": target_path}),
+                AgentStep(step_id=2, description="Verify test suite execution results", action_type="VERIFY_TEST_RESULTS", parameters={"target": target_path}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
 
 
         # 6. VS CODE + PROJECT OPENING COMMANDS

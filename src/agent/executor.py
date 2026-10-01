@@ -51,6 +51,12 @@ class ActionExecutor:
                 return cls._diagnose_screen_error(action)
             elif act_type == ActionType.FIND_UI_ELEMENT:
                 return cls._find_ui_element(action)
+            elif act_type == ActionType.RUN_CODE_TESTS:
+                return cls._run_code_tests(action)
+            elif act_type == ActionType.SELF_HEAL_CODE:
+                return cls._self_heal_code(action)
+            elif act_type == ActionType.DEBUG_CODE:
+                return cls._debug_code(action)
             elif act_type == ActionType.GET_SYSTEM_INFO:
                 return cls._get_system_info(action)
             elif act_type == ActionType.SET_VOLUME:
@@ -357,6 +363,74 @@ class ActionExecutor:
             action=ActionType.FIND_UI_ELEMENT,
             message=f"UI element matching '{elem_name}' was not detected in active window.",
             data={"found": False, "element": elem_name},
+        )
+
+    @classmethod
+    def _run_code_tests(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.debugger import CodeExecutionSandbox
+        target = action.parameters.get("target", ".")
+        fw = action.parameters.get("framework")
+        cwd = action.parameters.get("cwd")
+        res = CodeExecutionSandbox.run_tests(target_path=target, framework=fw, cwd=cwd)
+        msg = f"Test suite {'PASSED' if res.success else 'FAILED'} (Exit code {res.exit_code}, {res.duration_ms:.1f}ms)."
+        log_chitti(f"[AGENT] Execution: {'SUCCESS' if res.success else 'FAILED'} | {msg}")
+        return ActionResult(
+            success=res.success,
+            action=ActionType.RUN_CODE_TESTS,
+            message=msg,
+            data={
+                "exit_code": res.exit_code,
+                "stdout": res.stdout,
+                "stderr": res.stderr,
+                "duration_ms": res.duration_ms,
+            },
+        )
+
+    @classmethod
+    def _self_heal_code(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.debugger import SelfHealingDebugger
+        target = action.parameters.get("target", ".")
+        test_file = action.parameters.get("test_file")
+        max_iter = int(action.parameters.get("max_iterations", 3))
+
+        healer = SelfHealingDebugger()
+        p = Path(target)
+        if p.is_dir():
+            res = healer.heal_project(project_dir=target, test_file=test_file, max_iterations=max_iter)
+        else:
+            res = healer.heal_file(target_file=target, test_file=test_file, max_iterations=max_iter)
+
+        log_chitti(f"[AGENT] Execution: {'SUCCESS' if res.success else 'FAILED'} | {res.summary()}")
+        return ActionResult(
+            success=res.success,
+            action=ActionType.SELF_HEAL_CODE,
+            message=res.summary(),
+            data={
+                "iterations": res.iterations,
+                "diagnosis": res.diagnosis,
+                "files_modified": res.files_modified,
+                "patches": res.patches_applied,
+            },
+        )
+
+    @classmethod
+    def _debug_code(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.debugger import TracebackParser, SelfHealingDebugger
+        target = action.parameters.get("target", ".")
+        err_msg = action.parameters.get("error_message", "")
+        err_info = TracebackParser.parse(err_msg, default_file=target)
+
+        healer = SelfHealingDebugger()
+        res = healer.heal_file(target_file=target, max_iterations=3)
+        return ActionResult(
+            success=res.success,
+            action=ActionType.DEBUG_CODE,
+            message=res.summary(),
+            data={
+                "initial_error": err_info.summary(),
+                "success": res.success,
+                "iterations": res.iterations,
+            },
         )
 
     @classmethod
