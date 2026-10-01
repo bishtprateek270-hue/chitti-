@@ -229,6 +229,10 @@ class OCRAnalyzer:
             doc_title = doc_title.replace(suffix, "")
         doc_title = doc_title.strip() or "On-Screen Document"
 
+        # If window title is generic or HUD, infer doc title from first extracted heading
+        if (doc_title in ("On-Screen Document", "Desktop Screen", "Desktop / Foreground Window", "Active Document", "Chitti HUD") or "hud" in doc_title.lower() or "chitti" in doc_title.lower()) and headings:
+            doc_title = headings[0]
+
         # Detect document format
         doc_type = "Document"
         lower_title = window_title.lower()

@@ -178,9 +178,9 @@ class ScreenReader:
         title_low = win.title.lower().strip()
         proc_low = win.process_name.lower().strip()
         internal_proc_names = ("python.exe", "cmd.exe", "powershell.exe", "windowsterminal.exe", "pwsh.exe", "conhost.exe")
-        if any(p in proc_low for p in internal_proc_names):
+        if any(p in proc_low for p in internal_proc_names) and any(x in title_low for x in ("chitti", "hud", "terminal", "python", "cmd", "powershell")):
             return True
-        internal_titles = ("antigravity", "visual studio code", "chitti", "hud overlay", "windows powershell", "command prompt")
+        internal_titles = ("antigravity", "visual studio code", "chitti", "hud overlay", "chitti hud", "hud", "windows powershell", "command prompt", "terminal")
         if any(t in title_low for t in internal_titles):
             return True
         return False
@@ -239,7 +239,18 @@ class ScreenReader:
             except Exception as e:
                 log_debug(f"[VISION] Z-order window scan notice: {e}")
 
-        return fg_win
+        # Fallback to desktop screen if only internal window exists
+        w_size, h_size = self.get_screen_size()
+        return WindowRect(
+            title="Desktop Screen",
+            handle=0,
+            left=0,
+            top=0,
+            width=w_size,
+            height=h_size,
+            process_name="Desktop",
+            is_active=True,
+        )
 
     def capture_active_window(
         self,
@@ -260,10 +271,21 @@ class ScreenReader:
             target = Path(output_path)
             target.parent.mkdir(parents=True, exist_ok=True)
 
-        # If the only window is internal Chitti/IDE, capture the full multi-monitor desktop
-        if self.is_internal_window(active_win) or not active_win or active_win.width <= 0 or active_win.height <= 0:
+        # If the window is internal or desktop canvas, capture the full multi-monitor desktop
+        if self.is_internal_window(active_win) or not active_win or active_win.title == "Desktop Screen" or active_win.width <= 0 or active_win.height <= 0:
             full_path = self.capture_full_screen(output_path=str(target))
-            return full_path, active_win
+            w_size, h_size = self.get_screen_size()
+            clean_win = WindowRect(
+                title="Desktop Screen",
+                handle=0,
+                left=0,
+                top=0,
+                width=w_size,
+                height=h_size,
+                process_name="Desktop",
+                is_active=True,
+            )
+            return full_path, clean_win
 
         if HAS_PIL and ImageGrab:
             try:
