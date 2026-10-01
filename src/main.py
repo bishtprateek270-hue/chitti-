@@ -6,7 +6,14 @@ PHASE 4 & 4A: Multilingual Understanding, Memory Reliability & Response Quality
 
 import sys
 import os
+import io
 import time
+
+# Ensure sys.stdout and sys.stderr are not None when run under pythonw.exe
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
 
 # Ensure project root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -202,7 +209,6 @@ class ChittiController:
         self.hotkey_manager.register_hotkey(modifiers=(MOD_ALT | MOD_NOREPEAT), vk_code=VK_SPACE, callback=self.hud.toggle)
         self.hotkey_manager.register_hotkey(modifiers=(MOD_CONTROL | MOD_ALT | MOD_NOREPEAT), vk_code=VK_C, callback=self.hud.toggle)
         self.hotkey_manager.start()
-        self.hud.start(non_blocking=True)
 
         # 10. Initialize Ambient Hands-Free Voice Listener (Phase 5)
         self.ambient_listener = None
@@ -735,34 +741,21 @@ class ChittiController:
             return ""
 
     def run(self):
-        """Main interactive loop for Chitti."""
+        """Main execution entry point for Chitti."""
         self.initialize()
 
-        print("------------------------------------------------------------------")
-        print(" Controls:")
-        print("   [ENTER]      : Speak to Chitti via Microphone")
-        print("   [T] + ENTER  : Type a text message (Keyboard fallback)")
-        print("   [V] + ENTER  : Instant Camera Vision Snapshot")
-        print("   [R] + ENTER  : Register a new Person's Face")
-        print("   [L] + ENTER  : List all Registered People in Face Database")
-        print("   [M] + ENTER  : View all stored persistent long-term memories")
-        print("   [C] + ENTER  : Clear short-term session conversation history")
-        print("   [Q] + ENTER  : Quit Chitti")
-        print("------------------------------------------------------------------\n")
-
-        # If running in background/daemon mode (e.g. Windows autostart without console)
-        if not sys.stdin or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
-            log_chitti("Running in background daemon mode. Ambient voice ('Hey Chitti') & HUD (Alt+Space) active.")
-            try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                log_chitti("Background daemon exiting cleanly...")
-                if self.ambient_listener:
-                    self.ambient_listener.stop()
-                if self.vision and self.vision.camera:
-                    self.vision.camera.release()
+        # Check if running in background/daemon mode (e.g. Windows autostart or pythonw)
+        is_interactive = bool(sys.stdin and hasattr(sys.stdin, "isatty") and sys.stdin.isatty())
+        if not is_interactive or "--daemon" in sys.argv or "-d" in sys.argv:
+            log_chitti("Chitti desktop companion active. Dynamic Island HUD running on main thread.")
+            self.hud.start(non_blocking=False)
             return
+
+        self.hud.start(non_blocking=True)
+        self._run_cli_loop()
+
+    def _run_cli_loop(self):
+        """Interactive terminal command prompt loop."""
 
         while True:
             try:
