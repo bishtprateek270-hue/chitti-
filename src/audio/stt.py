@@ -134,7 +134,11 @@ class WhisperSTT(STTEngine):
             options["language"] = self.language
 
         try:
-            result = self._model.transcribe(audio, **options)
+            import io
+            import contextlib
+            # Suppress tqdm progress bars on stderr
+            with contextlib.redirect_stderr(io.StringIO()):
+                result = self._model.transcribe(audio, **options)
             text = result.get("text", "").strip()
 
             if self.is_hallucination(text):

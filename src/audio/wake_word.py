@@ -1,12 +1,15 @@
 """
 Chitti Ambient Wake-Word Detection Engine (Phase 5).
 Continuously processes incoming microphone audio frames in the background
-with ultra-low latency DSP acoustic pattern recognition (pitch autocorrelation,
-syllable envelope modulation, and unvoiced-to-voiced consonant transition).
+with zero CPU overhead, utilizing strict Signal-to-Noise Ratio (SNR) gating,
+human voice pitch autocorrelation, and dual-syllable envelope verification.
 """
 
+import contextlib
+import io
 import math
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -35,8 +38,8 @@ class WakeWordEvent:
 class WakeWordDetector:
     """
     Lightweight, continuous keyword spotting engine.
-    Uses ultra-fast DSP phoneme resonance and vocal harmonic analysis
-    to detect 'Chitti' / 'Hey Chitti' without stalling CPU/GPU.
+    Uses strict SNR gating and DSP acoustic phoneme resonance
+    to detect 'Chitti' / 'Hey Chitti' without false positives from background noise.
     """
 
     DEFAULT_KEYWORDS = ["hey chitti", "chitti", "ok chitti"]
@@ -69,8 +72,8 @@ class WakeWordDetector:
         self._audio_buffer = np.zeros(self._buffer_size, dtype=np.float32)
         self._buffer_lock = threading.Lock()
 
-        # Background noise calibration
-        self._noise_floor = 0.025
+        # Background noise baseline tracking
+        self._noise_floor = 0.020
         self._calibrated = False
 
     def start(self, callback: Optional[Callable[[WakeWordEvent], None]] = None, device_index: Optional[int] = None):
@@ -173,21 +176,21 @@ class WakeWordDetector:
         # 1. Compute acoustic energy
         rms = float(np.sqrt(np.mean(chunk**2) + 1e-12))
 
-        # Dynamic noise floor adaptation
+        # Dynamic noise floor adaptation (tracks ambient baseline when low)
         if not self._calibrated:
-            self._noise_floor = min(0.020, rms)
+            self._noise_floor = min(0.025, max(0.005, rms))
             self._calibrated = True
-        elif rms < self._noise_floor:
+        elif rms < 0.040:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate (require noticeable voice energy above ambient background)
-        min_voice_rms = max(0.020, self._noise_floor * 1.5)
+        # Speech onset gate (Requires deliberate voice loudness: RMS >= 0.055 and 2.5x noise floor)
+        min_voice_rms = max(0.055, self._noise_floor * 2.5)
         if rms < min_voice_rms:
             return None
 
         # 2. Evaluate acoustic phoneme signature for "Chitti" / "Hey Chitti"
         confidence = self._evaluate_acoustic_signature(current_window)
-        if confidence < 0.60:
+        if confidence < 0.65:
             return None
 
         matched_kw = "Hey Chitti" if confidence > 0.85 else "Chitti"
@@ -222,7 +225,7 @@ class WakeWordDetector:
         pitch_corr = float(np.max(corr[min_lag:max_lag])) if len(corr) > max_lag else 0.0
 
         # Non-voiced sound or static noise gets immediate 0
-        if pitch_corr < 0.32:
+        if pitch_corr < 0.35:
             return 0.0
 
         # 2. Syllable Envelope (Peak 1 -> Stop Closure Valley -> Peak 2)
@@ -236,15 +239,16 @@ class WakeWordDetector:
         valley = min(energies[2], energies[3])
         p2 = max(energies[4], energies[5])
 
-        has_dip = valley < (max(p1, p2) * 0.60) if max(p1, p2) > 1e-5 else False
+        # Require meaningful syllable energy and a distinct stop closure dip
+        has_dip = (valley < (max(p1, p2) * 0.55)) if max(p1, p2) > 0.002 else False
 
         # 3. High-frequency onset burst ("Ch")
         zcr_onset = float(np.mean(np.abs(np.diff(np.sign(win[:slice_len] + 1e-12)))) / 2.0)
 
         score = 0.0
-        if pitch_corr > 0.40:
+        if pitch_corr > 0.45:
             score += 0.35
-        if pitch_corr > 0.65:
+        if pitch_corr > 0.70:
             score += 0.15
 
         if has_dip:
