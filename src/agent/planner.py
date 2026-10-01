@@ -6,7 +6,9 @@ evidence-based verification, automated failure recovery, and honest outcome repo
 
 import json
 import os
+import platform
 import re
+import subprocess
 import time
 import urllib.parse
 from pathlib import Path

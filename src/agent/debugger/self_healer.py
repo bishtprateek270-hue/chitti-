@@ -12,7 +12,7 @@ import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Tuple
 
 from src.agent.debugger.runner import CodeExecutionSandbox, ExecutionResult
 from src.agent.debugger.traceback_parser import TracebackParser, ParsedErrorInfo
@@ -235,7 +235,7 @@ class SelfHealingDebugger:
         code: str,
         error: ParsedErrorInfo,
         iteration: int,
-    ) -> (str, str):
+    ) -> Tuple[str, str]:
         """
         Generates repaired code using LLM reasoning or AST heuristics.
         """
@@ -277,7 +277,7 @@ Instructions:
         # Fallback to rule-based heuristic repair
         return self._heuristic_fix(code, error)
 
-    def _heuristic_fix(self, code: str, error: ParsedErrorInfo) -> (str, str):
+    def _heuristic_fix(self, code: str, error: ParsedErrorInfo) -> Tuple[str, str]:
         """
         Deterministic rule-based repair for common syntax errors, off-by-one, zero division, and imports.
         """
