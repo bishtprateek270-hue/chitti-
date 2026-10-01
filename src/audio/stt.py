@@ -14,7 +14,7 @@ from typing import Optional, Union, Tuple
 import numpy as np
 
 from src.config import STTConfig, get_config
-from src.utils.logging import log_debug, log_warning, log_chitti
+from src.utils.logging import log_debug, log_warning, log_chitti, log_info, log_error
 
 try:
     import speech_recognition as sr

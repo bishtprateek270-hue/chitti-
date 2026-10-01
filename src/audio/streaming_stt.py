@@ -1,7 +1,7 @@
 """
 Chitti Real-Time Streaming Speech-to-Text (STT) Engine (Phase 5).
 Captures audio with a pre-speech ring-buffer, dynamic Voice Activity Detection (VAD),
-fast auto-silence cutoff, and low-latency Whisper transcription.
+fast auto-silence cutoff, and low-latency transcription.
 """
 
 import threading
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 
-from src.audio.stt import STTEngine, WhisperSTT
+from src.audio.stt import STTEngine, get_stt
 from src.config import AudioConfig, get_config
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
 
@@ -43,16 +43,16 @@ class StreamingSTTEngine:
         stt_engine: Optional[STTEngine] = None,
         config: Optional[AudioConfig] = None,
         pre_speech_seconds: float = 0.35,
-        silence_cutoff_seconds: float = 0.75,
+        silence_cutoff_seconds: float = 0.90,
         min_speech_seconds: float = 0.40,
-        max_record_seconds: float = 15.0,
+        max_record_seconds: float = 8.0,
     ):
         self.config = config or get_config().audio
         self.sample_rate = self.config.sample_rate
-        self.stt_engine = stt_engine or WhisperSTT()
+        self.stt_engine = stt_engine or get_stt()
 
         self.pre_speech_seconds = pre_speech_seconds
-        self.silence_cutoff_seconds = 1.2
+        self.silence_cutoff_seconds = silence_cutoff_seconds
         self.min_speech_seconds = min_speech_seconds
         self.max_record_seconds = max_record_seconds
 
@@ -65,7 +65,7 @@ class StreamingSTTEngine:
         self._lock = threading.Lock()
 
         # Dynamic VAD Energy Thresholds
-        self.silence_threshold = self.config.silence_threshold
+        self.silence_threshold = max(0.035, self.config.silence_threshold)
         self._adaptive_floor = 0.015
 
     def record_until_silence(
@@ -101,11 +101,11 @@ class StreamingSTTEngine:
             chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
             energy = float(np.sqrt(np.mean(chunk**2) + 1e-12))
 
-            # Adapt noise floor
-            if not state.is_speaking and energy < self._adaptive_floor:
+            # Adapt noise floor on quiet frames
+            if not state.is_speaking and energy < 0.040:
                 self._adaptive_floor = 0.95 * self._adaptive_floor + 0.05 * energy
 
-            threshold = max(self.silence_threshold, self._adaptive_floor * 1.6)
+            threshold = max(self.silence_threshold, self._adaptive_floor * 2.2)
 
             with self._lock:
                 if energy >= threshold:
@@ -161,8 +161,8 @@ class StreamingSTTEngine:
                         if elapsed >= max_sec:
                             log_debug(f"[STREAMING STT] Max recording timeout reached ({max_sec}s).")
                             break
-                        # Timeout if user never spoke after 5s
-                        if not state.is_speaking and elapsed >= 6.0:
+                        # Timeout if user never spoke after 3.5s
+                        if not state.is_speaking and elapsed >= 3.5:
                             log_debug("[STREAMING STT] No speech detected within initial window.")
                             break
 
