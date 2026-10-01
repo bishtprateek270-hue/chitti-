@@ -250,8 +250,7 @@ class FloatingHUD:
 
             # Start message queue polling
             self._root.after(50, self._process_queue)
-            self.state.is_visible = False
-            self._root.withdraw()
+            self.state.is_visible = True
             self._root.mainloop()
 
         except Exception as e:
