@@ -81,6 +81,7 @@ class ChittiController:
         self.context_synthesizer = ContextSynthesizer(memory_db=None, knowledge_graph=self.knowledge_graph, scheduler=self.scheduler)
         self.hotkey_manager = GlobalHotkeyManager()
         self.hud = FloatingHUD(on_command_submit=self.process_user_input)
+        self.ambient_listener = None
 
     def initialize(self):
         """Initializes all hardware and AI subsystems."""
@@ -206,6 +207,7 @@ class ChittiController:
             self.ambient_listener = AmbientVoiceListener(
                 command_handler=self.process_user_input,
                 tts_engine=self.tts,
+                stt_engine=self.stt,
                 hud=self.hud,
             )
             self.ambient_listener.start()

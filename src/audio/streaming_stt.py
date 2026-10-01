@@ -52,7 +52,7 @@ class StreamingSTTEngine:
         self.stt_engine = stt_engine or WhisperSTT()
 
         self.pre_speech_seconds = pre_speech_seconds
-        self.silence_cutoff_seconds = silence_cutoff_seconds
+        self.silence_cutoff_seconds = 1.2
         self.min_speech_seconds = min_speech_seconds
         self.max_record_seconds = max_record_seconds
 

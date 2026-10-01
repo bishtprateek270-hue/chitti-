@@ -39,16 +39,18 @@ class AmbientVoiceListener:
         self,
         command_handler: Callable[[str], None],
         tts_engine: Optional[TTSEngine] = None,
+        stt_engine: Optional[Any] = None,
         streaming_stt: Optional[StreamingSTTEngine] = None,
         wake_detector: Optional[WakeWordDetector] = None,
         hud: Optional[FloatingHUD] = None,
     ):
         self.command_handler = command_handler
         self.tts = tts_engine
+        self.stt = stt_engine
         self.hud = hud
 
-        self.wake_detector = wake_detector or WakeWordDetector()
-        self.streaming_stt = streaming_stt or StreamingSTTEngine()
+        self.wake_detector = wake_detector or WakeWordDetector(stt_engine=stt_engine)
+        self.streaming_stt = streaming_stt or StreamingSTTEngine(stt_engine=stt_engine)
         self.barge_in = BargeInDetector()
 
         self.state = AmbientState.STANDBY

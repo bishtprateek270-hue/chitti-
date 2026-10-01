@@ -1,11 +1,13 @@
 """
 Chitti Ambient Wake-Word Detection Engine (Phase 5).
 Continuously processes incoming microphone audio frames in the background
-with ultra-low CPU overhead to spot activation keywords ("Hey Chitti", "Chitti").
+with low CPU overhead, utilizing acoustic feature analysis and Whisper keyword verification
+to prevent false activations from ambient noise or background conversations.
 """
 
 import math
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -34,24 +36,28 @@ class WakeWordEvent:
 class WakeWordDetector:
     """
     Lightweight, continuous keyword spotting engine.
-    Supports neural wake-word models with high-speed acoustic phoneme fallback.
+    Combines fast acoustic pitch/syllable gating with optional STT verification
+    to completely reject unrelated background speech.
     """
 
     DEFAULT_KEYWORDS = ["hey chitti", "chitti", "ok chitti"]
+    WAKE_REGEX = re.compile(r"\b(?:hey\s+|ok\s+|hi\s+|namaste\s+)?(?:chitti|chiti|chithi|chitty|chetty|city)\b", re.IGNORECASE)
 
     def __init__(
         self,
         sample_rate: int = 16000,
         chunk_size: int = 1280,  # 80ms chunks at 16kHz
         keywords: Optional[List[str]] = None,
-        sensitivity: float = 0.65,
+        sensitivity: float = 0.70,
         cooldown_seconds: float = 1.5,
+        stt_engine: Optional[Any] = None,
     ):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self.keywords = [k.lower().strip() for k in (keywords or self.DEFAULT_KEYWORDS)]
         self.sensitivity = max(0.1, min(1.0, sensitivity))
         self.cooldown_seconds = cooldown_seconds
+        self.stt_engine = stt_engine
 
         self._is_running = False
         self._is_paused = False
@@ -60,13 +66,13 @@ class WakeWordDetector:
         self._callback: Optional[Callable[[WakeWordEvent], None]] = None
         self._last_trigger_time = 0.0
 
-        # Ring buffer for sliding audio window (1.5 seconds)
-        self._buffer_size = int(self.sample_rate * 1.5)
+        # Ring buffer for sliding audio window (1.2 seconds)
+        self._buffer_size = int(self.sample_rate * 1.2)
         self._audio_buffer = np.zeros(self._buffer_size, dtype=np.float32)
         self._buffer_lock = threading.Lock()
 
         # Background noise calibration
-        self._noise_floor = 0.015
+        self._noise_floor = 0.020
         self._calibrated = False
 
     def start(self, callback: Optional[Callable[[WakeWordEvent], None]] = None, device_index: Optional[int] = None):
@@ -166,37 +172,47 @@ class WakeWordDetector:
         if now - self._last_trigger_time < self.cooldown_seconds:
             return None
 
-        # 1. Compute acoustic energy and spectral properties
+        # 1. Compute acoustic energy
         rms = float(np.sqrt(np.mean(chunk**2) + 1e-12))
 
         # Dynamic noise floor adaptation
         if not self._calibrated:
-            self._noise_floor = max(0.005, min(0.05, rms * 1.5))
+            self._noise_floor = max(0.010, min(0.06, rms * 1.5))
             self._calibrated = True
         elif rms < self._noise_floor:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
         # Speech onset gate (require noticeable voice energy above ambient background)
-        min_voice_rms = max(0.025, self._noise_floor * 2.5)
+        min_voice_rms = max(0.028, self._noise_floor * 2.2)
         if rms < min_voice_rms:
             return None
 
-        # 2. Evaluate acoustic resonance for "Chitti" / "Hey Chitti"
+        # 2. Stage 1: Fast acoustic verification for "Chitti" / "Hey Chitti"
         confidence = self._evaluate_acoustic_signature(current_window)
+        if confidence < 0.70:
+            return None
 
-        if confidence >= 0.55:
-            self._last_trigger_time = now
-            matched_kw = "Hey Chitti" if confidence > 0.80 else "Chitti"
-            event = WakeWordEvent(
-                keyword=matched_kw,
-                confidence=float(confidence),
-                timestamp=now,
-                audio_snippet=current_window,
-            )
-            log_chitti(f"[WAKE WORD] ✨ Wake word detected: '{matched_kw}' (Confidence: {confidence:.2f})")
-            return event
+        # 3. Stage 2: STT Keyword Verification if STT Engine is available
+        matched_kw = "Hey Chitti" if confidence > 0.85 else "Chitti"
+        if self.stt_engine and hasattr(self.stt_engine, "transcribe"):
+            try:
+                transcription = self.stt_engine.transcribe(current_window)
+                if not transcription or not self.WAKE_REGEX.search(transcription):
+                    log_debug(f"[WAKE WORD] STT rejected non-keyword background speech: '{transcription}'")
+                    return None
+                matched_kw = "Hey Chitti" if "hey" in transcription.lower() else "Chitti"
+            except Exception as e:
+                log_debug(f"[WAKE WORD] STT verification notice: {e}")
 
-        return None
+        self._last_trigger_time = now
+        event = WakeWordEvent(
+            keyword=matched_kw,
+            confidence=float(confidence),
+            timestamp=now,
+            audio_snippet=current_window,
+        )
+        log_chitti(f"[WAKE WORD] ✨ Wake word detected: '{matched_kw}' (Confidence: {confidence:.2f})")
+        return event
 
     def _evaluate_acoustic_signature(self, audio: np.ndarray) -> float:
         """
@@ -219,7 +235,7 @@ class WakeWordDetector:
         pitch_corr = float(np.max(corr[min_lag:max_lag])) if len(corr) > max_lag else 0.0
 
         # Non-voiced sound or static noise gets immediate 0
-        if pitch_corr < 0.28:
+        if pitch_corr < 0.30:
             return 0.0
 
         # 2. Syllable Envelope (Peak 1 -> Stop Closure Valley -> Peak 2)
@@ -233,20 +249,20 @@ class WakeWordDetector:
         valley = min(energies[2], energies[3])
         p2 = max(energies[4], energies[5])
 
-        has_dip = valley < (max(p1, p2) * 0.70) if max(p1, p2) > 1e-5 else False
+        has_dip = valley < (max(p1, p2) * 0.65) if max(p1, p2) > 1e-5 else False
 
         # 3. High-frequency onset burst ("Ch")
         zcr_onset = float(np.mean(np.abs(np.diff(np.sign(win[:slice_len] + 1e-12)))) / 2.0)
 
         score = 0.0
-        if pitch_corr > 0.35:
+        if pitch_corr > 0.40:
             score += 0.35
         if pitch_corr > 0.65:
             score += 0.15
 
         if has_dip:
             score += 0.30
-        if zcr_onset > 0.12:
+        if zcr_onset > 0.10:
             score += 0.20
 
-        return min(1.0, score)
+        return score
