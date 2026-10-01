@@ -170,18 +170,31 @@ class WhisperSTT(STTEngine):
 
     @staticmethod
     def is_hallucination(text: str) -> bool:
-        """Returns True if the transcribed text matches known Whisper phantom hallucinations."""
+        """Returns True if the transcribed text matches known Whisper phantom hallucinations or repeating loops."""
         clean = text.strip()
         if not clean or len(clean) < 2:
             return True
 
         for pat in WHISPER_HALLUCINATION_PATTERNS:
-            if re.search(pat, clean):
+            if re.search(pat, clean, re.IGNORECASE):
                 return True
 
-        # Check for extreme word repetition (e.g. "you you you you you")
-        words = clean.split()
-        if len(words) >= 4 and len(set(words)) == 1:
+        words = [w.lower().strip(".,!?;:\"'") for w in clean.split() if w.strip()]
+        if not words:
+            return True
+
+        # Check for single word repetition (e.g. "you you you you")
+        if len(words) >= 3 and len(set(words)) == 1:
+            return True
+
+        # Check for phrase loops (e.g. "i'm not a good guy, i'm not a good guy...")
+        if len(words) >= 6:
+            unique_ratio = len(set(words)) / len(words)
+            if unique_ratio < 0.45:
+                return True
+
+        # Check for substring repetition
+        if re.search(r"(.{4,40}?)(?:,\s*|\s+)\1(?:,\s*|\s+)\1", clean, re.IGNORECASE):
             return True
 
         return False
