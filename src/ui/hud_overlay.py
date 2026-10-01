@@ -130,6 +130,15 @@ class FloatingHUD:
             hud_y = 25
             self._root.geometry(f"{hud_w}x{hud_h}+{hud_x}+{hud_y}")
             self._root.configure(bg=HUD_THEME["bg_dark"])
+            self._root.update_idletasks()
+
+            # Force Hardware Topmost on Windows 11
+            try:
+                import ctypes
+                hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                ctypes.windll.user32.SetWindowPos(hwnd, -1, hud_x, hud_y, hud_w, hud_h, 0x0040)
+            except Exception:
+                pass
 
             # Outer border container
             border_frame = tk.Frame(
@@ -296,6 +305,12 @@ class FloatingHUD:
                         self._root.deiconify()
                         self._root.lift()
                         self._root.attributes("-topmost", True)
+                        try:
+                            import ctypes
+                            hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                            ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+                        except Exception:
+                            pass
                         if self._entry:
                             self._entry.focus_set()
 
@@ -315,6 +330,12 @@ class FloatingHUD:
                             self._root.deiconify()
                             self._root.lift()
                             self._root.attributes("-topmost", True)
+                            try:
+                                import ctypes
+                                hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                                ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+                            except Exception:
+                                pass
                             if self._entry:
                                 self._entry.focus_set()
 
