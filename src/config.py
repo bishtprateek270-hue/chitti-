@@ -67,7 +67,7 @@ class STTConfig:
 @dataclass
 class TTSConfig:
     engine: str = field(
-        default_factory=lambda: os.getenv("TTS_ENGINE", "pyttsx3")
+        default_factory=lambda: os.getenv("TTS_ENGINE", "edge-tts")
     )
     rate: int = field(
         default_factory=lambda: int(os.getenv("TTS_RATE", "175"))
