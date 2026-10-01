@@ -172,6 +172,11 @@ class ChittiController:
         self.translator = Translator(llm=self.llm)
         log_chitti("Multilingual intelligence system ready (English, Hindi, Hinglish).")
 
+        # 7B. Initialize Vision Grounding Engine (Screen Perception & Document Grounding)
+        from src.agent.vision import VisionGroundingEngine
+        self.vision_grounding = VisionGroundingEngine(llm=self.llm)
+        log_chitti("Vision grounding & document summarization engine ready.")
+
         # 8. Initialize Controlled Laptop Agent (Phase 5)
         if self.config.agent.enabled:
             log_chitti("Initializing controlled laptop agent subsystem...")
@@ -179,6 +184,7 @@ class ChittiController:
                 self.agent = LaptopAgentManager(
                     workspace_dir=self.config.agent.workspace_dir,
                     screenshots_dir=self.config.agent.screenshots_dir,
+                    llm=self.llm,
                 )
                 log_chitti("Laptop agent subsystem ready (Apps, Folders, Files, System Info, Volume).")
             except Exception as e:

@@ -33,12 +33,6 @@ except Exception:
     psutil = None
     HAS_WIN32 = False
 
-try:
-    import pygetwindow as gw
-    HAS_PYGETWINDOW = True
-except Exception:
-    gw = None
-    HAS_PYGETWINDOW = False
 
 
 @dataclass
@@ -143,21 +137,6 @@ class ScreenReader:
             except Exception as e:
                 log_debug(f"[VISION] win32gui GetForegroundWindow error: {e}")
 
-        if HAS_PYGETWINDOW and gw:
-            try:
-                w = gw.getActiveWindow()
-                if w and w.title:
-                    return WindowRect(
-                        title=w.title,
-                        handle=w._hWnd if hasattr(w, "_hWnd") else 0,
-                        left=w.left,
-                        top=w.top,
-                        width=w.width,
-                        height=w.height,
-                        is_active=True,
-                    )
-            except Exception as e:
-                log_debug(f"[VISION] PyGetWindow active window error: {e}")
 
         # Fallback dummy window rect
         w_size, h_size = self.get_screen_size()
