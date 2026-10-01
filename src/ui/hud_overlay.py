@@ -250,7 +250,8 @@ class FloatingHUD:
 
             # Start message queue polling
             self._root.after(50, self._process_queue)
-            self.state.is_visible = True
+            self.state.is_visible = False
+            self._root.withdraw()
             self._root.mainloop()
 
         except Exception as e:
@@ -295,6 +296,7 @@ class FloatingHUD:
                     if self._root:
                         self._root.deiconify()
                         self._root.lift()
+                        self._root.attributes("-topmost", True)
                         if self._entry:
                             self._entry.focus_set()
 
@@ -305,9 +307,17 @@ class FloatingHUD:
 
                 elif msg_type == "toggle":
                     if self.state.is_visible:
-                        self.hide()
+                        self.state.is_visible = False
+                        if self._root:
+                            self._root.withdraw()
                     else:
-                        self.show()
+                        self.state.is_visible = True
+                        if self._root:
+                            self._root.deiconify()
+                            self._root.lift()
+                            self._root.attributes("-topmost", True)
+                            if self._entry:
+                                self._entry.focus_set()
 
                 elif msg_type == "destroy":
                     if self._root:

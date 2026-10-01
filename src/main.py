@@ -198,7 +198,9 @@ class ChittiController:
             self.context_synthesizer.memory_db = self.memory.db
         self.scheduler.register_listener(lambda task: self.speak(f"Reminder: {task.title}. {task.message}"))
         self.scheduler.start()
-        self.hotkey_manager.register_hotkey(callback=self.hud.toggle)
+        from src.ui.hotkey_listener import MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_SPACE, VK_C
+        self.hotkey_manager.register_hotkey(modifiers=(MOD_ALT | MOD_NOREPEAT), vk_code=VK_SPACE, callback=self.hud.toggle)
+        self.hotkey_manager.register_hotkey(modifiers=(MOD_CONTROL | MOD_ALT | MOD_NOREPEAT), vk_code=VK_C, callback=self.hud.toggle)
         self.hotkey_manager.start()
         self.hud.start(non_blocking=True)
 
