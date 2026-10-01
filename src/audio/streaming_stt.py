@@ -198,6 +198,13 @@ class StreamingSTTEngine:
         if len(audio) < int(self.sample_rate * 0.3):
             return ""
 
+        # Validate that actual acoustic voice energy was present (avoid transcribing pure zero-energy noise)
+        peak_amp = float(np.max(np.abs(audio)))
+        rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
+        if peak_amp < 0.035 or rms_val < 0.008:
+            log_debug(f"[STREAMING STT] Audio energy too faint (peak={peak_amp:.3f}, rms={rms_val:.3f}). Discarded as silence.")
+            return ""
+
         log_info(f"[STREAMING STT] Transcribing {len(audio)/self.sample_rate:.2f}s audio stream...")
         text = self.stt_engine.transcribe(audio)
         return text.strip()

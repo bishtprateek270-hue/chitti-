@@ -183,17 +183,17 @@ class WakeWordDetector:
         elif rms < 0.040:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate (Requires deliberate voice loudness: RMS >= 0.055 and 2.5x noise floor)
-        min_voice_rms = max(0.055, self._noise_floor * 2.5)
+        # Speech onset gate (Requires deliberate voice loudness: RMS >= 0.065 and 2.8x noise floor)
+        min_voice_rms = max(0.065, self._noise_floor * 2.8)
         if rms < min_voice_rms:
             return None
 
         # 2. Evaluate acoustic phoneme signature for "Chitti" / "Hey Chitti"
         confidence = self._evaluate_acoustic_signature(current_window)
-        if confidence < 0.65:
+        if confidence < 0.72:
             return None
 
-        matched_kw = "Hey Chitti" if confidence > 0.85 else "Chitti"
+        matched_kw = "Hey Chitti" if confidence > 0.88 else "Chitti"
         self._last_trigger_time = now
         event = WakeWordEvent(
             keyword=matched_kw,
