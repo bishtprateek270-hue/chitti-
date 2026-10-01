@@ -48,6 +48,8 @@ class OCRAnalyzer:
 
     def __init__(self):
         self._ocr_engine = None
+        self._easyocr_cls = None
+        self._easyocr_reader = None
         self._init_engine()
 
     def _init_engine(self):
@@ -55,22 +57,71 @@ class OCRAnalyzer:
         try:
             import pytesseract
             self._ocr_engine = pytesseract
-            log_debug("[VISION] Local pytesseract engine initialized.")
+            log_debug("[VISION] Local pytesseract module found.")
         except Exception:
             self._ocr_engine = None
+
+        try:
+            import easyocr
+            self._easyocr_cls = easyocr
+            log_debug("[VISION] Local EasyOCR module found.")
+        except Exception:
+            self._easyocr_cls = None
+
+    def filter_chitti_terminal_noise(self, raw_text: str) -> str:
+        """
+        Filters out Chitti's own console prompts, banners, router logs, and terminal echoes
+        so that self-reflection feedback loops are avoided.
+        """
+        if not raw_text:
+            return ""
+        lines = raw_text.split("\n")
+        clean: List[str] = []
+        skip_patterns = [
+            r"^(?:\[CHITTI\]|\[MASTER ROUTER\]|\[THINKING\]|\[VISION\]|\[HUD\]|\[DOCUMENT SUMMARY\])",
+            r"^(?:\[Ready\] Press ENTER|You \(typed\):|You:)",
+            r"^\+[-=]+\+",
+            r"^\|\s*C\s*H\s*I\s*T\s*T\s*I\s*\|",
+            r"^\|\s*Personal AI Desktop Companion Robot",
+            r"^\|\s*Phase \d+:",
+            r"^(?:Route:|Confidence:|Memory retrieval:|Computer agent:)",
+        ]
+        for line in lines:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            if any(re.search(pat, line_str, re.IGNORECASE) for pat in skip_patterns):
+                continue
+            clean.append(line)
+        return "\n".join(clean)
 
     def extract_text_from_image(self, image_path: str) -> str:
         """
         Extracts raw textual content from the given screenshot.
-        Uses pytesseract if available, else returns structured inspection signals.
+        Uses pytesseract or EasyOCR with intelligent fallbacks and de-noising.
         """
+        # 1. Try pytesseract if available and binary working
         if self._ocr_engine and HAS_PIL:
             try:
                 img = Image.open(image_path)
                 text = self._ocr_engine.image_to_string(img)
-                return text.strip()
+                if text and text.strip():
+                    return self.filter_chitti_terminal_noise(text.strip())
             except Exception as e:
-                log_warn(f"[VISION] OCR image_to_string error: {e}")
+                log_debug(f"[VISION] Pytesseract fallback: {e}")
+
+        # 2. Try EasyOCR for robust local neural OCR
+        if self._easyocr_cls:
+            try:
+                if self._easyocr_reader is None:
+                    self._easyocr_reader = self._easyocr_cls.Reader(["en"], gpu=False, verbose=False)
+                res = self._easyocr_reader.readtext(image_path)
+                lines = [item[1].strip() for item in res if item and len(item) > 1 and item[1].strip()]
+                text = "\n".join(lines)
+                if text.strip():
+                    return self.filter_chitti_terminal_noise(text.strip())
+            except Exception as e:
+                log_debug(f"[VISION] EasyOCR extraction error: {e}")
 
         # Fallback text extraction simulation for test/mock environments
         return ""

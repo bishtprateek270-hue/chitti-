@@ -171,20 +171,97 @@ class ScreenReader:
             is_active=True,
         )
 
-    def capture_active_window(self, output_path: Optional[str] = None) -> Tuple[str, Optional[WindowRect]]:
+    def is_internal_window(self, win: Optional[WindowRect]) -> bool:
+        """Returns True if the given window represents Chitti itself, a terminal, or IDE runner."""
+        if not win:
+            return True
+        title_low = win.title.lower().strip()
+        proc_low = win.process_name.lower().strip()
+        internal_proc_names = ("python.exe", "cmd.exe", "powershell.exe", "windowsterminal.exe", "pwsh.exe", "conhost.exe")
+        if any(p in proc_low for p in internal_proc_names):
+            return True
+        internal_titles = ("antigravity", "visual studio code", "chitti", "hud overlay", "windows powershell", "command prompt")
+        if any(t in title_low for t in internal_titles):
+            return True
+        return False
+
+    def get_target_user_window(self, exclude_internal: bool = True) -> Optional[WindowRect]:
         """
-        Captures only the bounding box of the active foreground window.
+        Inspects the active foreground window. If it belongs to Chitti or IDE terminal,
+        finds the most prominent external application window (e.g. Browser, Document, Reader, etc.).
+        """
+        fg_win = self.get_active_window()
+        if not exclude_internal or not self.is_internal_window(fg_win):
+            return fg_win
+
+        # If foreground is the IDE or terminal, search top-level visible application windows
+        if HAS_WIN32 and win32gui:
+            try:
+                user32 = ctypes.windll.user32
+                GW_HWNDNEXT = 2
+                hwnd = user32.GetTopWindow(0)
+                while hwnd:
+                    try:
+                        if user32.IsWindowVisible(hwnd) and hwnd != (fg_win.handle if fg_win else 0):
+                            length = user32.GetWindowTextLengthW(hwnd)
+                            if length > 0:
+                                buff = ctypes.create_unicode_buffer(length + 1)
+                                user32.GetWindowTextW(hwnd, buff, length + 1)
+                                title = buff.value.strip()
+                                if title:
+                                    rect = win32gui.GetWindowRect(hwnd)
+                                    w = rect[2] - rect[0]
+                                    h = rect[3] - rect[1]
+                                    if w > 200 and h > 200:
+                                        pname = ""
+                                        if psutil and win32process:
+                                            try:
+                                                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                                                pname = psutil.Process(pid).name()
+                                            except Exception:
+                                                pname = ""
+                                        candidate = WindowRect(
+                                            title=title,
+                                            handle=hwnd,
+                                            left=rect[0],
+                                            top=rect[1],
+                                            width=w,
+                                            height=h,
+                                            process_name=pname,
+                                            is_active=False,
+                                        )
+                                        if not self.is_internal_window(candidate):
+                                            log_info(f"[VISION] Detected background user window: '{title}' ({pname})")
+                                            return candidate
+                    except Exception:
+                        pass
+                    hwnd = user32.GetWindow(hwnd, GW_HWNDNEXT)
+            except Exception as e:
+                log_debug(f"[VISION] Z-order window scan notice: {e}")
+
+        return fg_win
+
+    def capture_active_window(
+        self,
+        output_path: Optional[str] = None,
+        exclude_internal: bool = True,
+    ) -> Tuple[str, Optional[WindowRect]]:
+        """
+        Captures the target active window or the full multi-screen desktop if the user
+        is running in terminal/IDE mode.
         Returns the saved screenshot path and the WindowRect metadata.
         """
-        active_win = self.get_active_window()
+        import uuid
+        active_win = self.get_target_user_window(exclude_internal=exclude_internal)
         if not output_path:
-            filename = f"active_win_{int(time.time() * 1000)}.png"
+            filename = f"screen_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.png"
             target = self.output_dir / filename
         else:
             target = Path(output_path)
             target.parent.mkdir(parents=True, exist_ok=True)
 
-        if not active_win or active_win.width <= 0 or active_win.height <= 0:
+        # If the only window is internal Chitti/IDE, capture the full multi-monitor desktop
+        if self.is_internal_window(active_win) or not active_win or active_win.width <= 0 or active_win.height <= 0:
             full_path = self.capture_full_screen(output_path=str(target))
             return full_path, active_win
 

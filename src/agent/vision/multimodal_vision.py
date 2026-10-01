@@ -332,11 +332,14 @@ class VisionGroundingEngine:
         if self.llm:
             try:
                 prompt = (
-                    f"You are Chitti's Vision Grounding Engine. Analyze the active window on screen.\n"
+                    f"You are Chitti's Vision Grounding Engine. Analyze what the user is currently viewing on their screen.\n"
                     f"User Query: {query}\n"
-                    f"Active Window: {window_title} (Process: {process_name})\n"
-                    f"On-Screen OCR Text Snippet:\n{ocr_text[:800]}\n"
-                    f"Provide a clear, 2-3 sentence summary of what is happening on screen and any errors found."
+                    f"Target Window / Document: {window_title} (Application: {process_name})\n"
+                    f"Visible Screen Content:\n{ocr_text[:1200]}\n\n"
+                    f"Instructions:\n"
+                    f"- Summarize the actual document, web page, or application open on the user's screen in 2-3 clear sentences.\n"
+                    f"- Focus strictly on the primary user content, ignoring any IDE terminal logs or bot dialogue.\n"
+                    f"- If the query is in Hindi/Hinglish, reply naturally in Hindi/Hinglish."
                 )
                 resp = self.llm.generate_response([{"role": "user", "content": prompt}])
                 if resp and len(resp.strip()) > 10:
@@ -350,7 +353,7 @@ class VisionGroundingEngine:
             return f"Active window '{window_title}' shows an error: {diagnosis.error_type}{loc_str}. {diagnosis.suggested_fix}"
 
         if ocr_text:
-            snippet = ocr_text.replace("\n", " ")[:140]
+            snippet = ocr_text.replace("\n", " ")[:160]
             return f"Currently viewing '{window_title}'. On-screen content: {snippet}..."
 
         return f"Currently active on '{window_title}' ({process_name}). The display is open and responsive."
