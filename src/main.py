@@ -714,9 +714,11 @@ class ChittiController:
                 raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register, L=list faces, M=memory, C=clear, Q=quit): ").strip()
                 user_choice = raw_input_line.lower()
 
-                if user_choice in ("q", "quit", "exit"):
+                if user_choice in ("q", "quit", "exit", ":q", "qq", "qqq", "q!", "stop"):
                     log_chitti("Shutting down Chitti. Goodbye!")
                     self.speak("Goodbye!")
+                    if self.ambient_listener:
+                        self.ambient_listener.stop()
                     if self.vision and self.vision.camera:
                         self.vision.camera.release()
                     break

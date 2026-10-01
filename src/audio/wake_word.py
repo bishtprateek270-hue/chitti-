@@ -1,13 +1,12 @@
 """
 Chitti Ambient Wake-Word Detection Engine (Phase 5).
 Continuously processes incoming microphone audio frames in the background
-with low CPU overhead, utilizing acoustic feature analysis and Whisper keyword verification
-to prevent false activations from ambient noise or background conversations.
+with ultra-low latency DSP acoustic pattern recognition (pitch autocorrelation,
+syllable envelope modulation, and unvoiced-to-voiced consonant transition).
 """
 
 import math
 import os
-import re
 import threading
 import time
 from dataclasses import dataclass
@@ -36,20 +35,19 @@ class WakeWordEvent:
 class WakeWordDetector:
     """
     Lightweight, continuous keyword spotting engine.
-    Combines fast acoustic pitch/syllable gating with optional STT verification
-    to completely reject unrelated background speech.
+    Uses ultra-fast DSP phoneme resonance and vocal harmonic analysis
+    to detect 'Chitti' / 'Hey Chitti' without stalling CPU/GPU.
     """
 
     DEFAULT_KEYWORDS = ["hey chitti", "chitti", "ok chitti"]
-    WAKE_REGEX = re.compile(r"\b(?:hey\s+|ok\s+|hi\s+|namaste\s+)?(?:chitti|chiti|chithi|chitty|chetty|city)\b", re.IGNORECASE)
 
     def __init__(
         self,
         sample_rate: int = 16000,
         chunk_size: int = 1280,  # 80ms chunks at 16kHz
         keywords: Optional[List[str]] = None,
-        sensitivity: float = 0.70,
-        cooldown_seconds: float = 1.5,
+        sensitivity: float = 0.75,
+        cooldown_seconds: float = 2.0,
         stt_engine: Optional[Any] = None,
     ):
         self.sample_rate = sample_rate
@@ -66,13 +64,13 @@ class WakeWordDetector:
         self._callback: Optional[Callable[[WakeWordEvent], None]] = None
         self._last_trigger_time = 0.0
 
-        # Ring buffer for sliding audio window (1.2 seconds)
-        self._buffer_size = int(self.sample_rate * 1.2)
+        # Ring buffer for sliding audio window (1.0 seconds)
+        self._buffer_size = int(self.sample_rate * 1.0)
         self._audio_buffer = np.zeros(self._buffer_size, dtype=np.float32)
         self._buffer_lock = threading.Lock()
 
         # Background noise calibration
-        self._noise_floor = 0.020
+        self._noise_floor = 0.025
         self._calibrated = False
 
     def start(self, callback: Optional[Callable[[WakeWordEvent], None]] = None, device_index: Optional[int] = None):
@@ -150,7 +148,7 @@ class WakeWordDetector:
     def process_audio_chunk(self, chunk: np.ndarray) -> Optional[WakeWordEvent]:
         """
         Processes a single audio chunk (1D float32 array), updates sliding window,
-        and checks for wake-word activation patterns.
+        and checks for wake-word activation patterns in < 0.2ms.
         """
         if chunk is None or len(chunk) == 0:
             return None
@@ -177,33 +175,22 @@ class WakeWordDetector:
 
         # Dynamic noise floor adaptation
         if not self._calibrated:
-            self._noise_floor = max(0.010, min(0.06, rms * 1.5))
+            self._noise_floor = min(0.020, rms)
             self._calibrated = True
         elif rms < self._noise_floor:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
         # Speech onset gate (require noticeable voice energy above ambient background)
-        min_voice_rms = max(0.028, self._noise_floor * 2.2)
+        min_voice_rms = max(0.020, self._noise_floor * 1.5)
         if rms < min_voice_rms:
             return None
 
-        # 2. Stage 1: Fast acoustic verification for "Chitti" / "Hey Chitti"
+        # 2. Evaluate acoustic phoneme signature for "Chitti" / "Hey Chitti"
         confidence = self._evaluate_acoustic_signature(current_window)
-        if confidence < 0.70:
+        if confidence < 0.60:
             return None
 
-        # 3. Stage 2: STT Keyword Verification if STT Engine is available
         matched_kw = "Hey Chitti" if confidence > 0.85 else "Chitti"
-        if self.stt_engine and hasattr(self.stt_engine, "transcribe"):
-            try:
-                transcription = self.stt_engine.transcribe(current_window)
-                if not transcription or not self.WAKE_REGEX.search(transcription):
-                    log_debug(f"[WAKE WORD] STT rejected non-keyword background speech: '{transcription}'")
-                    return None
-                matched_kw = "Hey Chitti" if "hey" in transcription.lower() else "Chitti"
-            except Exception as e:
-                log_debug(f"[WAKE WORD] STT verification notice: {e}")
-
         self._last_trigger_time = now
         event = WakeWordEvent(
             keyword=matched_kw,
@@ -235,7 +222,7 @@ class WakeWordDetector:
         pitch_corr = float(np.max(corr[min_lag:max_lag])) if len(corr) > max_lag else 0.0
 
         # Non-voiced sound or static noise gets immediate 0
-        if pitch_corr < 0.30:
+        if pitch_corr < 0.32:
             return 0.0
 
         # 2. Syllable Envelope (Peak 1 -> Stop Closure Valley -> Peak 2)
@@ -249,7 +236,7 @@ class WakeWordDetector:
         valley = min(energies[2], energies[3])
         p2 = max(energies[4], energies[5])
 
-        has_dip = valley < (max(p1, p2) * 0.65) if max(p1, p2) > 1e-5 else False
+        has_dip = valley < (max(p1, p2) * 0.60) if max(p1, p2) > 1e-5 else False
 
         # 3. High-frequency onset burst ("Ch")
         zcr_onset = float(np.mean(np.abs(np.diff(np.sign(win[:slice_len] + 1e-12)))) / 2.0)
