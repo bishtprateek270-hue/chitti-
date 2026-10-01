@@ -9,7 +9,7 @@ import os
 import platform
 import threading
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn, log_error
 

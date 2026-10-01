@@ -38,7 +38,7 @@ class ReflexionEngine:
 
     def __init__(
         self,
-        llm: Optional[LLMEngine] = None,
+        llm: Optional[BaseLLM] = None,
         buffer: Optional[ExperienceReplayBuffer] = None,
     ):
         self.llm = llm
