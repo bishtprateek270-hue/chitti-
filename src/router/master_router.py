@@ -153,12 +153,12 @@ class MasterRouter:
 
     # 8. Vision Grounding & Screen Reasoning (Phase 1)
     VISION_TASK_PATTERNS = [
-        r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+my\s+screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+what\s+is\s+on\s+(?:my\s+)?screen|inspect\s+(?:the\s+)?active\s+window|read\s+my\s+screen)\b",
-        r"(?i)\b(?:meri\s+screen\s+dekho|screen\s+(?:pe\s+)?kya\s+hai(?:\s+batao)?|screen\s+(?:ko\s+)?summarize\s+karo|screen\s+(?:ko\s+)?explain\s+karo|screen\s+dekho)\b",
+        r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+(?:my\s+)?screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+what\s+is\s+on\s+(?:my\s+)?screen|inspect\s+(?:the\s+)?active\s+window|read\s+my\s+screen|screen\s+info)\b",
+        r"(?i)\b(?:meri\s+screen\s+dekho|screen\s+(?:pe|p|par)?\s*kya\s+(?:hai|chal\s+(?:rha|raha)\s+(?:h|hai))(?:\s+batao)?|screen\s+(?:ko\s+)?(?:summarize|explain)\s+karo|screen\s+(?:dekho|dekh\s+ke\s+batao))\b",
         r"(?i)\b(?:explain\s+(?:the\s+|this\s+)?error\s+on\s+screen|why\s+(?:is\s+my\s+code\s+failing|did\s+it\s+fail|is\s+there\s+an\s+error)|diagnose\s+(?:the\s+)?(?:screen|error)|what\s+is\s+wrong\s+with\s+(?:my\s+code|this))\b",
-        r"(?i)\b(?:screen\s+pe\s+(?:kya\s+error\s+hai|error\s+dekho|error\s+batao|kya\s+gadbad\s+hai)|meri\s+screen\s+dekho\s+aur\s+error\s+batao|error\s+solve\s+karo\s+screen\s+dekh\s+ke)\b",
+        r"(?i)\b(?:screen\s+(?:pe|p|par)?\s*(?:kya\s+error\s+hai|error\s+dekho|error\s+batao|kya\s+gadbad\s+hai)|meri\s+screen\s+dekho\s+aur\s+error\s+batao|error\s+solve\s+karo\s+screen\s+dekh\s+ke)\b",
         r"(?i)\b(?:find|locate)\s+(?:the\s+)?([A-Za-z0-9_\-\s]+?)\s+(?:button|input|icon|control|link)\s+on\s+screen\b",
-        r"(?i)\bscreen\s+pe\s+([A-Za-z0-9_\-\s]+?)\s+(?:button|dhoondo|kahan\s+hai)\b",
+        r"(?i)\bscreen\s+(?:pe|p|par)?\s*([A-Za-z0-9_\-\s]+?)\s+(?:button|dhoondo|kahan\s+hai)\b",
     ]
 
     # 9. Next-Gen Roadmap Inquiries

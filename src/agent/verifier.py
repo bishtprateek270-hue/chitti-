@@ -185,15 +185,29 @@ class SubtaskVerifier:
                 return VerificationOutcome(False, f"Command execution failed: {action_result.message}")
             return VerificationOutcome(True, "Execution verified.")
 
-        # 7. MESSAGING & COMMUNICATION ACTIONS
+        # 7. CODE SELF-HEALING & AUTOMATED TEST SUITE ACTIONS (Phase 2)
+        elif act in ("RUN_CODE_TESTS", "SELF_HEAL_CODE", "DEBUG_CODE", "PREPARE_DEBUG_ENVIRONMENT", "VERIFY_HEALED_STATE", "VERIFY_TEST_RESULTS"):
+            if action_result and action_result.success:
+                state.set_flag(ExecutionFlag.CODE_EXECUTED, True)
+                state.set_flag(ExecutionFlag.EXECUTION_VERIFIED, True)
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")
+
+        # 8. REAL-TIME VISION GROUNDING & SCREEN REASONING (Phase 1)
+        elif act in ("ANALYZE_SCREEN", "DIAGNOSE_SCREEN_ERROR", "FIND_UI_ELEMENT", "CAPTURE_SCREEN", "CAPTURE_ACTIVE_WINDOW", "INSPECT_SCREEN", "READ_SCREEN"):
+            if action_result and action_result.success:
+                return VerificationOutcome(True, action_result.message)
+            return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")
+
+        # 9. MESSAGING & COMMUNICATION ACTIONS
         elif act in ("CHECK_AUTHENTICATION", "SEARCH_CONTACT", "SELECT_CONVERSATION", "SEND_MESSAGE", "VERIFY_MESSAGE_SENT", "COMPOSE_EMAIL", "CONFIRM_SEND", "SEND_EMAIL", "VERIFY_EMAIL_SENT"):
             if action_result and action_result.success:
                 return VerificationOutcome(True, action_result.message)
             return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")
 
-        # 8. GENERIC COMPUTER ACTION PRIMITIVES
+        # 10. GENERIC COMPUTER ACTION PRIMITIVES
         elif act in (
-            "INSPECT_SCREEN", "READ_SCREEN", "FIND_UI_ELEMENT", "CLICK", "DOUBLE_CLICK", "RIGHT_CLICK",
+            "CLICK", "DOUBLE_CLICK", "RIGHT_CLICK",
             "MOVE_MOUSE", "DRAG", "SCROLL", "WAIT", "WAIT_FOR_UI", "COPY", "PASTE",
             "CLIPBOARD_READ", "CLIPBOARD_WRITE", "GET_ACTIVE_WINDOW", "FOCUS_WINDOW",
             "VERIFY_UI_STATE", "VERIFY_TEXT", "VERIFY_ELEMENT", "VERIFY_APPLICATION_STATE"

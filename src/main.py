@@ -33,6 +33,7 @@ from src.language.normalizer import LanguageNormalizer
 from src.language.translator import Translator
 from src.language.language_models import IntentCategory
 from src.agent.manager import LaptopAgentManager
+from src.agent.vision import VisionGroundingEngine
 from src.agent.task_state import TaskStatus
 from src.router.master_router import MasterRouter, MasterRoute, MasterRouteDecision
 from src.brain.knowledge_graph import KnowledgeGraph
@@ -73,7 +74,8 @@ class ChittiController:
         self.translator = None
         self.session_response_language = None
 
-        # Phase 3 & 4 Subsystems
+        # Phase 1, 3 & 4 Subsystems
+        self.vision_grounding = VisionGroundingEngine()
         self.knowledge_graph = KnowledgeGraph()
         self.scheduler = ProactiveScheduler()
         self.context_synthesizer = ContextSynthesizer(memory_db=None, knowledge_graph=self.knowledge_graph, scheduler=self.scheduler)
@@ -236,6 +238,9 @@ class ChittiController:
             log_state("CHITTI")
             print(resp)
             self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
             return
 
         # 1.5. Unified Top-Level Master Routing Layer
@@ -261,7 +266,41 @@ class ChittiController:
             log_state("CHITTI")
             print(trans_res.translated_text)
             self.speak(trans_res.translated_text)
+            if self.hud:
+                self.hud.set_response(trans_res.translated_text)
+                self.hud.set_mode(HUDMode.IDLE)
             return
+
+        # 2.3. Check for Real-Time Screen Vision & Grounding Query (Phase 1)
+        import re
+        is_camera_query = bool(re.search(r"(?i)\b(?:camera|webcam|chehra|face|person|insan)\b", user_text))
+        is_screen_query = (
+            master_decision.route == MasterRoute.VISION_TASK
+            or bool(re.search(r"(?i)\b(?:screen|desktop|active\s+window|display|screen\s+info)\b", user_text))
+            or bool(re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|screen\s+(?:pe|p|par)?\s*(?:kya|dekho))\b", user_text))
+        ) and not is_camera_query
+
+        if is_screen_query and self.vision_grounding is not None:
+            try:
+                log_state("CHITTI", "Analyzing active desktop screen & window...")
+                if bool(re.search(r"(?i)\b(?:error|fail|bug|traceback|gadbad|issue|problem)\b", user_text)):
+                    diag = self.vision_grounding.diagnose_screen_error(query=user_text)
+                    resp_msg = diag.description
+                else:
+                    res = self.vision_grounding.analyze_screen(query=user_text)
+                    resp_msg = res.summary
+
+                self.history.add_user_message(user_text)
+                self.history.add_assistant_message(resp_msg)
+                log_state("CHITTI")
+                print(resp_msg)
+                self.speak(resp_msg)
+                if self.hud:
+                    self.hud.set_response(resp_msg)
+                    self.hud.set_mode(HUDMode.IDLE)
+                return
+            except Exception as e:
+                log_warning(f"Screen vision grounding failed: {e}")
 
         # 2.5. Check for Actionable Laptop Agent Actions (Phase 5 / Phase 6)
         is_agent_confirmation_pending = (
@@ -284,6 +323,9 @@ class ChittiController:
                     log_state("CHITTI")
                     print(resp_msg)
                     self.speak(resp_msg)
+                    if self.hud:
+                        self.hud.set_response(resp_msg)
+                        self.hud.set_mode(HUDMode.IDLE)
                     return
             except Exception as e:
                 log_warning(f"Laptop agent command execution notice: {e}")
