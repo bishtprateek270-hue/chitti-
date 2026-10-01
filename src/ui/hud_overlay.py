@@ -85,9 +85,11 @@ class FloatingHUD:
             return
 
         self._is_running = True
+        self._ready_event = threading.Event()
         if non_blocking:
             self._thread = threading.Thread(target=self._run_gui, daemon=True, name="ChittiHUDThread")
             self._thread.start()
+            self._ready_event.wait(timeout=3.0)
             log_info("[HUD] Floating HUD background thread started.")
         else:
             self._run_gui()
@@ -111,6 +113,8 @@ class FloatingHUD:
             from tkinter import ttk
         except ImportError:
             log_warn("[HUD] Tkinter is not available. HUD running in headless mock mode.")
+            if hasattr(self, "_ready_event"):
+                self._ready_event.set()
             return
 
         try:
@@ -119,21 +123,13 @@ class FloatingHUD:
             self._root.attributes("-topmost", True)
             self._root.overrideredirect(True)  # Frameless
 
-            # Transparency on Windows
-            try:
-                self._root.attributes("-alpha", 0.96)
-            except Exception:
-                pass
-
-            # Center top positioning: 640x160 pill at top center of screen
+            # Center top positioning: 620x165 pill at top center of screen
             screen_w = self._root.winfo_screenwidth()
             hud_w, hud_h = 620, 165
             hud_x = (screen_w - hud_w) // 2
             hud_y = 25
             self._root.geometry(f"{hud_w}x{hud_h}+{hud_x}+{hud_y}")
             self._root.configure(bg=HUD_THEME["bg_dark"])
-            self._root.lift()
-            self._root.deiconify()
 
             # Outer border container
             border_frame = tk.Frame(
@@ -253,6 +249,8 @@ class FloatingHUD:
             # Start message queue polling
             self._root.after(50, self._process_queue)
             self.state.is_visible = True
+            if hasattr(self, "_ready_event"):
+                self._ready_event.set()
             self._root.mainloop()
 
         except Exception as e:

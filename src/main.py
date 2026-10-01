@@ -840,8 +840,15 @@ class ChittiController:
 
 def main():
     """Application entry point."""
-    controller = ChittiController()
-    controller.run()
+    try:
+        controller = ChittiController()
+        controller.run()
+    except Exception as e:
+        import traceback
+        with open("crash_dump.txt", "w", encoding="utf-8") as f:
+            f.write(f"CRASH OCCURRED: {e}\n\n")
+            traceback.print_exc(file=f)
+        raise
 
 
 if __name__ == "__main__":
