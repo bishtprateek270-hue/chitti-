@@ -159,6 +159,15 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
+        # 5B2. VISION: SUMMARIZE OPEN DOCUMENT ON SCREEN (Phase 1)
+        if intent.intent == ActionIntentType.SUMMARIZE_DOCUMENT:
+            state.steps = [
+                AgentStep(step_id=1, description="Capture active document window", action_type="CAPTURE_ACTIVE_WINDOW", parameters={}),
+                AgentStep(step_id=2, description="Read, extract, and synthesize structured document summary", action_type="SUMMARIZE_DOCUMENT", parameters={"query": clean}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
         # 5C. VISION: LOCATE UI CONTROL ON SCREEN (Phase 1)
         if intent.intent == ActionIntentType.FIND_UI_ELEMENT:
             elem = intent.parameters.get("element") or intent.target or "control"
@@ -857,6 +866,11 @@ class ComputerAgentLoop:
                 query = params.get("query", "")
                 res = self.tools.execute_tool("diagnose_screen_error", {"query": query})
                 return res.success, res.message, res.data.get("description")
+
+            elif act == "SUMMARIZE_DOCUMENT":
+                query = params.get("query", "Summarize the open document")
+                res = self.tools.execute_tool("summarize_document", {"query": query})
+                return res.success, res.message, res.data.get("full_summary") or res.message
 
             elif act == "FIND_UI_ELEMENT":
                 element = params.get("element", "")

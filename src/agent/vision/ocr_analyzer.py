@@ -142,3 +142,68 @@ class OCRAnalyzer:
                 }
 
         return None
+
+    def extract_document_structure(self, raw_text: str, window_title: str = "") -> Dict[str, Any]:
+        """
+        Cleans and extracts structured document sections (headings, bullets, paragraphs) from on-screen text.
+        """
+        lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+        clean_lines: List[str] = []
+        headings: List[str] = []
+        bullet_points: List[str] = []
+
+        # Filter out common IDE / OS menu bar clutter
+        clutter_patterns = [
+            r"^(?:(?:File|Edit|Selection|View|Go|Run|Terminal|Help|Window|Format|Tools)\s*)+$",
+            r"^(?:Problems|Output|Debug Console|Terminal|Ports)$",
+            r"^(?:http[s]?://|www\.)",
+            r"^(?:Ln\s+\d+,\s+Col\s+\d+|Spaces:\s+\d+|UTF-8|CRLF)",
+        ]
+
+        for line in lines:
+            if any(re.match(p, line, re.IGNORECASE) for p in clutter_patterns):
+                continue
+            clean_lines.append(line)
+
+            # Detect headings (# Heading, or short title-case lines)
+            if re.match(r"^#{1,4}\s+", line) or (len(line) < 60 and line.endswith(":") and len(line.split()) < 8):
+                headings.append(re.sub(r"^#{1,4}\s+", "", line).rstrip(":").strip())
+            # Detect bullet points
+            elif re.match(r"^[\*\-•]\s+", line) or re.match(r"^\d+\.\s+", line):
+                bullet_points.append(re.sub(r"^[\*\-•\d\.]+\s*", "", line).strip())
+
+        # Clean document title from window title
+        doc_title = window_title
+        for suffix in [" - Visual Studio Code", " - VS Code", " - Google Chrome", " - Microsoft Edge", " - Adobe Acrobat Reader", " - Notepad", " - Word"]:
+            doc_title = doc_title.replace(suffix, "")
+        doc_title = doc_title.strip() or "On-Screen Document"
+
+        # Detect document format
+        doc_type = "Document"
+        lower_title = window_title.lower()
+        lower_clean = doc_title.lower()
+        if lower_clean.endswith(".pdf") or ".pdf" in lower_title or "acrobat" in lower_title or "pdf" in lower_title:
+            doc_type = "PDF Document"
+        elif lower_clean.endswith((".md", ".markdown")) or ".md" in lower_title or "markdown" in lower_title:
+            doc_type = "Markdown Document"
+        elif lower_clean.endswith((".py", ".js", ".ts", ".cpp", ".java", ".html", ".css", ".json", ".env")) or any(ext in lower_title for ext in [".py", ".js", ".ts", ".cpp", ".java", ".html", ".css", ".json"]):
+            doc_type = "Source Code Document"
+        elif lower_clean.endswith((".docx", ".doc")) or ".doc" in lower_title or "word" in lower_title:
+            doc_type = "Word Document"
+        elif "chrome" in lower_title or "edge" in lower_title or "browser" in lower_title or "firefox" in lower_title:
+            doc_type = "Web Page / Article"
+        elif "notepad" in lower_title or lower_clean.endswith(".txt") or ".txt" in lower_title:
+            doc_type = "Text Document"
+
+        word_count = sum(len(line.split()) for line in clean_lines)
+
+        return {
+            "title": doc_title,
+            "document_type": doc_type,
+            "headings": headings,
+            "bullet_points": bullet_points,
+            "clean_lines": clean_lines,
+            "word_count": word_count,
+            "clean_text": "\n".join(clean_lines),
+        }
+

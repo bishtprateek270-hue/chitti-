@@ -154,6 +154,8 @@ class MasterRouter:
     # 8. Vision Grounding & Screen Reasoning (Phase 1)
     VISION_TASK_PATTERNS = [
         r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+(?:my\s+)?screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+what\s+is\s+on\s+(?:my\s+)?screen|inspect\s+(?:the\s+)?active\s+window|read\s+my\s+screen|screen\s+info)\b",
+        r"(?i)\b(?:summarize\s+(?:the\s+|this\s+)?(?:open\s+)?(?:document|doc|pdf|file|page|article|notes|code|readme|roadmap)|document\s+summary|summarize\s+what\s+is\s+written)\b",
+        r"(?i)\b(?:screen\s+pe\s+(?:jo\s+)?(?:document|file|pdf|page)\s+hai\s+(?:usko\s+)?summarize\s+karo|is\s+document\s+ko\s+summarize\s+karo|document\s+ke\s+main\s+points\s+batao|is\s+document\s+ka\s+summary\s+batao)\b",
         r"(?i)\b(?:meri\s+screen\s+dekho|screen\s+(?:pe|p|par)?\s*kya\s+(?:hai|chal\s+(?:rha|raha)\s+(?:h|hai))(?:\s+batao)?|screen\s+(?:ko\s+)?(?:summarize|explain)\s+karo|screen\s+(?:dekho|dekh\s+ke\s+batao))\b",
         r"(?i)\b(?:explain\s+(?:the\s+|this\s+)?error\s+on\s+screen|why\s+(?:is\s+my\s+code\s+failing|did\s+it\s+fail|is\s+there\s+an\s+error)|diagnose\s+(?:the\s+)?(?:screen|error)|what\s+is\s+wrong\s+with\s+(?:my\s+code|this))\b",
         r"(?i)\b(?:screen\s+(?:pe|p|par)?\s*(?:kya\s+error\s+hai|error\s+dekho|error\s+batao|kya\s+gadbad\s+hai)|meri\s+screen\s+dekho\s+aur\s+error\s+batao|error\s+solve\s+karo\s+screen\s+dekh\s+ke)\b",

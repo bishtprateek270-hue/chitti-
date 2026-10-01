@@ -10,6 +10,7 @@ from src.agent.vision.multimodal_vision import (
     VisionGroundingEngine,
     VisionAnalysisResult,
     ErrorDiagnosisResult,
+    DocumentSummaryResult,
     UIElementMatch,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "VisionGroundingEngine",
     "VisionAnalysisResult",
     "ErrorDiagnosisResult",
+    "DocumentSummaryResult",
     "UIElementMatch",
 ]

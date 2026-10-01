@@ -163,6 +163,12 @@ class ToolEngine:
             self._tool_diagnose_screen_error,
         )
         self._register(
+            "summarize_document",
+            "Reads, analyzes, and summarizes the document (PDF, Word, Markdown, Code, Web article) open on screen.",
+            {"query": {"type": "string", "description": "Optional query or focus topic", "optional": True}},
+            self._tool_summarize_document,
+        )
+        self._register(
             "capture_active_window",
             "Captures a screenshot cropped strictly to the active foreground application window.",
             {},
@@ -824,6 +830,21 @@ class ToolEngine:
             "suggested_fix": diag.suggested_fix,
             "evidence": diag.evidence_snippet,
             "message": diag.description,
+        }
+
+    def _tool_summarize_document(self, query: str = "Summarize the open document") -> Dict[str, Any]:
+        log_info(f"[TOOL] summarize_document -> query: '{query}'")
+        res = self.vision.summarize_open_document(query=query)
+        return {
+            "success": True,
+            "title": res.document_title,
+            "document_type": res.document_type,
+            "overview": res.overview,
+            "key_points": res.key_points,
+            "full_summary": res.full_summary,
+            "word_count": res.word_count,
+            "screenshot_path": res.screenshot_path,
+            "message": res.full_summary,
         }
 
     def _tool_capture_active_window(self) -> Dict[str, Any]:

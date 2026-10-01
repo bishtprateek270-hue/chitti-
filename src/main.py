@@ -286,6 +286,9 @@ class ChittiController:
                 if bool(re.search(r"(?i)\b(?:error|fail|bug|traceback|gadbad|issue|problem)\b", user_text)):
                     diag = self.vision_grounding.diagnose_screen_error(query=user_text)
                     resp_msg = diag.description
+                elif bool(re.search(r"(?i)\b(?:document|doc|pdf|notes|article|paper|readme|roadmap|summarize\s+what\s+is\s+written|main\s+points)\b", user_text)):
+                    doc_res = self.vision_grounding.summarize_open_document(query=user_text)
+                    resp_msg = doc_res.full_summary
                 else:
                     res = self.vision_grounding.analyze_screen(query=user_text)
                     resp_msg = res.summary

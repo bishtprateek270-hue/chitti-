@@ -49,6 +49,8 @@ class ActionExecutor:
                 return cls._analyze_screen(action)
             elif act_type == ActionType.DIAGNOSE_SCREEN_ERROR:
                 return cls._diagnose_screen_error(action)
+            elif act_type == ActionType.SUMMARIZE_DOCUMENT:
+                return cls._summarize_document(action)
             elif act_type == ActionType.FIND_UI_ELEMENT:
                 return cls._find_ui_element(action)
             elif act_type == ActionType.RUN_CODE_TESTS:
@@ -335,6 +337,27 @@ class ActionExecutor:
                 "error_type": diag.error_type,
                 "description": diag.description,
                 "suggested_fix": diag.suggested_fix,
+            },
+        )
+
+    @classmethod
+    def _summarize_document(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.vision import VisionGroundingEngine
+        engine = VisionGroundingEngine()
+        query = action.parameters.get("query", "Summarize the open document")
+        res = engine.summarize_open_document(query=query)
+        log_chitti(f"[AGENT] Execution: SUCCESS | Document Summary: {res.document_title}")
+        return ActionResult(
+            success=True,
+            action=ActionType.SUMMARIZE_DOCUMENT,
+            message=res.full_summary,
+            data={
+                "title": res.document_title,
+                "document_type": res.document_type,
+                "overview": res.overview,
+                "key_points": res.key_points,
+                "word_count": res.word_count,
+                "screenshot_path": res.screenshot_path,
             },
         )
 

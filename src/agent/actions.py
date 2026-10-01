@@ -19,6 +19,7 @@ class ActionType(str, Enum):
     TAKE_SCREENSHOT = "TAKE_SCREENSHOT"
     ANALYZE_SCREEN = "ANALYZE_SCREEN"
     DIAGNOSE_SCREEN_ERROR = "DIAGNOSE_SCREEN_ERROR"
+    SUMMARIZE_DOCUMENT = "SUMMARIZE_DOCUMENT"
     FIND_UI_ELEMENT = "FIND_UI_ELEMENT"
     RUN_CODE_TESTS = "RUN_CODE_TESTS"
     SELF_HEAL_CODE = "SELF_HEAL_CODE"
@@ -141,6 +142,13 @@ class ActionRegistry:
         ActionType.DIAGNOSE_SCREEN_ERROR: ActionDefinition(
             action_type=ActionType.DIAGNOSE_SCREEN_ERROR,
             description="Inspects active window and screen to detect, diagnose, and explain errors or tracebacks.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            optional_parameters=["query"],
+        ),
+        ActionType.SUMMARIZE_DOCUMENT: ActionDefinition(
+            action_type=ActionType.SUMMARIZE_DOCUMENT,
+            description="Extracts, analyzes, and summarizes the open document, PDF, or article on screen.",
             risk_level=RiskLevel.LOW,
             requires_confirmation=False,
             optional_parameters=["query"],

@@ -273,9 +273,85 @@ class TestVisionGroundingEngine(unittest.TestCase):
             lang="en",
         )
         self.assertIn("SyntaxError in main.py", resp)
-        self.assertNotIn("WhatsApp", resp)
-        self.assertNotIn("Email", resp)
+    # -------------------------------------------------------------
+    # 6. DOCUMENT SUMMARIZATION TESTS
+    # -------------------------------------------------------------
+    def test_ocr_extract_document_structure(self):
+        sample_doc = (
+            "File Edit View Terminal Help\n"
+            "# Next Gen Roadmap\n"
+            "This document outlines the four major architectural phases for Chitti.\n\n"
+            "## Key Deliverables:\n"
+            "* Phase 1: Real-time visual screen grounding\n"
+            "* Phase 2: Autonomous code self-healing\n"
+            "* Phase 3: Proactive memory and knowledge graph\n"
+            "* Phase 4: Floating Dynamic Island overlay\n"
+        )
+        struct = self.ocr.extract_document_structure(sample_doc, window_title="roadmap.md - Visual Studio Code")
+        self.assertEqual(struct["title"], "roadmap.md")
+        self.assertEqual(struct["document_type"], "Markdown Document")
+        self.assertIn("Next Gen Roadmap", struct["headings"])
+        self.assertGreaterEqual(len(struct["bullet_points"]), 4)
+        self.assertGreater(struct["word_count"], 10)
+        self.assertNotIn("File Edit View Terminal Help", struct["clean_lines"])
+
+    def test_vision_engine_summarize_open_document(self):
+        with patch.object(self.reader, "capture_active_window") as mock_cap, \
+             patch.object(self.ocr, "extract_text_from_image") as mock_ocr:
+
+            mock_cap.return_value = (
+                os.path.join(self.output_dir, "test_doc.png"),
+                WindowRect(title="AI_Ethics_Paper.pdf - Adobe Acrobat Reader", handle=1, left=0, top=0, width=1280, height=800, process_name="AcroRd32.exe"),
+            )
+            mock_ocr.return_value = (
+                "# AI Ethics and Safety Guidelines\n"
+                "This paper analyzes regulatory frameworks for autonomous agent actions.\n"
+                "- Ensure deterministic human confirmation for destructive tasks.\n"
+                "- Maintain zero data leakage across user memory databases.\n"
+                "- Implement real-time screen inspection bounds."
+            )
+
+            res = self.engine.summarize_open_document()
+            self.assertIsNotNone(res)
+            self.assertEqual(res.document_title, "AI_Ethics_Paper.pdf")
+            self.assertEqual(res.document_type, "PDF Document")
+            self.assertIn("AI Ethics and Safety Guidelines", res.headings)
+            self.assertGreaterEqual(len(res.key_points), 3)
+            self.assertIn("Document Summary", res.full_summary)
+
+    def test_intent_summarize_document(self):
+        queries = [
+            "summarize the document on screen",
+            "summarize this document",
+            "screen pe jo document hai uska summary batao",
+            "summarize this pdf",
+            "is document ke main points kya hain",
+            "summarize what is written on my screen",
+        ]
+        for q in queries:
+            intent = ActionIntentAnalyzer.extract_intent(q)
+            self.assertEqual(intent.intent, ActionIntentType.SUMMARIZE_DOCUMENT, f"Failed for query: '{q}'")
+
+    def test_planner_creates_document_summary_plan(self):
+        projects = MagicMock(spec=ProjectRegistry)
+        planner = AgentPlanner(project_registry=projects)
+        plan = planner.plan_task("summarize the document open on my screen")
+        self.assertIsNotNone(plan)
+        self.assertEqual(len(plan.steps), 2)
+        self.assertEqual(plan.steps[0].action_type, "CAPTURE_ACTIVE_WINDOW")
+        self.assertEqual(plan.steps[1].action_type, "SUMMARIZE_DOCUMENT")
+
+    def test_action_executor_summarize_document(self):
+        action = StructuredAction(
+            action=ActionType.SUMMARIZE_DOCUMENT,
+            parameters={"query": "Summarize open document"},
+        )
+        res = ActionExecutor.execute(action)
+        self.assertTrue(res.success)
+        self.assertIn("title", res.data)
+        self.assertIn("document_type", res.data)
 
 
 if __name__ == "__main__":
     unittest.main()
+

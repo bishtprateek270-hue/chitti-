@@ -53,6 +53,7 @@ class ActionIntentType(str, Enum):
     TAKE_SCREENSHOT = "TAKE_SCREENSHOT"
     ANALYZE_SCREEN = "ANALYZE_SCREEN"
     DIAGNOSE_SCREEN_ERROR = "DIAGNOSE_SCREEN_ERROR"
+    SUMMARIZE_DOCUMENT = "SUMMARIZE_DOCUMENT"
     FIND_UI_ELEMENT = "FIND_UI_ELEMENT"
     SET_VOLUME = "SET_VOLUME"
     GET_SYSTEM_INFO = "GET_SYSTEM_INFO"
@@ -362,10 +363,29 @@ class ActionIntentAnalyzer:
                 verification_required=True,
             )
 
-        # 4C. General Screen Analysis & Summarization ("look at my screen", "screen pe kya hai")
+        # 4C. Document Summarization on Screen ("summarize document", "summarize open file", "document ke main points")
+        is_document_summary = bool(
+            re.search(r"(?i)\b(?:summarize\s+(?:the\s+|this\s+)?(?:open\s+)?(?:document|doc|pdf|file|page|article|notes|code|readme|roadmap)|document\s+summary|summarize\s+what\s+is\s+written)\b", clean) or
+            re.search(r"(?i)\b(?:document|doc|pdf|file|page|notes|roadmap)\b.*?\b(?:summarize|summary|main\s+points|batao|samjhao|explain)\b", clean) or
+            re.search(r"(?i)\b(?:summary|main\s+points)\b.*?\b(?:document|doc|pdf|file|page|screen)\b", clean) or
+            re.search(r"(?i)\b(?:screen\s+pe\s+(?:jo\s+)?(?:document|file|pdf|page)\s+hai|is\s+document\s+k[eo]|document\s+k[eo]\s+main\s+points)\b", clean)
+        )
+        if is_document_summary:
+            return ActionIntent(
+                intent=ActionIntentType.SUMMARIZE_DOCUMENT,
+                goal="Read, analyze, and summarize the open document on screen",
+                channel="Vision Grounding",
+                application="Document Grounding",
+                target="Open Document",
+                parameters={"query": clean},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        # 4D. General Screen Analysis & Summarization ("look at my screen", "screen pe kya hai")
         is_screen_analysis = bool(
-            re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+my\s+screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+what\s+is\s+on\s+(?:my\s+)?screen|inspect\s+(?:the\s+)?active\s+window|read\s+my\s+screen)\b", clean) or
-            re.search(r"(?i)\b(?:meri\s+screen\s+dekho|screen\s+(?:pe\s+)?kya\s+hai(?:\s+batao)?|screen\s+(?:ko\s+)?summarize\s+karo|screen\s+(?:ko\s+)?explain\s+karo|screen\s+dekho)\b", clean)
+            re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+my\s+screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+what\s+is\s+on\s+(?:my\s+)?screen|inspect\s+(?:the\s+)?active\s+window|read\s+my\s+screen|screen\s+info)\b", clean) or
+            re.search(r"(?i)\b(?:meri\s+screen\s+dekho|screen\s+(?:pe|p|par)?\s*(?:kya|chal\s+(?:rha|raha)\s+(?:h|hai))(?:\s+batao)?|screen\s+(?:ko\s+)?(?:summarize|explain)\s+karo|screen\s+dekho)\b", clean)
         )
         if is_screen_analysis and not any(w in clean_lower for w in ["screenshot le lo", "screenshot kheecho", "capture screen"]):
             return ActionIntent(

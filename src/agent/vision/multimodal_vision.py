@@ -41,6 +41,21 @@ class ErrorDiagnosisResult:
 
 
 @dataclass
+class DocumentSummaryResult:
+    """Represents an intelligent summary of a document opened on the screen."""
+    document_title: str
+    document_type: str
+    overview: str
+    key_points: List[str]
+    headings: List[str] = field(default_factory=list)
+    action_items: List[str] = field(default_factory=list)
+    word_count: int = 0
+    full_summary: str = ""
+    screenshot_path: str = ""
+    raw_content: str = ""
+
+
+@dataclass
 class VisionAnalysisResult:
     """Represents the complete visual and multimodal analysis of the screen."""
     screenshot_path: str
@@ -49,6 +64,7 @@ class VisionAnalysisResult:
     summary: str
     detected_elements: List[DetectedUIElement] = field(default_factory=list)
     error_diagnosis: Optional[ErrorDiagnosisResult] = None
+    document_summary: Optional[DocumentSummaryResult] = None
     raw_ocr_text: str = ""
 
 
@@ -177,6 +193,109 @@ class VisionGroundingEngine:
 
         return None
 
+    def summarize_open_document(
+        self,
+        query: str = "Summarize the document opened on screen",
+        screenshot_path: Optional[str] = None,
+    ) -> DocumentSummaryResult:
+        """
+        Extracts, structures, and generates a concise intelligent summary of the document,
+        PDF, article, or code file currently displayed in the foreground window.
+        """
+        active_rect: Optional[WindowRect] = None
+        if not screenshot_path:
+            screenshot_path, active_rect = self.screen_reader.capture_active_window()
+        else:
+            active_rect = self.screen_reader.get_active_window()
+
+        active_title = active_rect.title if active_rect else "Active Document"
+        active_proc = active_rect.process_name if active_rect else "Viewer"
+
+        # 1. Extract raw text & document structure
+        ocr_text = self.ocr_analyzer.extract_text_from_image(screenshot_path)
+        doc_struct = self.ocr_analyzer.extract_document_structure(ocr_text, window_title=active_title)
+
+        doc_title = doc_struct["title"]
+        doc_type = doc_struct["document_type"]
+        headings = doc_struct["headings"]
+        bullet_points = doc_struct["bullet_points"]
+        clean_text = doc_struct["clean_text"]
+        word_count = doc_struct["word_count"]
+
+        # 2. Generate LLM synthesis if LLM available
+        overview = ""
+        key_points: List[str] = list(bullet_points[:5]) if bullet_points else []
+        action_items: List[str] = []
+
+        if self.llm and len(clean_text) > 30:
+            try:
+                prompt = (
+                    f"You are Chitti's Document Grounding Engine. Analyze and summarize this document open on the user's screen.\n"
+                    f"Document Title: {doc_title}\n"
+                    f"Document Format: {doc_type}\n"
+                    f"Extracted Document Text:\n{clean_text[:2000]}\n\n"
+                    f"Please provide a structured summary:\n"
+                    f"1. A 2-sentence Overview of the document's core purpose.\n"
+                    f"2. 3 to 5 Key Points (bulleted).\n"
+                    f"3. Any Action Items or Next Steps (if applicable)."
+                )
+                llm_resp = self.llm.generate_response([{"role": "user", "content": prompt}])
+                if llm_resp and len(llm_resp.strip()) > 20:
+                    overview = llm_resp.strip()
+                    # Extract bullet points from LLM response if present
+                    extracted_llm_pts = [
+                        re.sub(r"^[\*\-•\d\.]+\s*", "", l).strip()
+                        for l in overview.split("\n")
+                        if re.match(r"^[\*\-•\d\.]+\s+", l.strip())
+                    ]
+                    if extracted_llm_pts:
+                        key_points = extracted_llm_pts[:5]
+            except Exception as e:
+                log_debug(f"[DOCUMENT SUMMARY] LLM summary notice: {e}")
+
+        # 3. Deterministic synthesis if LLM didn't produce full structured text
+        if not overview:
+            if headings and bullet_points:
+                overview = f"{doc_type} '{doc_title}' covers sections on {', '.join(headings[:3])}."
+                key_points = key_points or bullet_points[:5]
+            elif headings:
+                overview = f"{doc_type} '{doc_title}' contains main sections: {', '.join(headings[:4])}."
+                key_points = key_points or [f"Section: {h}" for h in headings[:4]]
+            elif bullet_points:
+                overview = f"{doc_type} '{doc_title}' contains {len(bullet_points)} key bulleted items."
+                key_points = key_points or bullet_points[:5]
+            elif clean_text:
+                first_lines = [l for l in clean_text.split('\n') if len(l.split()) > 3][:3]
+                overview = f"{doc_type} '{doc_title}' (approx {word_count} words). " + " ".join(first_lines)
+                key_points = key_points or [l[:100] for l in first_lines]
+            else:
+                overview = f"{doc_type} '{doc_title}' is currently open on your screen."
+                key_points = key_points or [f"Active application: {active_proc}"]
+
+        # Format beautiful markdown summary
+        if "\n" not in overview or not ("Key" in overview or "•" in overview or "-" in overview):
+            pts_str = "\n".join(f"  • {p}" for p in key_points) if key_points else ""
+            formatted = f"📄 **Document Summary**: {doc_title} ({doc_type})\n\n{overview}"
+            if pts_str:
+                formatted += f"\n\n**Key Takeaways**:\n{pts_str}"
+        else:
+            formatted = f"📄 **Document Summary**: {doc_title} ({doc_type})\n\n{overview}"
+
+        log_info(f"[DOCUMENT SUMMARY] Summarized '{doc_title}' ({word_count} words)")
+
+        return DocumentSummaryResult(
+            document_title=doc_title,
+            document_type=doc_type,
+            overview=overview,
+            key_points=key_points,
+            headings=headings,
+            action_items=action_items,
+            word_count=word_count,
+            full_summary=formatted,
+            screenshot_path=screenshot_path,
+            raw_content=clean_text,
+        )
+
     def summarize_active_window(self, screenshot_path: Optional[str] = None) -> str:
         """
         Returns a concise natural-language summary of what is visible in the foreground window.
@@ -199,6 +318,13 @@ class VisionGroundingEngine:
         """
         Produces a concise, context-aware summary.
         """
+        # If user explicitly asked for document summary, delegate to document extraction
+        if any(kw in query.lower() for kw in ("document", "doc", "pdf", "file", "article", "paper", "notes", "summarize")):
+            doc_struct = self.ocr_analyzer.extract_document_structure(ocr_text, window_title=window_title)
+            if doc_struct["clean_text"]:
+                first_part = doc_struct["clean_text"][:140].replace('\n', ' ')
+                return f"Document '{doc_struct['title']}' ({doc_struct['document_type']}): {first_part}..."
+
         if self.llm:
             try:
                 prompt = (
@@ -224,3 +350,4 @@ class VisionGroundingEngine:
             return f"Currently viewing '{window_title}'. On-screen content: {snippet}..."
 
         return f"Currently active on '{window_title}' ({process_name}). The display is open and responsive."
+

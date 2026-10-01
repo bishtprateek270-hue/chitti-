@@ -194,7 +194,7 @@ class SubtaskVerifier:
             return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")
 
         # 8. REAL-TIME VISION GROUNDING & SCREEN REASONING (Phase 1)
-        elif act in ("ANALYZE_SCREEN", "DIAGNOSE_SCREEN_ERROR", "FIND_UI_ELEMENT", "CAPTURE_SCREEN", "CAPTURE_ACTIVE_WINDOW", "INSPECT_SCREEN", "READ_SCREEN"):
+        elif act in ("ANALYZE_SCREEN", "DIAGNOSE_SCREEN_ERROR", "SUMMARIZE_DOCUMENT", "FIND_UI_ELEMENT", "CAPTURE_SCREEN", "CAPTURE_ACTIVE_WINDOW", "INSPECT_SCREEN", "READ_SCREEN"):
             if action_result and action_result.success:
                 return VerificationOutcome(True, action_result.message)
             return VerificationOutcome(False, action_result.message if action_result else f"Step {act} failed verification.")

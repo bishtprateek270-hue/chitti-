@@ -225,6 +225,7 @@ class FloatingHUD:
                 chip.bind("<Button-1>", lambda e: self._submit_text(cmd))
 
             add_chip("👁️ Screen Info", "look at my screen")
+            add_chip("📄 Doc Summary", "summarize the document on screen")
             add_chip("🔁 Self Heal", "run tests and fix whatever is broken")
             add_chip("🧠 Memories", "list my memories")
             add_chip("🗺️ Roadmap", "roadmap k bare m batao")
