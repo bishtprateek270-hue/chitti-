@@ -29,6 +29,17 @@ class TestVoiceEnginePhase5(unittest.TestCase):
         event = detector.process_audio_chunk(silence_chunk)
         self.assertIsNone(event)
 
+    def test_wake_word_detector_ambient_noise_no_trigger(self):
+        """Continuous fan / background static noise should never trigger a wake word."""
+        detector = WakeWordDetector(sample_rate=self.sample_rate, sensitivity=0.7)
+        # 1.5 seconds of static/fan noise
+        noise = np.random.uniform(-0.035, 0.035, int(self.sample_rate * 1.5)).astype(np.float32)
+        for i in range(0, len(noise), 1280):
+            chunk = noise[i : i + 1280]
+            if len(chunk) == 1280:
+                event = detector.process_audio_chunk(chunk)
+                self.assertIsNone(event)
+
     def test_wake_word_detector_acoustic_chitti_trigger(self):
         """Synthesized acoustic pattern matching 'Chitti' should fire a WakeWordEvent."""
         detector = WakeWordDetector(sample_rate=self.sample_rate, sensitivity=0.85, cooldown_seconds=0.1)
@@ -39,13 +50,13 @@ class TestVoiceEnginePhase5(unittest.TestCase):
 
         # Seg 0: high-frequency fricative noise
         pattern[0:seg_len] = np.random.uniform(-0.15, 0.15, seg_len).astype(np.float32)
-        # Seg 1: vowel harmonic
+        # Seg 1: vowel harmonic (220 Hz pitch)
         t = np.linspace(0, 0.2, seg_len)
-        pattern[seg_len : 2 * seg_len] = (0.2 * np.sin(2 * np.pi * 350 * t)).astype(np.float32)
-        # Seg 2: stop
-        pattern[2 * seg_len : 3 * seg_len] = 0.01
-        # Seg 3: vowel
-        pattern[3 * seg_len :] = (0.2 * np.sin(2 * np.pi * 400 * t)).astype(np.float32)
+        pattern[seg_len : 2 * seg_len] = (0.25 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+        # Seg 2: stop closure
+        pattern[2 * seg_len : 3 * seg_len] = 0.005
+        # Seg 3: vowel harmonic (250 Hz pitch)
+        pattern[3 * seg_len :] = (0.25 * np.sin(2 * np.pi * 250 * t)).astype(np.float32)
 
         event = detector.process_audio_chunk(pattern)
         self.assertIsNotNone(event)

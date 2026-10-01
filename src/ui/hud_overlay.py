@@ -48,9 +48,16 @@ class FloatingHUD:
         """Updates the visual mode and status text."""
         self._queue.put(("set_mode", mode, status_text))
 
-    def set_progress(self, current_step: int, total_steps: int, step_desc: str = ""):
+    def set_progress(self, current_step_or_desc: Any = "", total_steps: int = 0, step_desc: str = ""):
         """Updates the live execution progress bar and step description."""
-        self._queue.put(("set_progress", current_step, total_steps, step_desc))
+        if isinstance(current_step_or_desc, str) and total_steps == 0:
+            desc = current_step_or_desc
+            cur, tot = 0, 0
+        else:
+            cur = int(current_step_or_desc) if isinstance(current_step_or_desc, (int, float)) else 0
+            tot = total_steps
+            desc = step_desc
+        self._queue.put(("set_progress", cur, tot, desc))
 
     def set_response(self, text: str):
         """Displays assistant response text in the HUD."""

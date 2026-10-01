@@ -176,18 +176,17 @@ class WakeWordDetector:
         elif rms < self._noise_floor:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate
-        if rms < self._noise_floor * (1.8 - self.sensitivity * 0.8):
+        # Speech onset gate (require noticeable voice energy above ambient background)
+        min_voice_rms = max(0.025, self._noise_floor * 2.5)
+        if rms < min_voice_rms:
             return None
 
         # 2. Evaluate acoustic resonance for "Chitti" / "Hey Chitti"
-        # "Chitti" characteristically exhibits high-frequency affricate/fricative bursts (CH)
-        # followed by short front vowel (I), dental stop (TT), and front vowel (I).
         confidence = self._evaluate_acoustic_signature(current_window)
 
-        if confidence >= (1.0 - self.sensitivity * 0.6):
+        if confidence >= 0.55:
             self._last_trigger_time = now
-            matched_kw = "Hey Chitti" if confidence > 0.85 else "Chitti"
+            matched_kw = "Hey Chitti" if confidence > 0.80 else "Chitti"
             event = WakeWordEvent(
                 keyword=matched_kw,
                 confidence=float(confidence),
@@ -201,48 +200,53 @@ class WakeWordDetector:
 
     def _evaluate_acoustic_signature(self, audio: np.ndarray) -> float:
         """
-        Evaluates acoustic energy concentration, zero-crossing rate,
-        and temporal formant shifts corresponding to the phonemes in 'Chitti'.
+        Evaluates human voice pitch periodicity (autocorrelation), onset zero-crossing rate,
+        and the 2-syllable peak-valley-peak rhythmic energy envelope of 'Chit-ti'.
         """
-        if len(audio) < self.sample_rate * 0.4:
+        if len(audio) < int(self.sample_rate * 0.4):
             return 0.0
 
-        # Sub-divide recent 0.8s into 4 equal segments: [Onset (CH), Vowel (I), Plosive (TT), Vowel (I)]
-        window = audio[-int(self.sample_rate * 0.8):]
-        seg_len = len(window) // 4
-        if seg_len < 100:
+        # 1. Human vocal pitch periodicity check (80Hz - 350Hz)
+        min_lag = int(self.sample_rate / 350)  # ~45 samples
+        max_lag = int(self.sample_rate / 80)   # ~200 samples
+        seg = audio[-int(self.sample_rate * 0.4):]
+        seg = seg - np.mean(seg)
+        norm = np.sum(seg**2)
+        if norm < 1e-6:
             return 0.0
 
-        energies = []
-        zcrs = []
-        for i in range(4):
-            seg = window[i * seg_len : (i + 1) * seg_len]
-            e = float(np.mean(seg**2))
-            z = float(np.mean(np.abs(np.diff(np.sign(seg + 1e-12)))) / 2.0)
-            energies.append(e)
-            zcrs.append(z)
+        corr = np.correlate(seg, seg, mode="full")[len(seg) - 1 :] / norm
+        pitch_corr = float(np.max(corr[min_lag:max_lag])) if len(corr) > max_lag else 0.0
 
-        # "Chitti" phonetic profile:
-        # Segment 0: High ZCR (fricative "Ch")
-        # Segment 1: High Energy, Medium ZCR (vowel "i")
-        # Segment 2: Brief Dip/Stop (dental plosive "tt")
-        # Segment 3: High Energy, Medium ZCR (vowel "i")
+        # Non-voiced sound or static noise gets immediate 0
+        if pitch_corr < 0.28:
+            return 0.0
+
+        # 2. Syllable Envelope (Peak 1 -> Stop Closure Valley -> Peak 2)
+        win = audio[-int(self.sample_rate * 0.6):]
+        slice_len = len(win) // 6
+        if slice_len < 50:
+            return 0.0
+
+        energies = [float(np.mean(win[i * slice_len : (i + 1) * slice_len] ** 2)) for i in range(6)]
+        p1 = max(energies[0], energies[1])
+        valley = min(energies[2], energies[3])
+        p2 = max(energies[4], energies[5])
+
+        has_dip = valley < (max(p1, p2) * 0.70) if max(p1, p2) > 1e-5 else False
+
+        # 3. High-frequency onset burst ("Ch")
+        zcr_onset = float(np.mean(np.abs(np.diff(np.sign(win[:slice_len] + 1e-12)))) / 2.0)
+
         score = 0.0
-
-        # High zero-crossing on onset
-        if zcrs[0] > 0.12:
-            score += 0.30
-
-        # Strong vowel energy in seg 1 or seg 3
-        if energies[1] > self._noise_floor * 1.1 or energies[3] > self._noise_floor * 1.1 or energies[1] > 0.008 or energies[3] > 0.008:
+        if pitch_corr > 0.35:
             score += 0.35
-
-        # Rhythmic modulation
-        if max(energies) > 0.005:
-            score += 0.20
-
-        # Peak energy balance
-        if max(energies) > self._noise_floor * 1.5 or max(energies) > 0.01:
+        if pitch_corr > 0.65:
             score += 0.15
+
+        if has_dip:
+            score += 0.30
+        if zcr_onset > 0.12:
+            score += 0.20
 
         return min(1.0, score)
