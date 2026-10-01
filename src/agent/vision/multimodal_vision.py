@@ -136,12 +136,16 @@ class VisionGroundingEngine:
             raw_ocr_text=ocr_text,
         )
 
-    def diagnose_screen_error(self, screenshot_path: Optional[str] = None) -> ErrorDiagnosisResult:
+    def diagnose_screen_error(
+        self,
+        query: str = "Analyze the error on screen and provide a diagnosis and fix",
+        screenshot_path: Optional[str] = None,
+    ) -> ErrorDiagnosisResult:
         """
         Specifically focuses on finding and debugging errors visible on the active display.
         """
         analysis = self.analyze_screen(
-            query="Analyze the error on screen and provide a diagnosis and fix",
+            query=query or "Analyze the error on screen and provide a diagnosis and fix",
             screenshot_path=screenshot_path,
             focus_active_window=True,
         )
