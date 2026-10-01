@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import sys
 
-def enable_autostart(silent: bool = False):
+def enable_autostart(silent: bool = True):
     """Adds Chitti to the Windows Startup folder."""
     if sys.platform != "win32":
         print("[ERROR] Autostart configuration is only supported on Windows.")
@@ -27,26 +27,35 @@ def enable_autostart(silent: bool = False):
     scripts_dir = project_root / "scripts"
 
     launcher_bat = scripts_dir / "chitti_launcher.bat"
-    launcher_vbs = scripts_dir / "chitti_silent_launcher.vbs"
 
-    target_script = launcher_vbs if silent else launcher_bat
-    target_link_name = "ChittiAI.vbs" if silent else "ChittiAI.bat"
-    destination_file = startup_dir / target_link_name
+    # Clean up any legacy or corrupt files first
+    for old_file in ["ChittiAI.bat", "ChittiAI.vbs", "Chitti.lnk"]:
+        old_path = startup_dir / old_file
+        if old_path.exists():
+            try:
+                old_path.unlink()
+            except Exception:
+                pass
 
-    # Create startup launcher in Startup folder
     if silent:
-        content = f'''Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = "{project_root}"
-WshShell.Run "cmd /c """ & "{launcher_bat}"""", 0, False
-Set WshShell = Nothing
-'''
+        destination_file = startup_dir / "ChittiAI.vbs"
+        bat_escaped = str(launcher_bat).replace("\\", "\\\\")
+        root_escaped = str(project_root).replace("\\", "\\\\")
+        content = (
+            'Set WshShell = CreateObject("WScript.Shell")\r\n'
+            f'WshShell.CurrentDirectory = "{project_root}"\r\n'
+            f'WshShell.Run Chr(34) & "{launcher_bat}" & Chr(34), 0, False\r\n'
+            'Set WshShell = Nothing\r\n'
+        )
         with open(destination_file, "w", encoding="utf-8") as f:
             f.write(content)
     else:
-        content = f'''@echo off
-cd /d "{project_root}"
-call "{launcher_bat}"
-'''
+        destination_file = startup_dir / "ChittiAI.bat"
+        content = (
+            '@echo off\r\n'
+            f'cd /d "{project_root}"\r\n'
+            f'call "{launcher_bat}"\r\n'
+        )
         with open(destination_file, "w", encoding="utf-8") as f:
             f.write(content)
 
@@ -65,6 +74,6 @@ call "{launcher_bat}"
 
 
 if __name__ == "__main__":
-    # If passed --silent, runs without visible console window
-    silent_mode = "--silent" in sys.argv or "-s" in sys.argv
-    enable_autostart(silent=silent_mode)
+    # Default to silent background mode unless --visible is explicitly passed
+    is_visible = "--visible" in sys.argv or "-v" in sys.argv
+    enable_autostart(silent=not is_visible)

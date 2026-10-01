@@ -724,9 +724,27 @@ class ChittiController:
         print("   [Q] + ENTER  : Quit Chitti")
         print("------------------------------------------------------------------\n")
 
+        # If running in background/daemon mode (e.g. Windows autostart without console)
+        if not sys.stdin or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+            log_chitti("Running in background daemon mode. Ambient voice ('Hey Chitti') & HUD (Alt+Space) active.")
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                log_chitti("Background daemon exiting cleanly...")
+                if self.ambient_listener:
+                    self.ambient_listener.stop()
+                if self.vision and self.vision.camera:
+                    self.vision.camera.release()
+            return
+
         while True:
             try:
-                raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register, L=list faces, M=memory, C=clear, Q=quit): ").strip()
+                try:
+                    raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register, L=list faces, M=memory, C=clear, Q=quit): ").strip()
+                except EOFError:
+                    time.sleep(1)
+                    continue
                 user_choice = raw_input_line.lower()
 
                 if user_choice in ("q", "quit", "exit", ":q", "qq", "qqq", "q!", "stop"):
