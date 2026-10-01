@@ -88,11 +88,14 @@ class MasterRouter:
         r"(?:तुम्हें\s+मेरे\s+बारे\s+में\s+क्या\s+याद\s+है|मेरा\s+नाम\s+क्या\s+है|तुम्हें\s+किसने\s+बनाया)",
     ]
 
-    # 3. Explicit Memory Modification / Store Patterns
+    # 3. Explicit Memory Modification / Store & Proactive Reminders
     EXPLICIT_MEMORY_PATTERNS = [
         r"(?i)\b(?:remember\s+that|don'?t\s+forget\s+that|save\s+this\s+fact|keep\s+in\s+mind\s+that|note\s+down)\b",
         r"(?i)\b(?:yaad\s+rakhna\s+ki|yaad\s+rakho\s+ki|ye\s+yaad\s+rakhna|bhoolna\s+mat)\b",
         r"(?i)\b(?:forget\s+that|delete\s+my\s+memory|clear\s+my\s+memories)\b",
+        r"(?i)\b(?:remind\s+me|yaad\s+dilana|set\s+a\s+reminder|schedule\s+(?:a\s+)?reminder)\b",
+        r"(?i)\b(?:list\s+my\s+reminders|my\s+reminders|pending\s+tasks|pending\s+reminders|active\s+reminders)\b",
+        r"(?i)\b(?:cancel\s+reminder|delete\s+reminder)\s+(\d+)\b",
         r"(?:याद\s+रखना\s+कि|याद\s+रखो)",
     ]
 
