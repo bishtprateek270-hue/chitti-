@@ -55,7 +55,7 @@ class STTConfig:
         default_factory=lambda: os.getenv("STT_DEVICE", "auto")
     )
     language: Optional[str] = field(
-        default_factory=lambda: os.getenv("STT_LANGUAGE", "en") or None
+        default_factory=lambda: (os.getenv("STT_LANGUAGE", "").strip() or None)
     )
 
     @property

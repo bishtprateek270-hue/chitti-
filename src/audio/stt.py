@@ -1,9 +1,12 @@
 """
 Chitti Speech-to-Text (STT) Module.
 Wraps OpenAI Whisper with GPU/CPU acceleration, eager preloading,
-robust error handling, audio normalization, and hallucination filtering.
+robust error handling, audio normalization, greedy deterministic decoding,
+and multilingual hallucination filtering.
 """
 
+import contextlib
+import io
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -33,6 +36,8 @@ WHISPER_HALLUCINATION_PATTERNS = [
     r"(?i)\b(?:thanks\s+for\s+watching|thank\s+you\s+for\s+watching|subscribe\s+to\s+my\s+channel)\b",
     r"(?i)\b(?:subtitles\s+by|translated\s+by|captioned\s+by)\b",
     r"(?i)\b(?:humans\s+are\s+so\s+hard|oh\s+julian)\b",
+    r"(?i)\b(?:is\s+there\s+something\s+else\s+I\s+can\s+assist|respectful\s+manner|play\s+one\s+Jolly)\b",
+    r"(?i)\b(?:have\s+fun\s+coding|see\s+you\s+in\s+the\s+next\s+video)\b",
     r"(?i)^\[.*\]$",  # e.g. [Music], [Applause], [Silence]
 ]
 
@@ -65,7 +70,8 @@ class WhisperSTT(STTEngine):
 
         try:
             log_chitti(f"Loading speech recognition model ({self.model_name}) on {self.device.upper()}...")
-            self._model = whisper.load_model(self.model_name, device=self.device)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self._model = whisper.load_model(self.model_name, device=self.device)
             log_chitti("Speech recognition model loaded successfully.")
         except Exception as e:
             # If CUDA failed, try fallback to CPU
@@ -73,7 +79,8 @@ class WhisperSTT(STTEngine):
                 log_warning(f"CUDA loading failed for Whisper: {e}. Falling back to CPU...")
                 try:
                     self.device = "cpu"
-                    self._model = whisper.load_model(self.model_name, device="cpu")
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        self._model = whisper.load_model(self.model_name, device="cpu")
                     log_chitti("Whisper successfully loaded on CPU fallback.")
                     return
                 except Exception as fallback_err:
@@ -84,7 +91,7 @@ class WhisperSTT(STTEngine):
     def is_hallucination(text: str) -> bool:
         """Returns True if the transcribed text matches known Whisper phantom hallucinations."""
         clean = text.strip()
-        if not clean:
+        if not clean or len(clean) < 2:
             return True
 
         for pat in WHISPER_HALLUCINATION_PATTERNS:
@@ -129,14 +136,14 @@ class WhisperSTT(STTEngine):
         options = {
             "fp16": fp16,
             "verbose": False,
+            "temperature": 0.0,
+            "condition_on_previous_text": False,
+            "initial_prompt": "Chitti, Hey Chitti, open Chrome, Notepad, VS Code, read screen, summarize document, mera naam, help me, screen p kya chal rha h.",
         }
-        if self.language:
+        if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
 
         try:
-            import io
-            import contextlib
-            # Suppress tqdm progress bars on stderr
             with contextlib.redirect_stderr(io.StringIO()):
                 result = self._model.transcribe(audio, **options)
             text = result.get("text", "").strip()
