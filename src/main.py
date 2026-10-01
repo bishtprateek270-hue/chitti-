@@ -189,6 +189,7 @@ class ChittiController:
         self.scheduler.start()
         self.hotkey_manager.register_hotkey(callback=self.hud.toggle)
         self.hotkey_manager.start()
+        self.hud.start(non_blocking=True)
 
         log_chitti("System initialization complete. Ready for interaction! (Press Alt+Space for Floating HUD)\n")
 
@@ -326,9 +327,81 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Identity resolution failed: {e}")
 
+        # 4.5. Check for Proactive Reminder & Schedule Commands (Phase 3)
+        # a) List reminders ("list my reminders", "pending tasks", "what are my reminders")
+        import re
+        if re.search(r"(?i)\b(?:list\s+my\s+reminders|my\s+reminders|what\s+are\s+my\s+reminders|pending\s+reminders|pending\s+tasks)\b", user_text):
+            active = self.scheduler.list_active_tasks()
+            if not active:
+                resp_msg = "You have no active reminders right now." if active_lang == "en" else "Aapka koi active reminder nahi hai."
+            else:
+                items = [f"#{t.id}: '{t.title}' - {t.message} (due in {int(t.time_until_due_sec)}s)" for t in active]
+                resp_msg = f"You have {len(active)} active reminder(s):\n" + "\n".join(items)
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp_msg)
+            log_state("CHITTI")
+            print(resp_msg)
+            self.speak(resp_msg)
+            if self.hud:
+                self.hud.set_response(resp_msg)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
+        # b) Cancel reminder ("cancel reminder 1", "delete reminder 2")
+        m_cancel = re.search(r"(?i)\b(?:cancel|delete|remove)\s+reminder\s+(\d+)\b", user_text)
+        if m_cancel:
+            task_id = int(m_cancel.group(1))
+            ok = self.scheduler.cancel_task(task_id)
+            resp_msg = f"Reminder #{task_id} has been canceled." if ok else f"Reminder #{task_id} was not found."
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp_msg)
+            log_state("CHITTI")
+            print(resp_msg)
+            self.speak(resp_msg)
+            if self.hud:
+                self.hud.set_response(resp_msg)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
+        # c) Schedule new reminder ("remind me in 10 seconds to drink water", "remind me at 6 PM to commit git")
+        reminder_spec = ProactiveScheduler.parse_natural_language_reminder(user_text)
+        if reminder_spec:
+            task = self.scheduler.schedule_reminder(
+                title=reminder_spec["title"],
+                message=reminder_spec["message"],
+                due_in_seconds=reminder_spec["due_in_seconds"],
+            )
+            due_sec = int(reminder_spec["due_in_seconds"])
+            if due_sec < 60:
+                time_str = f"{due_sec} second{'s' if due_sec != 1 else ''}"
+            elif due_sec < 3600:
+                mins = due_sec // 60
+                time_str = f"{mins} minute{'s' if mins != 1 else ''}"
+            else:
+                hrs = due_sec // 3600
+                time_str = f"{hrs} hour{'s' if hrs != 1 else ''}"
+
+            if active_lang in ("hi", "hinglish"):
+                resp_msg = f"Bilkul! Main aapko {time_str} mein yaad dila dunga: {reminder_spec['message']}."
+            else:
+                resp_msg = f"Got it! I will remind you in {time_str} to {reminder_spec['message']}."
+
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp_msg)
+            log_state("CHITTI")
+            print(resp_msg)
+            self.speak(resp_msg)
+            if self.hud:
+                self.hud.set_response(resp_msg)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
         # 5. Check for Explicit Memory Command & Fact Statement (multilingual: "yaad rakhna ki...", "remember that...", "my name is...", "forget...")
         if self.memory is not None and (master_decision.route == MasterRoute.EXPLICIT_MEMORY or master_decision.requires_memory):
             try:
+                # Also extract relational knowledge into Knowledge Graph
+                self.knowledge_graph.extract_and_store_from_text(user_text, llm=self.llm)
+
                 mem_result = self.memory.handle_interaction(user_text, lang=active_lang)
                 if mem_result is None and parsed_intent.normalized_text != user_text:
                     mem_result = self.memory.handle_interaction(parsed_intent.normalized_text, lang=active_lang)
@@ -343,6 +416,9 @@ class ChittiController:
                         log_state("CHITTI")
                         print(response_text)
                         self.speak(response_text)
+                        if self.hud:
+                            self.hud.set_response(response_text)
+                            self.hud.set_mode(HUDMode.IDLE)
                         return
             except Exception as e:
                 log_warning(f"Memory command processing failed: {e}")
