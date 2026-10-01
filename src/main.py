@@ -199,11 +199,33 @@ class ChittiController:
         self.hotkey_manager.start()
         self.hud.start(non_blocking=True)
 
-        log_chitti("System initialization complete. Ready for interaction! (Press Alt+Space for Floating HUD)\n")
+        # 10. Initialize Ambient Hands-Free Voice Listener (Phase 5)
+        self.ambient_listener = None
+        try:
+            from src.audio import AmbientVoiceListener
+            self.ambient_listener = AmbientVoiceListener(
+                command_handler=self.process_user_input,
+                tts_engine=self.tts,
+                hud=self.hud,
+            )
+            self.ambient_listener.start()
+        except Exception as e:
+            log_warning(f"Ambient voice listener initialization notice: {e}")
+
+        log_chitti("System initialization complete. Ready for interaction! (Say 'Hey Chitti' or press Alt+Space)\n")
 
     def speak(self, text: str):
-        """Speaks the response using TTS if available."""
-        if self.tts and text:
+        """Speaks the response using TTS with real-time barge-in interruption."""
+        if not text:
+            return
+        if self.ambient_listener:
+            try:
+                self.ambient_listener.speak_with_barge_in(text)
+                return
+            except Exception as e:
+                log_warning(f"Ambient barge-in speech notice: {e}")
+
+        if self.tts:
             try:
                 self.tts.speak(text, wait=True)
             except Exception as e:
@@ -751,6 +773,8 @@ class ChittiController:
             except KeyboardInterrupt:
                 print("\n")
                 log_chitti("Session interrupted by user. Exiting cleanly...")
+                if self.ambient_listener:
+                    self.ambient_listener.stop()
                 if self.vision and self.vision.camera:
                     self.vision.camera.release()
                 break
