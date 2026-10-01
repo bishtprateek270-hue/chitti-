@@ -9,7 +9,7 @@ if "%ERRORLEVEL%"=="1" (
     ping 127.0.0.1 -n 3 >nul 2>&1
 )
 
-REM Start Chitti Main Process with Python GUI runner (Visible Dynamic Island, no CMD black window)
+REM Start Chitti Main Process in 24/7 background mode
 set PYTHONIOENCODING=utf-8
 set PYTHONUNBUFFERED=1
-start "" pythonw src\main.py
+python src\main.py --daemon <nul

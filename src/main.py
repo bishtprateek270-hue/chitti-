@@ -205,10 +205,11 @@ class ChittiController:
             self.context_synthesizer.memory_db = self.memory.db
         self.scheduler.register_listener(lambda task: self.speak(f"Reminder: {task.title}. {task.message}"))
         self.scheduler.start()
-        from src.ui.hotkey_listener import MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, VK_SPACE, VK_C
-        self.hotkey_manager.register_hotkey(modifiers=(MOD_ALT | MOD_NOREPEAT), vk_code=VK_SPACE, callback=self.hud.toggle)
+        self.hotkey_manager.register_hotkey(callback=self.hud.toggle)
+        from src.ui.hotkey_listener import MOD_CONTROL, MOD_ALT, MOD_NOREPEAT, VK_C
         self.hotkey_manager.register_hotkey(modifiers=(MOD_CONTROL | MOD_ALT | MOD_NOREPEAT), vk_code=VK_C, callback=self.hud.toggle)
         self.hotkey_manager.start()
+        self.hud.start(non_blocking=True)
 
         # 10. Initialize Ambient Hands-Free Voice Listener (Phase 5)
         self.ambient_listener = None
@@ -741,21 +742,38 @@ class ChittiController:
             return ""
 
     def run(self):
-        """Main execution entry point for Chitti."""
+        """Main interactive loop for Chitti."""
         self.initialize()
 
-        # Check if running in background/daemon mode (e.g. Windows autostart or pythonw)
-        is_interactive = bool(sys.stdin and hasattr(sys.stdin, "isatty") and sys.stdin.isatty())
-        if not is_interactive or "--daemon" in sys.argv or "-d" in sys.argv:
-            log_chitti("Chitti desktop companion active. Dynamic Island HUD running on main thread.")
-            self.hud.start(non_blocking=False)
+        # If running in background/daemon mode (e.g. Windows autostart without console or with <nul)
+        if not sys.stdin or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty() or "--daemon" in sys.argv or "-d" in sys.argv:
+            log_chitti("[CHITTI] 24/7 Background Desktop Mode Active. 'Hey Chitti' and Alt+Space HUD are ready.")
+            try:
+                while True:
+                    time.sleep(1)
+            except (KeyboardInterrupt, SystemExit):
+                log_chitti("Background daemon exiting cleanly...")
+                if self.ambient_listener:
+                    self.ambient_listener.stop()
+                if self.vision and self.vision.camera:
+                    self.vision.camera.release()
             return
 
-        self.hud.start(non_blocking=True)
         self._run_cli_loop()
 
     def _run_cli_loop(self):
         """Interactive terminal command prompt loop."""
+        print("------------------------------------------------------------------")
+        print(" Controls:")
+        print("   [ENTER]      : Speak to Chitti via Microphone")
+        print("   [T] + ENTER  : Type a text message (Keyboard fallback)")
+        print("   [V] + ENTER  : Instant Camera Vision Snapshot")
+        print("   [R] + ENTER  : Register a new Person's Face")
+        print("   [L] + ENTER  : List all Registered People in Face Database")
+        print("   [M] + ENTER  : View all stored persistent long-term memories")
+        print("   [C] + ENTER  : Clear short-term session conversation history")
+        print("   [Q] + ENTER  : Quit Chitti")
+        print("------------------------------------------------------------------\n")
 
         while True:
             try:
