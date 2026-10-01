@@ -115,13 +115,13 @@ class FloatingHUD:
 
         try:
             self._root = tk.Tk()
-            self._root.title("Chitti HUD")
+            self._root.title("Chitti Dynamic Island")
             self._root.attributes("-topmost", True)
             self._root.overrideredirect(True)  # Frameless
-            
+
             # Transparency on Windows
             try:
-                self._root.attributes("-alpha", 0.94)
+                self._root.attributes("-alpha", 0.96)
             except Exception:
                 pass
 
@@ -132,6 +132,8 @@ class FloatingHUD:
             hud_y = 25
             self._root.geometry(f"{hud_w}x{hud_h}+{hud_x}+{hud_y}")
             self._root.configure(bg=HUD_THEME["bg_dark"])
+            self._root.lift()
+            self._root.deiconify()
 
             # Outer border container
             border_frame = tk.Frame(
