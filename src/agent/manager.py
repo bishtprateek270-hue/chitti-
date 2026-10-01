@@ -58,8 +58,6 @@ class LaptopAgentManager:
         self.projects = ProjectRegistry(registry_file=self.project_registry_path)
 
         # Tool Engine
-        from src.agent.vision import VisionGroundingEngine
-        self.vision = VisionGroundingEngine(llm=self.llm)
         self.tools = ToolEngine(
             computer=self.computer,
             filesystem=self.filesystem,
@@ -68,7 +66,6 @@ class LaptopAgentManager:
             apps=self.apps,
             screen_analyzer=self.screen_analyzer,
             projects=self.projects,
-            vision=self.vision,
         )
 
         # Planners & Loop
