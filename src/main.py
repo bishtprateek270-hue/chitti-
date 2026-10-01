@@ -238,8 +238,7 @@ class ChittiController:
     def process_user_input(self, user_text: str):
         """Processes user input through Multilingual/Vision/Memory/LLM, records history, and speaks output."""
         if not user_text or not user_text.strip():
-            log_chitti("I didn't catch that. Could you repeat?")
-            self.speak("I didn't catch that. Could you repeat?")
+            log_debug("[INPUT] Empty voice or text input received. Remaining in quiet standby.")
             return
 
         print(f"\nYou: {user_text}")
@@ -286,6 +285,31 @@ class ChittiController:
             alt_decision = MasterRouter.classify_request(parsed_intent.normalized_text)
             if alt_decision.route != MasterRoute.UNKNOWN:
                 master_decision = alt_decision
+
+        # 1.6. Instant Sleep / Stop / Standby Interceptor
+        if master_decision.route == MasterRoute.STANDBY_SLEEP or parsed_intent.intent_category == IntentCategory.STANDBY_SLEEP.value:
+            log_chitti("[COMMAND] 🛑 Sleep / Stop command received. Entering silent standby.")
+            if self.tts:
+                self.tts.stop()
+            if self.ambient_listener:
+                self.ambient_listener.go_to_sleep()
+
+            import re
+            is_harsh = bool(re.search(r"(?i)\b(?:shut\s*up|mute|chup|quiet)\b", user_text))
+            sleep_acknowledgments = {
+                "en": "Understood." if is_harsh else "Going to sleep. Say 'Hey Chitti' whenever you need me.",
+                "hi": "ठीक है।" if is_harsh else "ठीक है, मैं चुप हो रहा हूँ। जब भी ज़रूरत हो, 'हे चिट्टी' बोल देना।",
+                "hinglish": "Theek hai." if is_harsh else "Theek hai, main chup ho raha hoon. Jab bhi zaroorat ho, 'Hey Chitti' bol dena.",
+            }
+            resp = sleep_acknowledgments.get(active_lang, sleep_acknowledgments["en"])
+
+            log_state("CHITTI")
+            print(f"\nChitti: {resp}")
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
 
         # Start tracking current execution episode in RL
         self.rl_policy.start_episode(task_description=user_text, domain=master_decision.route.value)

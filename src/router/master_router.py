@@ -44,6 +44,7 @@ class MasterRoute(str, Enum):
     # 6. Specialized Multimodal / Service Tasks
     VISION_TASK = "VISION_TASK"
     TRANSLATION_TASK = "TRANSLATION_TASK"
+    STANDBY_SLEEP = "STANDBY_SLEEP"
 
     # Fallback
     UNKNOWN = "UNKNOWN"
@@ -67,6 +68,14 @@ class MasterRouter:
     Central Master Router for Chitti.
     Examines semantic meaning and structure of user requests to determine the appropriate subsystem.
     """
+
+    # 0. Standby / Sleep / Stop Commands
+    SLEEP_STANDBY_PATTERNS = [
+        r"(?i)^\s*(?:stop|stop\s+talking|stop\s+speaking|be\s+quiet|shut\s*up|quiet|silence|mute|pause|hold\s+on|go\s+to\s+sleep|sleep|sleep\s+now|sleep\s+chitti|goodbye\s+chitti|bye\s+chitti|bye|standby|go\s+to\s+standby)\s*$",
+        r"(?i)^\s*(?:chup|chup\s+ho\s+jao|chup\s+raho|chup\s+ho\s+ja|shant\s+ho\s+jao|shant\s+raho|so\s+jao|chitti\s+so\s+jao|ab\s+so\s+jao|ruk\s+jao|ruko|bas|bas\s+karo|bolna\s+band\s+karo|awaz\s+band\s+karo|kuch\s+mat\s+bolo|silent\s+ho\s+jao|band\s+ho\s+jao)\s*$",
+        r"(?i)\b(?:chup\s+ho\s+jao|chup\s+raho|bolna\s+band\s+karo|go\s+to\s+sleep|stop\s+talking|be\s+quiet|shut\s*up)\b",
+        r"(?:चुप\s+हो\s+जाओ|चुप\s+रहो|शांत\s+हो\s+जाओ|सो\s+जाओ|रुक\s+जाओ|बस\s+करो|चुप)",
+    ]
 
     # 1. Self-Identity Patterns
     SELF_IDENTITY_PATTERNS = [
@@ -201,6 +210,18 @@ class MasterRouter:
         clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+)", "", normalized_raw, flags=re.IGNORECASE).strip()
         clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
+
+        # 0. Check for Immediate Sleep / Stop / Silence Commands
+        if any(re.search(pat, raw) for pat in cls.SLEEP_STANDBY_PATTERNS) or any(re.search(pat, clean) for pat in cls.SLEEP_STANDBY_PATTERNS):
+            return cls._make_decision(
+                route=MasterRoute.STANDBY_SLEEP,
+                confidence=1.0,
+                requires_memory=False,
+                requires_computer=False,
+                requires_phase5=False,
+                requires_phase6=False,
+                explanation="User explicitly commanding assistant to stop speaking, sleep, or enter silent standby",
+            )
 
         # 1. Check for Explicit Memory Storage / Update Commands
         if any(re.search(pat, clean) for pat in cls.EXPLICIT_MEMORY_PATTERNS):

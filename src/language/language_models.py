@@ -26,6 +26,7 @@ class IntentCategory(str, Enum):
     MEMORY_COMMAND = "memory_command"
     TRANSLATION = "translation"
     LANGUAGE_SWITCH = "language_switch"
+    STANDBY_SLEEP = "standby_sleep"
     CLARIFICATION = "clarification"
 
 

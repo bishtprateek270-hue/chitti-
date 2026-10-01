@@ -168,6 +168,14 @@ class AmbientVoiceListener:
             self.barge_in.stop_monitoring()
             self._return_to_standby()
 
+    def go_to_sleep(self):
+        """Immediately stops ongoing speech and puts ambient listener in quiet standby."""
+        log_chitti("[AMBIENT] 😴 Entering quiet standby mode. Say 'Hey Chitti' or press Alt+Space to wake.")
+        if self.tts and hasattr(self.tts, "stop"):
+            self.tts.stop()
+        self.barge_in.stop_monitoring()
+        self._return_to_standby()
+
     def _return_to_standby(self):
         """Resets the state machine back to passive standby."""
         with self._lock:

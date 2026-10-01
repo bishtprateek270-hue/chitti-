@@ -19,6 +19,34 @@ from src.main import ChittiController
 # 1. MASTER ROUTER CLASSIFICATION UNIT TESTS
 # ==============================================================================
 
+def test_master_route_standby_sleep():
+    """Test 0: Instant sleep, standby, and silence commands across English, Hindi, and Hinglish."""
+    sleep_phrases = [
+        "stop",
+        "stop talking",
+        "be quiet",
+        "shut up",
+        "go to sleep",
+        "sleep now",
+        "sleep chitti",
+        "bye chitti",
+        "standby",
+        "chup",
+        "chup ho jao",
+        "chup raho",
+        "so jao",
+        "chitti so jao",
+        "bas karo",
+        "bolna band karo",
+        "चुप हो जाओ",
+        "सो जाओ",
+    ]
+    for p in sleep_phrases:
+        res = MasterRouter.classify_request(p)
+        assert res.route == MasterRoute.STANDBY_SLEEP, f"Failed for '{p}', got {res.route}"
+        assert res.confidence == 1.0
+
+
 def test_master_route_personal_memory_english():
     """Test 1: Personal memory query in English."""
     prompts = [
