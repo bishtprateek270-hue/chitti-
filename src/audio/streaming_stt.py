@@ -42,7 +42,7 @@ class StreamingSTTEngine:
         self,
         stt_engine: Optional[STTEngine] = None,
         config: Optional[AudioConfig] = None,
-        pre_speech_seconds: float = 0.35,
+        pre_speech_seconds: float = 0.85,
         silence_cutoff_seconds: float = 0.90,
         min_speech_seconds: float = 0.40,
         max_record_seconds: float = 8.0,

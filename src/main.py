@@ -301,13 +301,15 @@ class ChittiController:
                 self.hud.set_mode(HUDMode.IDLE)
             return
 
-        # 2.3. Check for Real-Time Screen Vision & Grounding Query (Phase 1)
+        # 2.3. Check for Real-Time Screen Vision vs Camera Vision
         import re
-        is_camera_query = bool(re.search(r"(?i)\b(?:camera|webcam|chehra|face|person|insan)\b", user_text))
+        is_camera_query = (
+            bool(re.search(r"(?i)\b(?:camera|webcam|chehra|face|person|insan|who\s+is\s+(?:in\s+)?front|front\s+of\s+(?:you|u)|look\s+at\s+me|who\s+am\s+i|saamne|pehchante)\b", user_text))
+            or (self.vision is not None and self.vision.is_vision_query(user_text))
+        )
         is_screen_query = (
-            master_decision.route == MasterRoute.VISION_TASK
-            or bool(re.search(r"(?i)\b(?:screen|desktop|active\s+window|display|screen\s+info)\b", user_text))
-            or bool(re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|screen\s+(?:pe|p|par)?\s*(?:kya|dekho))\b", user_text))
+            bool(re.search(r"(?i)\b(?:screen|desktop|active\s+window|display|screen\s+info|document|code|readme|roadmap|error\s+on\s+screen)\b", user_text))
+            or bool(re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|screen\s+(?:pe|p|par)?\s*(?:kya|dekho|error))\b", user_text))
         ) and not is_camera_query
 
         if is_screen_query and self.vision_grounding is not None:

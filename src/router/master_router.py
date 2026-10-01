@@ -161,6 +161,10 @@ class MasterRouter:
         r"(?i)\b(?:screen\s+(?:pe|p|par)?\s*(?:kya\s+error\s+hai|error\s+dekho|error\s+batao|kya\s+gadbad\s+hai)|meri\s+screen\s+dekho\s+aur\s+error\s+batao|error\s+solve\s+karo\s+screen\s+dekh\s+ke)\b",
         r"(?i)\b(?:find|locate)\s+(?:the\s+)?([A-Za-z0-9_\-\s]+?)\s+(?:button|input|icon|control|link)\s+on\s+screen\b",
         r"(?i)\bscreen\s+(?:pe|p|par)?\s*([A-Za-z0-9_\-\s]+?)\s+(?:button|dhoondo|kahan\s+hai)\b",
+        # Camera & Live Person Presence Recognition
+        r"(?i)\b(?:who\s+is\s+(?:in\s+)?front\s+of\s+(?:you|u)|who\s+is\s+(?:standing|sitting)\s+in\s+front|who\s+is\s+(?:there|this|that)|front\s+of\s+(?:you|u))\b",
+        r"(?i)\b(?:look\s+at\s+me|who\s+am\s+i\s*(?:\(vision\)|through\s+camera)?|do\s+you\s+recognize\s+me|identify\s+(?:the\s+)?person|what\s+do\s+you\s+see\s+(?:in\s+front|in\s+camera))\b",
+        r"(?i)\b(?:saamne\s+koun\s+hai|camera\s+me\s+dekho|mujhe\s+pehchante\s+ho|koun\s+baitha\s+hai)\b",
     ]
 
     # 9. Next-Gen Roadmap Inquiries
