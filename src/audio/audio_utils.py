@@ -1,7 +1,7 @@
 """
 Chitti Audio Utilities Module.
 Provides hardware auto-discovery, persistent device caching, and fast linear resampling
-to ensure 100% compatibility between Windows MME/WASAPI/DirectSound microphones and STT engines.
+to ensure 100% compatibility between Windows MME/WASAPI/WDM-KS microphones and STT engines.
 """
 
 from typing import Optional, Tuple
@@ -44,8 +44,8 @@ def resample_to_16k(audio: np.ndarray, orig_sr: int) -> np.ndarray:
 
 def get_best_input_device(preferred_index: Optional[int] = None) -> Tuple[Optional[int], int]:
     """
-    Finds and caches the best working microphone device index and its native sample rate.
-    Avoids expensive device querying on every audio capture.
+    Finds and caches the best working microphone device index by testing live RMS energy.
+    Picks the real physical laptop microphone with highest signal clarity.
     """
     global _CACHED_INPUT_DEVICE, _CACHED_SAMPLE_RATE
 
@@ -58,34 +58,38 @@ def get_best_input_device(preferred_index: Optional[int] = None) -> Tuple[Option
     if not HAS_SOUNDDEVICE or not sd:
         return None, 16000
 
+    best_dev = None
+    best_rate = 16000
+    best_rms = -1.0
+
     try:
         devices = sd.query_devices()
-        candidates = []
         for idx, d in enumerate(devices):
             if d.get("max_input_channels", 0) > 0:
                 name = d.get("name", "").lower()
                 # Skip virtual speakers / stereo mix
                 if "speaker" in name or "stereo mix" in name or "output" in name:
                     continue
-                native_sr = int(d.get("default_samplerate", 44100))
-                candidates.append((idx, native_sr, d.get("name", "")))
+                native_sr = int(d.get("default_samplerate", 16000))
+                for rate in [native_sr, 16000, 44100, 48000]:
+                    try:
+                        test_samples = int(rate * 0.08)
+                        data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=idx)
+                        sd.wait()
+                        rms = float(np.sqrt(np.mean(data**2)))
+                        if np.isfinite(rms) and rms > best_rms:
+                            best_rms = rms
+                            best_dev = idx
+                            best_rate = rate
+                        break
+                    except Exception:
+                        continue
 
-        # Test candidates to verify openability
-        for dev_idx, native_sr, d_name in candidates:
-            for rate in [native_sr, 44100, 48000, 16000]:
-                try:
-                    test_samples = int(rate * 0.04)
-                    data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=dev_idx)
-                    sd.wait()
-                    rms = float(np.sqrt(np.mean(data**2)))
-                    if np.isfinite(rms):
-                        _CACHED_INPUT_DEVICE = dev_idx
-                        _CACHED_SAMPLE_RATE = rate
-                        return dev_idx, rate
-                except Exception:
-                    continue
+        if best_dev is not None:
+            _CACHED_INPUT_DEVICE = best_dev
+            _CACHED_SAMPLE_RATE = best_rate
+            return best_dev, best_rate
 
-        # Fallback to default device
         _CACHED_INPUT_DEVICE = None
         _CACHED_SAMPLE_RATE = 16000
         return None, 16000
