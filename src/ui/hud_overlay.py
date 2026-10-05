@@ -1,5 +1,5 @@
 """
-Chitti Floating Desktop Dynamic Island HUD Overlay (Phase 4).
+Chitti Floating Desktop Dynamic Island HUD Overlay (Phase 4 & 5).
 Provides a frameless, glassmorphism-styled floating pill widget on top of all windows
 for instant voice/text interaction, live execution step progress, and ambient status.
 """
@@ -17,8 +17,10 @@ from src.utils.logging import log_chitti, log_debug, log_info, log_warn
 
 class FloatingHUD:
     """
-    Lightweight, always-on-top floating dynamic island widget.
+    Lightweight, always-on-top floating dynamic island widget with full keyboard focus support.
     """
+
+    PLACEHOLDER_TEXT = "Type a command here (or say 'Hey Chitti')..."
 
     def __init__(self, on_command_submit: Optional[Callable[[str], None]] = None):
         self.on_command_submit = on_command_submit
@@ -27,6 +29,7 @@ class FloatingHUD:
         self._root = None
         self._is_running = False
         self._thread: Optional[threading.Thread] = None
+        self._has_placeholder = True
 
         # GUI elements
         self._status_lbl = None
@@ -123,22 +126,27 @@ class FloatingHUD:
             self._root.attributes("-topmost", True)
             self._root.overrideredirect(True)  # Frameless
 
-            # Center top positioning: 620x165 pill at top center of screen
+            # Center top positioning: 640x165 pill at top center of screen
             screen_w = self._root.winfo_screenwidth()
-            hud_w, hud_h = 620, 165
+            hud_w, hud_h = 640, 165
             hud_x = (screen_w - hud_w) // 2
             hud_y = 25
             self._root.geometry(f"{hud_w}x{hud_h}+{hud_x}+{hud_y}")
             self._root.configure(bg=HUD_THEME["bg_dark"])
             self._root.update_idletasks()
 
-            # Force Hardware Topmost on Windows 11
-            try:
-                import ctypes
-                hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
-                ctypes.windll.user32.SetWindowPos(hwnd, -1, hud_x, hud_y, hud_w, hud_h, 0x0040)
-            except Exception:
-                pass
+            # Enable Windows Keyboard Focus on frameless window
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
+                    GWL_EXSTYLE = -20
+                    WS_EX_APPWINDOW = 0x00040000
+                    current_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, current_style | WS_EX_APPWINDOW)
+                    ctypes.windll.user32.SetWindowPos(hwnd, -1, hud_x, hud_y, hud_w, hud_h, 0x0040)
+                except Exception:
+                    pass
 
             # Outer border container
             border_frame = tk.Frame(
@@ -203,22 +211,56 @@ class FloatingHUD:
             close_btn.pack(side="right")
             close_btn.bind("<Button-1>", lambda e: self.hide())
 
-            # MIDDLE ROW: Quick Input Entry
-            entry_frame = tk.Frame(card, bg=HUD_THEME["bg_input"], padx=8, pady=4)
+            # MIDDLE ROW: Quick Input Entry with Placeholder & Focus Management
+            entry_frame = tk.Frame(card, bg=HUD_THEME["bg_input"], padx=10, pady=5)
             entry_frame.pack(fill="x", pady=(0, 6))
 
             self._entry = tk.Entry(
                 entry_frame,
                 font=("Segoe UI", 11),
                 bg=HUD_THEME["bg_input"],
-                fg=HUD_THEME["text_primary"],
+                fg=HUD_THEME["text_secondary"],
                 insertbackground=HUD_THEME["accent_blue"],
                 relief="flat",
                 highlightthickness=0,
             )
+            self._entry.insert(0, self.PLACEHOLDER_TEXT)
+            self._has_placeholder = True
             self._entry.pack(fill="x", side="left", expand=True)
+
+            def on_entry_focus_in(event):
+                if self._has_placeholder:
+                    self._entry.delete(0, "end")
+                    self._entry.config(fg=HUD_THEME["text_primary"])
+                    self._has_placeholder = False
+
+            def on_entry_focus_out(event):
+                if not self._entry.get().strip():
+                    self._entry.delete(0, "end")
+                    self._entry.insert(0, self.PLACEHOLDER_TEXT)
+                    self._entry.config(fg=HUD_THEME["text_secondary"])
+                    self._has_placeholder = True
+
+            self._entry.bind("<FocusIn>", on_entry_focus_in)
+            self._entry.bind("<FocusOut>", on_entry_focus_out)
             self._entry.bind("<Return>", self._on_enter_pressed)
+            self._entry.bind("<Button-1>", lambda e: self._entry.focus_set())
+            entry_frame.bind("<Button-1>", lambda e: self._entry.focus_set())
+            card.bind("<Button-1>", lambda e: self._entry.focus_set())
             self._root.bind("<Escape>", lambda e: self.hide())
+
+            # Send Button
+            send_btn = tk.Label(
+                entry_frame,
+                text="➔",
+                font=("Segoe UI", 11, "bold"),
+                bg=HUD_THEME["bg_input"],
+                fg=HUD_THEME["accent_blue"],
+                cursor="hand2",
+                padx=4,
+            )
+            send_btn.pack(side="right")
+            send_btn.bind("<Button-1>", lambda e: self._on_enter_pressed(None))
 
             # BOTTOM ROW: Quick Action Chips
             chips_row = tk.Frame(card, bg=HUD_THEME["bg_card"])
@@ -305,16 +347,17 @@ class FloatingHUD:
                         self._root.deiconify()
                         self._root.lift()
                         self._root.attributes("-topmost", True)
-                        try:
-                            import ctypes
-                            hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
-                            ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
-                            ctypes.windll.user32.ShowWindow(hwnd, 5)
-                            ctypes.windll.user32.SetForegroundWindow(hwnd)
-                        except Exception:
-                            pass
+                        if sys.platform == "win32":
+                            try:
+                                import ctypes
+                                hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
+                                ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+                                ctypes.windll.user32.ShowWindow(hwnd, 5)
+                                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                            except Exception:
+                                pass
                         if self._entry:
-                            self._entry.focus_force()
+                            self._entry.focus_set()
 
                 elif msg_type == "hide":
                     self.state.is_visible = False
@@ -333,16 +376,17 @@ class FloatingHUD:
                             self._root.deiconify()
                             self._root.lift()
                             self._root.attributes("-topmost", True)
-                            try:
-                                import ctypes
-                                hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
-                                ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
-                                ctypes.windll.user32.ShowWindow(hwnd, 5)
-                                ctypes.windll.user32.SetForegroundWindow(hwnd)
-                            except Exception:
-                                pass
+                            if sys.platform == "win32":
+                                try:
+                                    import ctypes
+                                    hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
+                                    ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+                                    ctypes.windll.user32.ShowWindow(hwnd, 5)
+                                    ctypes.windll.user32.SetForegroundWindow(hwnd)
+                                except Exception:
+                                    pass
                             if self._entry:
-                                self._entry.focus_force()
+                                self._entry.focus_set()
 
                 elif msg_type == "destroy":
                     if self._root:
@@ -356,10 +400,15 @@ class FloatingHUD:
             self._root.after(50, self._process_queue)
 
     def _on_enter_pressed(self, event):
-        """Handles Enter key in the quick input box."""
+        """Handles Enter key or Send button in the quick input box."""
         if self._entry:
             text = self._entry.get().strip()
+            if text == self.PLACEHOLDER_TEXT:
+                text = ""
             self._entry.delete(0, "end")
+            self._entry.insert(0, self.PLACEHOLDER_TEXT)
+            self._entry.config(fg=HUD_THEME["text_secondary"])
+            self._has_placeholder = True
             if text:
                 self._submit_text(text)
 
@@ -368,5 +417,4 @@ class FloatingHUD:
         log_chitti(f"[CHITTI] [HUD] User submitted command: '{text}'")
         self.set_mode(HUDMode.THINKING, f"Processing: '{text}'")
         if self.on_command_submit:
-            # Run in separate thread to not block GUI
             threading.Thread(target=self.on_command_submit, args=(text,), daemon=True).start()

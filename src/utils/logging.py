@@ -48,6 +48,14 @@ def setup_logger(name: str = "chitti", level: str = "INFO") -> logging.Logger:
         handler.setLevel(numeric_level)
         handler.setFormatter(CustomFormatter())
         logger.addHandler(handler)
+
+        try:
+            file_handler = logging.FileHandler("chitti_runtime.log", encoding="utf-8", mode="a")
+            file_handler.setLevel(numeric_level)
+            file_handler.setFormatter(CustomFormatter())
+            logger.addHandler(file_handler)
+        except Exception:
+            pass
         logger.propagate = False
     else:
         logger.setLevel(numeric_level)

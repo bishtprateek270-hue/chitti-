@@ -1,7 +1,7 @@
 """
 Chitti Ambient Wake-Word Detection Engine (Phase 5).
 Continuously processes incoming microphone audio frames in a dedicated background worker
-with zero PortAudio callback blocking, dynamic SNR gating, STT keyword verification,
+with zero PortAudio callback blocking, dynamic SNR gating, 0-latency local STT keyword verification,
 and automatic stream watchdog recovery.
 """
 
@@ -286,8 +286,8 @@ class WakeWordDetector:
         elif rms < 0.012:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate calibrated for laptop array mic (RMS >= 0.007)
-        min_voice_rms = max(0.007, self._noise_floor * 1.25)
+        # Speech onset gate calibrated for laptop array mic (RMS >= 0.006)
+        min_voice_rms = max(0.006, self._noise_floor * 1.2)
         if rms < min_voice_rms:
             return None
 
@@ -296,14 +296,15 @@ class WakeWordDetector:
         extracted_command = None
         confidence = 0.0
 
-        # 2. Strict Verification via STT Engine (debounced to once every 0.35s)
+        # 2. Strict Verification via STT Engine (debounced to once every 0.30s using local Whisper)
         if self.stt_engine:
-            if now - self._last_stt_check_time < 0.35:
+            if now - self._last_stt_check_time < 0.30:
                 return None
             self._last_stt_check_time = now
 
             try:
-                snippet_text = self.stt_engine.transcribe(current_window).lower().strip()
+                engine = getattr(self.stt_engine, "whisper_stt", self.stt_engine)
+                snippet_text = engine.transcribe(current_window).lower().strip()
                 if snippet_text:
                     for kw in self.keywords:
                         if kw in snippet_text:

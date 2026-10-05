@@ -9,7 +9,9 @@ import os
 import io
 import time
 
-# Ensure sys.stdout and sys.stderr are not None when run under pythonw.exe
+# Ensure sys.stdin, sys.stdout and sys.stderr are not None when run under pythonw.exe
+if sys.stdin is None:
+    sys.stdin = io.StringIO()
 if sys.stdout is None:
     sys.stdout = io.StringIO()
 if sys.stderr is None:
