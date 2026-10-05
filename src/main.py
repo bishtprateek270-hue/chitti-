@@ -8,6 +8,7 @@ import sys
 import os
 import io
 import time
+import threading
 
 # Ensure sys.stdin, sys.stdout and sys.stderr are not None when run under pythonw.exe
 if sys.stdin is None:
@@ -93,6 +94,7 @@ class ChittiController:
         self.hud = FloatingHUD(on_command_submit=self.process_user_input)
         self.ambient_listener = None
         self.rl_policy = PolicyOptimizer()
+        self._process_lock = threading.Lock()
 
     def initialize(self):
         """Initializes all hardware and AI subsystems."""
@@ -250,11 +252,16 @@ class ChittiController:
                 log_warning(f"Speech playback failed: {e}")
 
     def process_user_input(self, user_text: str):
-        """Processes user input through Multilingual/Vision/Memory/LLM, records history, and speaks output."""
+        """Thread-safe entry point for processing user input from CLI, HUD, or Voice."""
         if not user_text or not user_text.strip():
             log_debug("[INPUT] Empty voice or text input received. Remaining in quiet standby.")
             return
 
+        with self._process_lock:
+            self._execute_user_input(user_text)
+
+    def _execute_user_input(self, user_text: str):
+        """Executes user input through Multilingual/Vision/Memory/LLM, records history, and speaks output."""
         print(f"\nYou: {user_text}")
 
         # 0. Multilingual Understanding & Intent Normalization (Phase 4)
