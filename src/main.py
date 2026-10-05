@@ -302,22 +302,10 @@ class ChittiController:
                 self.tts.stop()
             if self.ambient_listener:
                 self.ambient_listener.go_to_sleep()
-
-            import re
-            is_harsh = bool(re.search(r"(?i)\b(?:shut\s*up|mute|chup|quiet)\b", user_text))
-            sleep_acknowledgments = {
-                "en": "Understood." if is_harsh else "Going to sleep. Say 'Hey Chitti' whenever you need me.",
-                "hi": "ठीक है।" if is_harsh else "ठीक है, मैं चुप हो रहा हूँ। जब भी ज़रूरत हो, 'हे चिट्टी' बोल देना।",
-                "hinglish": "Theek hai." if is_harsh else "Theek hai, main chup ho raha hoon. Jab bhi zaroorat ho, 'Hey Chitti' bol dena.",
-            }
-            resp = sleep_acknowledgments.get(active_lang, sleep_acknowledgments["en"])
-
-            log_state("CHITTI")
-            print(f"\nChitti: {resp}")
-            self.speak(resp)
             if self.hud:
-                self.hud.set_response(resp)
+                self.hud.set_response("Sleeping (Say 'Hey Chitti' to wake)")
                 self.hud.set_mode(HUDMode.IDLE)
+            print("\nChitti: [Silent Standby - Say 'Hey Chitti' to wake]")
             return
 
         # Start tracking current execution episode in RL

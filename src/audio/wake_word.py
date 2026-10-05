@@ -1,8 +1,8 @@
 """
 Chitti Ambient Wake-Word Detection Engine (Phase 5).
 Continuously processes incoming microphone audio frames in the background
-with zero CPU overhead, utilizing dynamic SNR gating, acoustic signature heuristics,
-and intelligent keyword+command extraction.
+with zero CPU overhead, utilizing dynamic SNR gating, STT keyword verification,
+and intelligent keyword+command extraction to prevent false positive triggers.
 """
 
 import contextlib
@@ -40,11 +40,11 @@ class WakeWordEvent:
 class WakeWordDetector:
     """
     Lightweight, continuous keyword spotting engine.
-    Uses dynamic SNR gating and DSP acoustic phoneme resonance
-    to detect 'Chitti' / 'Hey Chitti' without false positives from background noise.
+    Uses strict speech verification so that Chitti ONLY wakes up when 'Hey Chitti'
+    or 'Chitti' is explicitly spoken, and stays completely silent in standby.
     """
 
-    DEFAULT_KEYWORDS = ["hey chitti", "chitti", "ok chitti", "hello chitti", "chup", "stop", "so jao"]
+    DEFAULT_KEYWORDS = ["hey chitti", "chitti", "ok chitti", "hello chitti", "chiti", "chitty", "cheeti", "citi", "kitty"]
 
     def __init__(
         self,
@@ -76,7 +76,7 @@ class WakeWordDetector:
         self._buffer_lock = threading.Lock()
 
         # Background noise baseline tracking
-        self._noise_floor = 0.015
+        self._noise_floor = 0.012
         self._calibrated = False
 
     def start(self, callback: Optional[Callable[[WakeWordEvent], None]] = None, device_index: Optional[int] = None):
@@ -108,7 +108,6 @@ class WakeWordDetector:
                 return
             except Exception as e:
                 log_warn(f"[WAKE WORD] Primary stream open failed: {e}. Trying fallback...")
-                # Fallback to standard 16kHz
                 try:
                     self._stream = sd.InputStream(
                         samplerate=16000,
@@ -145,10 +144,11 @@ class WakeWordDetector:
         """Pauses wake-word detection (e.g. while Chitti is actively speaking or listening)."""
         self._is_paused = True
 
-    def resume(self):
-        """Resumes wake-word detection after speech/interaction finishes."""
+    def resume(self, cooldown: Optional[float] = None):
+        """Resumes wake-word detection with optional cooldown period."""
         self._is_paused = False
-        self._last_trigger_time = time.time()
+        cd = cooldown if cooldown is not None else self.cooldown_seconds
+        self._last_trigger_time = time.time() + (cd - self.cooldown_seconds)
 
     def _audio_stream_callback(self, indata, frames, time_info, status):
         """Audio callback triggered by sounddevice stream."""
@@ -200,7 +200,7 @@ class WakeWordDetector:
         if not self._calibrated:
             self._noise_floor = min(0.012, max(0.002, rms))
             self._calibrated = True
-        elif rms < 0.015:
+        elif rms < 0.012:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
         # Speech onset gate calibrated for laptop array mic (RMS >= 0.008)
@@ -208,36 +208,38 @@ class WakeWordDetector:
         if rms < min_voice_rms:
             return None
 
-        # 2. Fast Acoustic Signature Evaluation
-        acoustic_confidence = self._evaluate_acoustic_signature(current_window)
         matched = False
         matched_kw = "Hey Chitti"
         extracted_command = None
+        confidence = 0.0
 
-        # If STT engine is available and speech is detected, verify with STT
-        if self.stt_engine and rms > (min_voice_rms * 1.2):
+        # 2. Strict Verification via STT Engine when available
+        if self.stt_engine:
             try:
                 snippet_text = self.stt_engine.transcribe(current_window).lower().strip()
                 if snippet_text:
-                    for kw in ["hey chitti", "ok chitti", "hello chitti", "chitti", "chiti", "chitty", "cheeti", "citi"]:
+                    for kw in self.keywords:
                         if kw in snippet_text:
                             matched = True
                             matched_kw = kw.title()
-                            acoustic_confidence = max(0.90, acoustic_confidence)
+                            confidence = 0.95
                             
                             # Extract any following command (e.g. "hey chitti open chrome" -> "open chrome")
                             idx = snippet_text.find(kw)
                             after_kw = snippet_text[idx + len(kw):].strip(" ,.-!?")
-                            if len(after_kw) >= 3:
+                            if len(after_kw) >= 2:
                                 extracted_command = after_kw
                             break
             except Exception:
                 pass
 
-        # Fallback to acoustic signature if confident
-        if not matched and acoustic_confidence >= 0.50:
-            matched = True
-            matched_kw = "Hey Chitti" if acoustic_confidence > 0.65 else "Chitti"
+        # 3. Acoustic Signature verification (Used when STT is not provided / standalone tests)
+        else:
+            acoustic_score = self._evaluate_acoustic_signature(current_window)
+            if acoustic_score >= 0.50:
+                matched = True
+                confidence = float(acoustic_score)
+                matched_kw = "Hey Chitti" if acoustic_score > 0.65 else "Chitti"
 
         if not matched:
             return None
@@ -245,12 +247,12 @@ class WakeWordDetector:
         self._last_trigger_time = now
         event = WakeWordEvent(
             keyword=matched_kw,
-            confidence=float(acoustic_confidence),
+            confidence=float(confidence),
             timestamp=now,
             audio_snippet=current_window,
             command=extracted_command,
         )
-        log_chitti(f"[WAKE WORD] ✨ Wake word detected: '{matched_kw}' (Confidence: {acoustic_confidence:.2f})")
+        log_chitti(f"[WAKE WORD] ✨ Wake word detected: '{matched_kw}' (Confidence: {confidence:.2f})")
         return event
 
     def _evaluate_acoustic_signature(self, audio: np.ndarray) -> float:

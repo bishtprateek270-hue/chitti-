@@ -81,7 +81,7 @@ class AmbientVoiceListener:
         log_debug("[AMBIENT] Ambient voice listener stopped.")
 
     def _on_wake_word_triggered(self, event: WakeWordEvent):
-        """Triggered automatically when keyword ('Hey Chitti') is recognized."""
+        """Triggered automatically ONLY when keyword ('Hey Chitti') is recognized."""
         with self._lock:
             if self.state != AmbientState.STANDBY:
                 return
@@ -208,14 +208,19 @@ class AmbientVoiceListener:
         if self.tts and hasattr(self.tts, "stop"):
             self.tts.stop()
         self.barge_in.stop_monitoring()
-        self._return_to_standby()
+        with self._lock:
+            self.state = AmbientState.STANDBY
+        self.wake_detector.resume(cooldown=3.0)
+        if self.hud:
+            self.hud.set_mode(HUDMode.IDLE)
+            self.hud.set_progress("Sleeping (Say 'Hey Chitti' to wake)")
 
     def _return_to_standby(self):
         """Resets the state machine back to passive standby."""
         with self._lock:
             self.state = AmbientState.STANDBY
 
-        self.wake_detector.resume()
+        self.wake_detector.resume(cooldown=2.0)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")
