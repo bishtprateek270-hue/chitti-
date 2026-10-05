@@ -240,7 +240,8 @@ class WhisperSTT(STTEngine):
             options["language"] = "en"
 
         try:
-            with contextlib.redirect_stderr(io.StringIO()):
+            import torch
+            with torch.no_grad(), contextlib.redirect_stderr(io.StringIO()):
                 result = self._model.transcribe(audio, **options)
             text = result.get("text", "").strip()
 

@@ -276,13 +276,13 @@ class WakeWordDetector:
 
         # Dynamic noise floor adaptation
         if not self._calibrated:
-            self._noise_floor = min(0.010, max(0.001, rms))
+            self._noise_floor = min(0.008, max(0.001, rms))
             self._calibrated = True
-        elif rms < 0.008:
+        elif rms < 0.006:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate calibrated for normal conversational voice (RMS >= 0.003)
-        min_voice_rms = max(0.003, self._noise_floor * 1.15)
+        # Speech onset gate calibrated for normal conversational voice (RMS >= 0.0028)
+        min_voice_rms = max(0.0028, self._noise_floor * 1.15)
         if rms < min_voice_rms:
             return None
 
@@ -291,9 +291,9 @@ class WakeWordDetector:
         extracted_command = None
         confidence = 0.0
 
-        # 2. Strict Verification via STT Engine (debounced to once every 0.25s)
+        # 2. Strict Verification via STT Engine (debounced to 0.60s to avoid GPU/CPU overloading)
         if self.stt_engine:
-            if now - self._last_stt_check_time < 0.25:
+            if now - self._last_stt_check_time < 0.60:
                 return None
             self._last_stt_check_time = now
 

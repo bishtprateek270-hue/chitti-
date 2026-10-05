@@ -23,7 +23,7 @@ class TestHUDOverlayPhase4:
         """Verify HUDState progress calculation, color mapping, and icon badges."""
         state = HUDState()
         assert state.mode == HUDMode.IDLE
-        assert state.mode_icon == "⚪"
+        assert state.mode_icon == "🤖"
         assert state.progress_ratio == 0.0
 
         # Update mode

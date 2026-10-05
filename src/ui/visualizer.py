@@ -81,7 +81,7 @@ class HUDState:
     @property
     def mode_icon(self) -> str:
         icons = {
-            HUDMode.IDLE: "⚪",
+            HUDMode.IDLE: "🤖",
             HUDMode.LISTENING: "🎙️",
             HUDMode.THINKING: "🧠",
             HUDMode.SPEAKING: "🔊",

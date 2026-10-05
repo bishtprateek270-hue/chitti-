@@ -184,9 +184,18 @@ class FloatingHUD:
             close_btn.pack(side="right")
             close_btn.bind("<Button-1>", lambda e: self.hide())
 
-            # MIDDLE ROW: Quick Input Entry with Active Focus
+            # MIDDLE ROW: Quick Input Entry with Active Focus & Search Icon
             entry_frame = tk.Frame(card, bg=HUD_THEME["bg_input"], padx=10, pady=5)
             entry_frame.pack(fill="x", pady=(0, 6))
+
+            search_icon = tk.Label(
+                entry_frame,
+                text="🔍",
+                font=("Segoe UI Emoji", 10),
+                bg=HUD_THEME["bg_input"],
+                fg=HUD_THEME["accent_cyan"],
+            )
+            search_icon.pack(side="left", padx=(0, 6))
 
             self._entry = tk.Entry(
                 entry_frame,
@@ -202,12 +211,21 @@ class FloatingHUD:
             self._has_placeholder = True
             self._entry.pack(fill="x", side="left", expand=True)
 
-            def on_entry_focus_in(event=None):
+            def on_entry_key_down(event):
+                # Ignore pure modifier navigation keys
+                if event.keysym in ("Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R", "Caps_Lock", "Tab", "Escape"):
+                    return
+                if event.keysym == "Return":
+                    return
                 if self._has_placeholder or self._entry.get() == self.PLACEHOLDER_TEXT:
                     self._entry.delete(0, "end")
                     self._entry.config(fg=HUD_THEME["text_primary"])
                     self._has_placeholder = False
+
+            def on_entry_click(event=None):
                 self._entry.focus_set()
+                if self._has_placeholder:
+                    self._entry.icursor(0)
 
             def on_entry_focus_out(event=None):
                 if not self._entry.get().strip():
@@ -216,18 +234,12 @@ class FloatingHUD:
                     self._entry.config(fg=HUD_THEME["text_secondary"])
                     self._has_placeholder = True
 
-            def on_entry_key_down(event=None):
-                if self._has_placeholder or self._entry.get() == self.PLACEHOLDER_TEXT:
-                    self._entry.delete(0, "end")
-                    self._entry.config(fg=HUD_THEME["text_primary"])
-                    self._has_placeholder = False
-
-            self._entry.bind("<FocusIn>", on_entry_focus_in)
+            self._entry.bind("<Button-1>", on_entry_click)
             self._entry.bind("<FocusOut>", on_entry_focus_out)
-            self._entry.bind("<Button-1>", on_entry_focus_in)
             self._entry.bind("<KeyPress>", on_entry_key_down)
             self._entry.bind("<Return>", self._on_enter_pressed)
-            entry_frame.bind("<Button-1>", on_entry_focus_in)
+            entry_frame.bind("<Button-1>", on_entry_click)
+            search_icon.bind("<Button-1>", on_entry_click)
             self._root.bind("<Escape>", lambda e: self.hide())
 
             # Send Button
