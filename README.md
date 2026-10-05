@@ -1,6 +1,6 @@
 # 🤖 Chitti — Personal Multimodal AI Desktop Companion Robot
 
-**Chitti** is an intelligent, interactive personal multimodal AI desktop companion robot running locally on Windows with local LLM intelligence, persistent long-term memory, real-time computer vision, and **multilingual language intelligence (English, Hindi, Roman Hindi, Hinglish, and Mixed)**.
+**Chitti** is an intelligent, 24/7 interactive personal multimodal AI desktop companion robot running locally on Windows. Powered by local LLM intelligence (Ollama), persistent long-term memory, real-time computer vision, **multilingual natural language understanding (English, Hindi, Roman Hindi, Hinglish)**, a hands-free ambient voice engine, and a frameless **Dynamic Island Floating HUD**.
 
 ---
 
@@ -11,141 +11,153 @@
 - ✅ **Phase 3: Computer Vision & Face Recognition (YuNet + SFace + YOLOv8)** *(Complete)*
 - ✅ **Phase 4: Multilingual Understanding, Translation & Language Intelligence** *(Complete)*
 - ✅ **Phase 4A: Brain Reliability, Memory Integration, Identity & Response Quality** *(Complete)*
-- ⏳ **Phase 5: Laptop & Desktop Control Tools** *(Upcoming)*
-- ⏳ **Phase 6: Physical Robot Hardware & Actuators** *(Upcoming)*
+- ✅ **Phase 5: Ambient Voice Engine, Dynamic Island HUD & Controlled Laptop Agent** *(Complete)*
+- ⏳ **Phase 6: Physical Robot Hardware & Actuators (Microcontroller, Servos, Chassis)** *(Upcoming)*
 
 ---
 
-## 🧠 Multimodal Multilingual Architecture
+## 🧠 Multimodal Architecture & System Pipeline
 
 ```mermaid
 graph TD
-    User([User Voice / Text]) -->|Audio / Text| InputStage[STT / Text Stream]
+    User([User Voice / Hotkey / Text]) -->|Ambient Mic / Alt+Space| InputStage[Audio Stream / Floating HUD]
     
-    subgraph "Phase 4 & 4A: Multilingual Intelligence & Brain Reliability"
-        InputStage -->|Raw Query| LangDet[Language Detector\nsrc/language/detector.py]
+    subgraph "Phase 5: Ambient Voice Engine & Desktop UI"
+        InputStage -->|Microphone Stream| WakeDetector[Wake-Word Detector\n'Hey Chitti' / 'Chitti']
+        InputStage -->|Alt+Space Hotkey| HotkeyManager[Safe Hotkey Listener\nRegisterHotKey / GetAsyncKeyState]
+        HotkeyManager --> FloatingHUD[Dynamic Island HUD\nsrc/ui/hud_overlay.py]
+        WakeDetector -->|Keyword Spotted| StreamingSTT[Streaming STT & 16kHz Resampler\nsrc/audio/streaming_stt.py]
+        StreamingSTT -->|Clean Transcribed Text| MasterRouter[Master Intent Router\nsrc/router/master_router.py]
+        FloatingHUD -->|Text Input / Action Chips| MasterRouter
+    end
+
+    subgraph "Phase 4 & 4A: Multilingual Intelligence & Intent Normalization"
+        MasterRouter -->|Raw Query| LangDet[Language Detector\nsrc/language/detector.py]
         LangDet -->|Detected Language & Script| LangNorm[Language Normalizer\nsrc/language/normalizer.py]
         LangNorm -->|Phonetic Fixes & STT Correction| IntentCanonicalizer[Intent & Negation Parser]
-        IntentCanonicalizer -->|Normalized Intent & Actions| PipelineRouter[Language-Aware Pipeline Router]
-        PipelineRouter -.->|Direct Identity / Creator Query| DirectIdResolver[Direct Identity Resolver\nsrc/memory/manager.py]
-        PipelineRouter -.->|Discrete Fact Extraction| MultiFactExtractor[Compound Memory Extractor\nsrc/memory/extractor.py]
-        PipelineRouter -.->|Dedicated Translation Request| TransMod[Translator\nsrc/language/translator.py]
+        IntentCanonicalizer -->|Normalized Intent & Route| RouteDispatcher{Route Dispatcher}
+    end
+
+    subgraph "Phase 5: Controlled Laptop Agent & Screen Perception"
+        RouteDispatcher -->|App / System Command| LaptopAgent[Laptop Agent Manager\nsrc/agent/manager.py]
+        RouteDispatcher -->|Screen / Document Query| ScreenVision[Screen Perception & Vision Grounding\nsrc/agent/vision.py]
+        LaptopAgent --> SystemActions[Apps / Folders / Files / Volume]
     end
     
     subgraph "Phase 3: Computer Vision"
-        PipelineRouter -->|Normalized Vision Query| VisionMgr[Vision Manager\nsrc/vision/vision_manager.py]
+        RouteDispatcher -->|Camera Vision Query| VisionMgr[Vision Manager\nsrc/vision/vision_manager.py]
         Camera([Webcam]) --> CamMod[Camera Module\nsrc/vision/camera.py] --> VisionMgr
         VisionMgr --> FaceRec[Face Recognition\nYuNet + SFace ONNX]
         VisionMgr --> ObjDet[Object Detection\nYOLOv8n]
         FaceRec <--> FaceDB[(Face DB\ndata/vision/faces.db)]
-        VisionMgr -->|Vision Context| ContextAggregator
     end
     
-    subgraph "Phase 2 & 4A: Long-Term Memory & Identity Grounding"
-        MultiFactExtractor -->|Structured Facts| MemoryManager[Memory Manager\nsrc/memory/manager.py]
-        PipelineRouter -->|Cross-Lingual Query| MemoryManager
-        MemoryManager <-->|Semantic Vector Search & Exact Lookup| MemoryDB[(Memory DB\ndata/memory/chitti_memory.db)]
-        MemoryManager -->|Factual Memory Block| ContextAggregator
+    subgraph "Phase 2: Long-Term Memory & Knowledge Graph"
+        RouteDispatcher -->|Fact Extraction / Query| MemoryManager[Memory Manager\nsrc/memory/manager.py]
+        MemoryManager <-->|Semantic Vector Search| MemoryDB[(Memory DB\ndata/memory/chitti_memory.db)]
+        RouteDispatcher -->|Schedule / Reminders| ProactiveScheduler[Proactive Scheduler\nsrc/brain/proactive_scheduler.py]
     end
     
-    subgraph "Phase 1: Brain, Response Validator & Voice Output"
-        ContextAggregator[Context Aggregator] -->|History + Persona + Vision + Memory| Ollama[Ollama Local LLM\nsrc/brain/llm.py]
-        Ollama -->|Raw Generation| RespValidator[Response Validator & Sanitizer\nsrc/brain/validator.py]
-        RespValidator -->|Zero-Placeholder Sanitized Text| TTS[Text-to-Speech\nsrc/audio/tts.py]
+    subgraph "Phase 1: Local AI Brain & Speech Synthesis"
+        RouteDispatcher -->|Synthesized Context| Ollama[Ollama Local LLM\nsrc/brain/llm.py]
+        Ollama --> RespValidator[Response Validator & Sanitizer\nsrc/brain/validator.py]
+        RespValidator --> TTS[Text-to-Speech & Barge-In\nsrc/audio/tts.py]
         TTS --> Speaker([Laptop Speakers])
+        TTS -->|Update Status| FloatingHUD
     end
 ```
 
 ---
 
-## 🛡️ Phase 4A: Brain Reliability, Memory Integration & Response Quality
+## ✨ Key Features & Capabilities
 
-Phase 4A eliminates memory amnesia, personal fact hallucination, placeholder leaks (`[Creator's Name]`), and grammatical glitches in generated Hindi and Hinglish.
+### 🎙️ 1. Hands-Free Ambient Voice & Zero False Triggers (Phase 5)
+- **Wake Word Spotting**: Say `"Hey Chitti"` or `"Chitti"` to wake Chitti up hands-free from across the room.
+- **Single-Breath Command Execution**: Say *"Hey Chitti, open Notepad"* or *"Chitti, what's on my screen?"* in one continuous sentence. Chitti extracts and executes the command immediately without making you wait or repeat yourself.
+- **Strict Speech Verification**: Eliminates phantom activations. Normal conversations, background video audio, typing, and ambient noise never falsely trigger Chitti.
+- **Instant Silent Standby / Sleep**: Saying `"Stop"`, `"Chup"`, `"Quiet"`, `"Mute"`, or `"So jao"` immediately cuts off TTS audio and puts Chitti into silent standby until the next wake word.
+- **Dynamic 16kHz Resampling (`src/audio/audio_utils.py`)**: Automatically detects and caches your Windows microphone (Intel SST / WASAPI / MME) and resamples 44.1kHz / 48kHz audio streams to 16kHz float32.
 
-### 1. Multi-Fact Compound Memory Extraction (`src/memory/extractor.py`)
-- **Compound Sentence Decomposition**: Decomposes complex multi-fact user statements into discrete, typed memory records:
-  - Input: *"My name is Prateek Singh Bisht and I created you, also I'm an AIML engineer. Remember this."*
-  - Extracted Records:
-    1. `type: "identity"`, `key: "user_name"`, `value: "Prateek Singh Bisht"`
-    2. `type: "relationship"`, `key: "creator"`, `value: "Prateek Singh Bisht"`
-    3. `type: "professional_identity"`, `key: "occupation"`, `value: "AIML engineer"`
-- **Multilingual Remember Triggers**:
-  - English: *"Remember that..."*, *"Don't forget that..."*, *"...remember this"*
-  - Hindi: *"Mera naam Prateek Singh Bisht hai."*, *"Maine tumhe banaya hai."*, *"Main AIML engineer hoon."*
-  - Roman Hindi / Hinglish: *"Ye baat yaad rakhna ki main tumhara creator hoon."*, *"Main AIML engineer hu yaad rakhna."*
+### 🏝️ 2. Dynamic Island Floating HUD (`src/ui/hud_overlay.py`)
+- **Frameless Glassmorphism Pill**: Modern floating Dynamic Island widget that stays gracefully on top of all windows without stealing focus or disrupting your workflow.
+- **Instant Summon Hotkey**: Press **`Alt + Space`** or **`Ctrl + Alt + C`** anywhere in Windows to toggle the HUD.
+- **Live State Machine**:
+  - `IDLE`: Passively waiting in standby (subtle cyan indicator).
+  - `LISTENING`: Real-time audio waveform visualization while hearing your voice.
+  - `THINKING`: Pulsing orange indicator while the brain / agent processes your request.
+  - `SPEAKING`: Active speech playback with real-time barge-in interruption.
+- **Quick Action Chips**: One-click shortcuts for Screen Analysis (`👁️ Screen Info`), Document Summarization (`📄 Doc Summary`), Self-Healing Diagnostics (`🔁 Self Heal`), Memory Listing (`🧠 Memories`), and Roadmap.
 
-### 2. Zero-Hallucination Identity & Creator Resolution (`src/memory/manager.py`)
-- **Deterministic Identity Dispatch**: Direct resolution for queries asking who the user is or who created Chitti:
-  - *"mera nam kya h"* $\to$ `"Tumhara naam Prateek Singh Bisht hai."`
-  - *"who created you?"* / *"who create u"* $\to$ `"You created me, Prateek Singh Bisht."`
-  - *"tujhe kisne bnaya h"* $\to$ `"Mujhe Prateek Singh Bisht ne banaya hai."`
-- **Anti-Hallucination Grounding**: If personal info is unknown (e.g. *"mera favourite food kya hai"*), Chitti clearly states that it does not have that information stored yet rather than fabricating a response.
+### 💻 3. Controlled Laptop Agent Subsystem (`src/agent/`)
+- **App Launcher**: Open apps like Chrome, VS Code, Notepad, File Explorer, Calculator, Command Prompt, etc.
+- **Screen Perception & Document Grounding**: Reads open documents, summarizes on-screen text, and identifies foreground applications.
+- **System Information & Audio Control**: Inspects CPU/RAM/Battery metrics and adjusts laptop volume.
 
-### 3. Response Validation & Zero-Placeholder Safety (`src/brain/validator.py`)
-- **Zero-Placeholder Guarantee**: Filters and replaces `[Creator's Name]`, `[User Name]`, `[Name]`, `<TODO>`, and placeholder templates with stored factual data or controlled fallbacks.
-- **Hinglish/Hindi Grammar Correction**: Automatically catches and fixes LLM generation artifacts (e.g., repairing *"Main Chitti bana hai"* into natural *"Main Chitti hoon"*).
+### 🌐 4. Multilingual Natural Intelligence (Phase 4 & 4A)
+- **Zero-Dependency Language Detection**: Accurately recognizes English, Hindi (Devanagari), Roman Hindi / Hinglish, and Mixed scripts in **0.18 ms**.
+- **Accurate Intent Canonicalization**: Phonetically corrects STT typos (e.g., *"cheeti"* $\to$ *"Chitti"*, *"skren"* $\to$ *"screen"*).
+- **Negation Safety**: Preserves negative modifiers (*"don't open"*, *"mat kholo"*, *"kisi ko mat batana"*).
 
-### 4. STT Optimization & Ghost Hallucination Filtering (`src/audio/stt.py`)
-- **Eager Startup Preloading**: Whisper STT model is loaded once at application launch and kept hot in GPU VRAM, eliminating per-utterance model reload latencies.
-- **Whisper Hallucination Suppressor**: Rejects phantom subtitle artifacts (e.g., *"Subtitles by..."*, *"Thanks for watching..."*, repetitive punctuation loops).
+### 🧠 5. Long-Term Memory & Identity Grounding (Phase 2 & 4A)
+- **Multi-Fact Compound Extraction**: Decomposes complex user statements into discrete, typed memory records.
+- **Zero-Hallucination Identity**: Deterministically resolves user name and creator queries without amnesia or bracket leaks (`[Creator's Name]`).
+- **Semantic Vector Storage**: Stored locally in SQLite (`data/memory/chitti_memory.db`) with `all-MiniLM-L6-v2` embeddings.
+
+### 👁️ 6. Computer Vision & Face Recognition (Phase 3)
+- **Deep Learning Face Detection**: OpenCV YuNet ONNX face detector.
+- **Face Embeddings & Database**: OpenCV SFace extracting 128-d facial embeddings stored in `data/vision/faces.db`.
+- **Object Detection**: YOLOv8n real-time object classification.
 
 ---
 
-## ⚡ Empirical Phase 4A Brain Reliability Benchmark
+## 🚀 Getting Started
 
-Evaluated across **187 benchmark test cases** (`data/evaluation/phase4a_brain_eval_dataset.json`):
+### Prerequisites
+- **Operating System**: Windows 10 or Windows 11 (64-bit)
+- **Python**: Python 3.10 – 3.14
+- **Ollama**: Installed and running locally ([ollama.com](https://ollama.com))
+  ```powershell
+  ollama pull qwen2.5-coder:7b
+  ```
 
-| Evaluation Metric | Measured Accuracy | Benchmark Samples | Notes |
-| :--- | :---: | :---: | :--- |
-| **Language Detection Accuracy** | **100.00%** | 187 / 187 | English, Hindi (Devanagari), Roman Hindi, Hinglish, Mixed |
-| **Memory Extraction Accuracy** | **100.00%** | 20 / 20 | Multi-fact extraction & compound sentence decomposition |
-| **Identity Query Accuracy** | **100.00%** | 23 / 23 | Zero amnesia on user name queries across EN/HI/Hinglish |
-| **Creator Query Accuracy** | **100.00%** | 14 / 14 | Accurate creator resolution without hallucinations |
-| **Unknown Facts Anti-Hallucination** | **100.00%** | 20 / 20 | Refuses to invent unstored personal facts |
-| **Negation Preservation Accuracy** | **100.00%** | 20 / 20 | Zero false execution of negative commands |
-| **STT Hallucination Rejection** | **100.00%** | 5 / 5 | Rejects Whisper subtitle hallucinations cleanly |
-| **Placeholder Leakage Rate** | **0.00%** (0 leaks) | 187 calls | Zero `[Creator's Name]` or bracket leaks |
-| **Personal Fact Hallucination Rate** | **0.00%** (0 false facts)| 187 calls | Fully grounded in factual memory database |
-| **Average Query Latency** | **0.91 ms** | 187 calls | Non-blocking execution pipeline |
+### Installation
+1. Clone the repository:
+   ```powershell
+   git clone https://github.com/bishtprateek270-hue/chitti-.git
+   cd chitti
+   ```
+2. Install Python dependencies:
+   ```powershell
+   pip install -r requirements.txt
+   ```
 
-Run the Phase 4A evaluation benchmark:
+---
+
+## 🎮 How to Run Chitti
+
+### Option 1: One-Click Background Launcher (Recommended)
+Double-click **`Launch_Chitti.bat`** (or `Start_Chitti.bat`).
+- Automatically starts Ollama if not already running.
+- Starts Chitti in 24/7 silent background mode without a lingering terminal window.
+- Press **`Alt + Space`** or say **`"Hey Chitti"`** to interact anytime.
+
+### Option 2: Interactive Terminal Mode
 ```powershell
-python scripts/eval_brain_reliability.py
+python src/main.py
 ```
 
----
+### Interactive CLI Keybindings
+- **`[ENTER]`**: Speak via Microphone (Push-to-talk with auto VAD).
+- **`[T]` + `[ENTER]`**: Type a text message (Keyboard fallback).
+- **`[V]` + `[ENTER]`**: Instant Camera Vision Snapshot.
+- **`[R]` + `[ENTER]`**: Register a new Person's Face.
+- **`[L]` + `[ENTER]`**: List all registered faces in database.
+- **`[M]` + `[ENTER]`**: View stored persistent long-term memories.
+- **`[C]` + `[ENTER]`**: Clear short-term session conversation history.
+- **`[Q]` + `[ENTER]`**: Quit and release all hardware resources.
 
-## 🌐 Phase 4: Multilingual Understanding & Intelligence
-
-Phase 4 gives Chitti human-like multilingual understanding, enabling it to naturally comprehend user intent across languages, correct speech-to-text slips, preserve critical negations, maintain response language preferences, and translate between languages without robotic over-translation.
-
-### 1. Language Detection (`src/language/detector.py`)
-- **Fast, Zero-Dependency Detection**: Identifies language in **0.18 ms** without loading heavy external models.
-- **Detected Classes**:
-  - `en`: Pure English (*"What is machine learning?"*)
-  - `hi`: Devanagari Hindi (*"मशीन लर्निंग क्या है?"*)
-  - `hinglish`: Roman Hindi / Hinglish (*"machine learning kya hai"*, *"Chrome kholo aur YouTube chalao"*)
-  - `mixed`: Interleaved English + Hindi (*"Can you bata sakte ho mera GPU kitna use ho raha hai?"*)
-
-### 2. Dedicated Translation Engine (`src/language/translator.py`)
-- **Technical Term Preservation**: `Python`, `VS Code`, `GitHub`, `API`, `GPU`, `database`, `Docker`, `FastAPI`, Windows file paths `C:\...`, and URLs are **never** awkwardly translated into literal terms.
-
----
-
-## 👁️ Phase 3: Computer Vision & Face Perception System
-
-- **Detector (`src/vision/face_detector.py`)**: OpenCV YuNet ONNX deep learning face detector.
-- **Feature Extraction & Alignment (`src/vision/face_recognizer.py`)**: OpenCV SFace ONNX extracting normalized 128-d facial embeddings.
-- **Face Database (`src/vision/face_database.py`)**: Persistent storage in `data/vision/faces.db`.
-- **Object Detection (`src/vision/object_detector.py`)**: YOLOv8n real-time object detector.
-
----
-
-## 🗄️ Phase 2: Persistent Long-Term Memory System
-
-- **SQLite Database**: `data/memory/chitti_memory.db` for explicit user facts and preferences.
-- **Semantic Retrieval**: Ranked cosine retrieval using local embeddings (`all-MiniLM-L6-v2`).
-- **Privacy Controls**: Automatic rejection of passwords, tokens, and secret credentials.
+### Stopping Chitti
+Double-click **`Stop_Chitti.bat`** or say *"Chitti, stop"*.
 
 ---
 
@@ -176,51 +188,36 @@ FACES_DB_PATH=data/vision/faces.db
 MEMORY_ENABLED=true
 MEMORY_DB_PATH=data/memory/chitti_memory.db
 OLLAMA_MODEL=qwen2.5-coder:7b
+
+# Laptop Agent & Desktop Mode (Phase 5)
+AGENT_ENABLED=true
+WORKSPACE_DIR=data/agent_workspace
+SCREENSHOTS_DIR=data/agent_screenshots
 ```
-
----
-
-## 🎙️ How to Start & Use Chitti
-
-Run Chitti:
-```powershell
-python src/main.py
-```
-
-### Interactive Controls
-- **`[ENTER]`**: Speak to Chitti via Microphone (Push-to-talk with auto VAD).
-- **`[T]` + `[ENTER]`**: Type a text message (keyboard fallback).
-- **`[V]` + `[ENTER]`**: **Instant Visual Perception**: Captures camera frame and prints detected people and objects.
-- **`[R]` + `[ENTER]`**: **Register Person's Face**: Starts the interactive multi-sample face registration wizard.
-- **`[L]` + `[ENTER]`**: List all registered people in the face database.
-- **`[M]` + `[ENTER]`**: View all stored persistent long-term memories.
-- **`[C]` + `[ENTER]`**: Reset short-term session dialogue history.
-- **`[Q]` + `[ENTER]`**: Cleanly release camera, audio streams, and quit.
 
 ---
 
 ## 🧪 Automated Testing
 
-Run the full automated test suite:
+Run the automated test suite:
 ```powershell
-python -m pytest tests/ -v
+pytest tests/ -v
 ```
 
-### Test Coverage (97 Tests Passing 100%):
-- **Brain Reliability & Memory Integration (`tests/test_brain_reliability.py`)** (6 tests).
-- **Multilingual Intelligence (`tests/test_language_*.py`)** (23 tests).
-- **Vision Perception (`tests/test_vision_*.py`, `tests/test_camera.py`, `tests/test_face_*.py`, `tests/test_object_*.py`)** (21 tests).
-- **Memory & Embeddings (`tests/test_memory_*.py`)** (24 tests).
-- **Voice AI Brain & Config (`tests/test_llm.py`, `tests/test_history.py`, `tests/test_stt.py`, `tests/test_tts.py`, `tests/test_config.py`, `tests/test_controller.py`, `tests/test_microphone.py`)** (23 tests).
+### Test Suite Coverage (33/33 Passing):
+- **Voice Engine & Ambient Listener (`tests/test_voice_engine.py`)**
+- **Dynamic Island Floating HUD (`tests/test_hud_overlay.py`)**
+- **Master Intent Router (`tests/test_master_router.py`)**
+- **Multilingual Intelligence & Memory Extraction (`tests/test_language_*.py`)**
+- **Vision & Face Recognition (`tests/test_vision_*.py`, `tests/test_face_*.py`)**
 
 ---
 
-## 🔮 Upcoming Phases
+## 🔮 Roadmap
 
-```text
-Coming in Phase 5:
-Laptop & desktop control tools (Application control, window management, system health diagnostics, script execution with permissions)
-
-Coming in Phase 6:
-Physical robot hardware & actuators (Microcontroller bridge, pan-tilt neck servos, OLED display, physical chassis)
-```
+- [x] **Phase 1**: Voice AI Brain (STT, LLM, TTS, Conversation History)
+- [x] **Phase 2**: Long-Term Memory (Semantic Embeddings, Fact Storage)
+- [x] **Phase 3**: Computer Vision (Face Recognition, Object Detection)
+- [x] **Phase 4 & 4A**: Multilingual Intelligence & Brain Reliability
+- [x] **Phase 5**: Hands-Free Voice Engine, Dynamic Island HUD & Laptop Agent
+- [ ] **Phase 6**: Physical Robot Hardware, Neck Servos & Microcontroller Bridge
