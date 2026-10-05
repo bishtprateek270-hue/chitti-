@@ -307,12 +307,14 @@ class FloatingHUD:
                         self._root.attributes("-topmost", True)
                         try:
                             import ctypes
-                            hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                            hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
                             ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+                            ctypes.windll.user32.ShowWindow(hwnd, 5)
+                            ctypes.windll.user32.SetForegroundWindow(hwnd)
                         except Exception:
                             pass
                         if self._entry:
-                            self._entry.focus_set()
+                            self._entry.focus_force()
 
                 elif msg_type == "hide":
                     self.state.is_visible = False
@@ -320,7 +322,8 @@ class FloatingHUD:
                         self._root.withdraw()
 
                 elif msg_type == "toggle":
-                    if self.state.is_visible:
+                    is_currently_shown = bool(self._root.winfo_viewable()) if self._root else self.state.is_visible
+                    if is_currently_shown:
                         self.state.is_visible = False
                         if self._root:
                             self._root.withdraw()
@@ -332,12 +335,14 @@ class FloatingHUD:
                             self._root.attributes("-topmost", True)
                             try:
                                 import ctypes
-                                hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                                hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
                                 ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+                                ctypes.windll.user32.ShowWindow(hwnd, 5)
+                                ctypes.windll.user32.SetForegroundWindow(hwnd)
                             except Exception:
                                 pass
                             if self._entry:
-                                self._entry.focus_set()
+                                self._entry.focus_force()
 
                 elif msg_type == "destroy":
                     if self._root:

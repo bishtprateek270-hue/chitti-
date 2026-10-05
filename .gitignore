@@ -64,3 +64,6 @@ models/
 *.sqlite
 *.sqlite3
 data/
+*.log
+.chitti/
+crash_dump.txt

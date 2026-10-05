@@ -857,7 +857,24 @@ class ChittiController:
 
 
 def main():
-    """Application entry point."""
+    """Application entry point with Single-Instance Mutex lock."""
+    # Win32 Single-Instance Mutex (Prevents duplicate processes & acoustic echo loops)
+    mutex = None
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            ERROR_ALREADY_EXISTS = 183
+            mutex = kernel32.CreateMutexW(None, False, "Global\\Chitti_AI_Companion_Mutex")
+            if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+                print("\n[INFO] Chitti is already running in the background.")
+                print("Press Alt+Space or say 'Hey Chitti' to interact.\n")
+                if mutex:
+                    kernel32.CloseHandle(mutex)
+                sys.exit(0)
+        except Exception:
+            pass
+
     try:
         controller = ChittiController()
         controller.run()
@@ -867,6 +884,12 @@ def main():
             f.write(f"CRASH OCCURRED: {e}\n\n")
             traceback.print_exc(file=f)
         raise
+    finally:
+        if mutex and sys.platform == "win32":
+            try:
+                ctypes.windll.kernel32.CloseHandle(mutex)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

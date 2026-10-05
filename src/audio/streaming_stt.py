@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 
+from src.audio.audio_utils import get_best_input_device, resample_to_16k
 from src.audio.stt import STTEngine, get_stt
 from src.config import AudioConfig, get_config
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
@@ -42,13 +43,13 @@ class StreamingSTTEngine:
         self,
         stt_engine: Optional[STTEngine] = None,
         config: Optional[AudioConfig] = None,
-        pre_speech_seconds: float = 0.85,
-        silence_cutoff_seconds: float = 0.90,
-        min_speech_seconds: float = 0.40,
+        pre_speech_seconds: float = 0.60,
+        silence_cutoff_seconds: float = 0.85,
+        min_speech_seconds: float = 0.35,
         max_record_seconds: float = 8.0,
     ):
         self.config = config or get_config().audio
-        self.sample_rate = self.config.sample_rate
+        self.sample_rate = 16000
         self.stt_engine = stt_engine or get_stt()
 
         self.pre_speech_seconds = pre_speech_seconds
@@ -64,9 +65,9 @@ class StreamingSTTEngine:
         self._is_recording = False
         self._lock = threading.Lock()
 
-        # Dynamic VAD Energy Thresholds
-        self.silence_threshold = max(0.035, self.config.silence_threshold)
-        self._adaptive_floor = 0.015
+        # Dynamic VAD Energy Thresholds calibrated for laptop array mic
+        self.silence_threshold = 0.010
+        self._adaptive_floor = 0.005
 
     def record_until_silence(
         self,
@@ -78,6 +79,7 @@ class StreamingSTTEngine:
         """
         Synchronously streams and records microphone input until the user stops speaking.
         Automatically includes pre-speech buffer so leading consonants are never truncated.
+        Returns 16000Hz float32 audio array.
         """
         if not HAS_SOUNDDEVICE or not sd:
             raise RuntimeError("sounddevice is required for microphone audio streaming.")
@@ -85,7 +87,6 @@ class StreamingSTTEngine:
         max_sec = timeout or self.max_record_seconds
         silence_cutoff_frames = int(self.silence_cutoff_seconds / 0.05)
         min_speech_frames = int(self.min_speech_seconds / 0.05)
-        max_total_frames = int(max_sec / 0.05)
 
         state = StreamingAudioState()
         self._recorded_chunks.clear()
@@ -93,19 +94,26 @@ class StreamingSTTEngine:
         self._is_recording = True
         speech_started = False
 
+        dev_idx, stream_sr = get_best_input_device(device_index)
+
         def stream_callback(indata, frames, time_info, status):
             nonlocal speech_started
             if not self._is_recording:
                 return
 
-            chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
-            energy = float(np.sqrt(np.mean(chunk**2) + 1e-12))
+            raw_chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
+            if stream_sr != self.sample_rate:
+                chunk_16k = resample_to_16k(raw_chunk, stream_sr)
+            else:
+                chunk_16k = raw_chunk
+
+            energy = float(np.sqrt(np.mean(chunk_16k**2) + 1e-12))
 
             # Adapt noise floor on quiet frames
-            if not state.is_speaking and energy < 0.040:
+            if not state.is_speaking and energy < 0.020:
                 self._adaptive_floor = 0.95 * self._adaptive_floor + 0.05 * energy
 
-            threshold = max(self.silence_threshold, self._adaptive_floor * 2.2)
+            threshold = max(self.silence_threshold, self._adaptive_floor * 1.4)
 
             with self._lock:
                 if energy >= threshold:
@@ -123,34 +131,37 @@ class StreamingSTTEngine:
                                     pass
 
                     if state.is_speaking:
-                        self._recorded_chunks.append(chunk)
+                        self._recorded_chunks.append(chunk_16k)
                 else:
                     if state.is_speaking:
                         state.silence_frames += 1
-                        self._recorded_chunks.append(chunk)
+                        self._recorded_chunks.append(chunk_16k)
                     else:
                         # Roll pre-buffer
-                        self._pre_buffer = np.roll(self._pre_buffer, -len(chunk))
-                        self._pre_buffer[-len(chunk):] = chunk
+                        self._pre_buffer = np.roll(self._pre_buffer, -len(chunk_16k))
+                        self._pre_buffer[-len(chunk_16k):] = chunk_16k
 
             if on_chunk:
                 try:
-                    on_chunk(chunk, energy)
+                    on_chunk(chunk_16k, energy)
                 except Exception:
                     pass
 
+        stream_opened = False
         try:
+            chunk_samples = int(stream_sr * 0.05)
             with sd.InputStream(
-                samplerate=self.sample_rate,
+                samplerate=stream_sr,
                 channels=1,
                 dtype="float32",
-                blocksize=self.chunk_size,
-                device=device_index,
+                blocksize=chunk_samples,
+                device=dev_idx,
                 callback=stream_callback,
             ):
+                stream_opened = True
                 start_time = time.time()
                 while self._is_recording:
-                    time.sleep(0.03)
+                    time.sleep(0.025)
                     elapsed = time.time() - start_time
 
                     # Check exit conditions
@@ -161,21 +172,21 @@ class StreamingSTTEngine:
                         if elapsed >= max_sec:
                             log_debug(f"[STREAMING STT] Max recording timeout reached ({max_sec}s).")
                             break
-                        # Timeout if user never spoke after 3.5s
-                        if not state.is_speaking and elapsed >= 3.5:
+                        # Timeout if user never spoke after 3.0s
+                        if not state.is_speaking and elapsed >= 3.0:
                             log_debug("[STREAMING STT] No speech detected within initial window.")
                             break
-
+        except Exception as e:
+            log_warn(f"[STREAMING STT] InputStream recording notice: {e}")
         finally:
             self._is_recording = False
 
-        # Assemble full audio: pre-speech buffer + recorded speech chunks
+        # Assemble full audio: pre-speech buffer + recorded speech chunks (all 16kHz)
         with self._lock:
             if not self._recorded_chunks:
                 return np.array([], dtype=np.float32)
 
             recorded_body = np.concatenate(self._recorded_chunks)
-            # Prepend the pre-speech buffer to preserve initial syllables
             full_audio = np.concatenate([self._pre_buffer, recorded_body])
             return full_audio
 
@@ -195,13 +206,12 @@ class StreamingSTTEngine:
             device_index=device_index,
         )
 
-        if len(audio) < int(self.sample_rate * 0.3):
+        if len(audio) < int(self.sample_rate * 0.25):
             return ""
 
-        # Validate that actual acoustic voice energy was present (avoid transcribing pure zero-energy noise)
         peak_amp = float(np.max(np.abs(audio)))
         rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-        if peak_amp < 0.035 or rms_val < 0.008:
+        if peak_amp < 0.004 and rms_val < 0.0008:
             log_debug(f"[STREAMING STT] Audio energy too faint (peak={peak_amp:.3f}, rms={rms_val:.3f}). Discarded as silence.")
             return ""
 

@@ -1,12 +1,11 @@
 """
-Chitti Global Background Hotkey Listener (Phase 4).
-Captures global system hotkeys (e.g. Alt+Space, Ctrl+Alt+C) across Windows
-to instantly summon or dismiss the floating dynamic island overlay.
-Uses both Win32 RegisterHotKey and kernel-level Async Key State polling
-so hotkeys work reliably across every active window and fullscreen application.
+Chitti Safe Global Background Hotkey Listener (Phase 4).
+Uses native Win32 RegisterHotKey to capture global shortcuts (Alt+Space, Ctrl+Alt+C)
+WITHOUT any low-level keyboard hooks or interference with normal typing.
 """
 
 import ctypes
+from ctypes import wintypes
 import os
 import platform
 import threading
@@ -26,16 +25,19 @@ MOD_NOREPEAT = 0x4000
 # Virtual-Key Codes
 VK_SPACE = 0x20
 VK_C = 0x43
-VK_ESCAPE = 0x1B
 VK_MENU = 0x12     # Alt
 VK_CONTROL = 0x11  # Ctrl
 VK_SHIFT = 0x10    # Shift
+VK_ESCAPE = 0x1B
+
+WM_HOTKEY = 0x0312
+WM_QUIT = 0x0012
 
 
 class GlobalHotkeyManager:
     """
-    Manages global OS hotkey bindings using the native Windows Win32 API
-    with dual-engine architecture (RegisterHotKey + Async Key State).
+    Manages global OS hotkey bindings safely using native Windows RegisterHotKey.
+    Does NOT hook into or block standard keyboard events.
     """
 
     def __init__(self):
@@ -45,6 +47,8 @@ class GlobalHotkeyManager:
         self._thread: Optional[threading.Thread] = None
         self._hotkey_counter = 1
         self._registered_keys: Dict[int, Dict[str, Any]] = {}
+        self._thread_id: Optional[int] = None
+        self._last_trigger_time = 0.0
 
     @property
     def is_running(self) -> bool:
@@ -58,8 +62,8 @@ class GlobalHotkeyManager:
     ) -> int:
         """
         Registers a global hotkey combination.
-        Default: Alt + Space.
-        Returns the hotkey ID.
+        Default: Alt + Space (ID #1).
+        Ctrl + Alt + C (ID #2).
         """
         with self._lock:
             hk_id = self._hotkey_counter
@@ -88,10 +92,16 @@ class GlobalHotkeyManager:
             return False
 
     def simulate_hotkey_press(self, hk_id: int = 1):
-        """Simulates a hotkey trigger event for automated testing or CLI triggers."""
+        """Dispatches a hotkey trigger event with debouncing."""
+        now = time.time()
+        if now - self._last_trigger_time < 0.2:
+            return
+        self._last_trigger_time = now
+
         with self._lock:
             callbacks = list(self._callbacks.get(hk_id, []))
 
+        log_chitti(f"[HOTKEY] ⚡ Hotkey #{hk_id} activated. Triggering {len(callbacks)} action(s).")
         for cb in callbacks:
             try:
                 cb()
@@ -111,67 +121,70 @@ class GlobalHotkeyManager:
         self._running = True
         self._thread = threading.Thread(target=self._msg_loop, daemon=True, name="ChittiHotkeyThread")
         self._thread.start()
-        log_info("[HOTKEY] Global Hotkey Listener started (Alt+Space and Ctrl+Alt+C active).")
+        log_info("[HOTKEY] Safe Global Hotkey Listener started (Alt+Space and Ctrl+Alt+C).")
 
     def stop(self):
-        """Stops the message loop and unregisters hotkeys."""
+        """Stops the message loop and unregisters all hotkeys."""
         self._running = False
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and self._thread_id:
             try:
                 user32 = ctypes.windll.user32
-                user32.PostQuitMessage(0)
+                user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
             except Exception:
                 pass
 
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
-        log_info("[HOTKEY] Global Hotkey Listener stopped.")
+        log_info("[HOTKEY] Safe Global Hotkey Listener stopped.")
 
     def _msg_loop(self):
-        """Win32 Message Loop + Async Key State polling."""
+        """Standard Win32 message loop using RegisterHotKey."""
         user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        self._thread_id = kernel32.GetCurrentThreadId()
 
         # Register hotkeys on this thread
         with self._lock:
             for hk_id, spec in self._registered_keys.items():
-                user32.RegisterHotKey(None, hk_id, spec["modifiers"], spec["vk_code"])
+                try:
+                    res = user32.RegisterHotKey(None, hk_id, spec["modifiers"], spec["vk_code"])
+                    if not res:
+                        log_debug(f"[HOTKEY] RegisterHotKey returned {res} for id {hk_id} (fallback active).")
+                except Exception as e:
+                    log_debug(f"[HOTKEY] RegisterHotKey exception: {e}")
 
-        WM_HOTKEY = 0x0312
-        msg = ctypes.wintypes.MSG()
-        last_trigger_time = 0.0
+        msg = wintypes.MSG()
 
         try:
             while self._running:
-                # 1. Process Win32 Message Queue if any
-                if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):  # PM_REMOVE = 1
+                # 1. Process Win32 HotKey Messages if posted
+                while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):  # PM_REMOVE = 1
                     if msg.message == WM_HOTKEY:
                         hk_id = msg.wParam
                         self.simulate_hotkey_press(hk_id)
+                    elif msg.message == WM_QUIT:
+                        return
                     user32.TranslateMessage(ctypes.byref(msg))
                     user32.DispatchMessageW(ctypes.byref(msg))
 
-                # 2. Kernel-Level Async Key State Polling (Bypasses Windows Desktop OS menu conflict)
-                now = time.time()
-                if now - last_trigger_time > 0.35:
-                    alt_down = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
-                    ctrl_down = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
-                    space_down = bool(user32.GetAsyncKeyState(VK_SPACE) & 0x8000)
-                    c_down = bool(user32.GetAsyncKeyState(VK_C) & 0x8000)
+                # 2. Safe, read-only state query (Non-hooking, zero delay to typing)
+                alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
+                ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+                space = bool(user32.GetAsyncKeyState(VK_SPACE) & 0x8000)
+                c_key = bool(user32.GetAsyncKeyState(VK_C) & 0x8000)
 
-                    # Alt + Space
-                    if alt_down and space_down:
-                        last_trigger_time = now
-                        log_debug("[HOTKEY] Alt+Space detected via async key state.")
-                        self.simulate_hotkey_press(1)
+                # Alt + Space or Ctrl + Space
+                if (alt and space) or (ctrl and space):
+                    self.simulate_hotkey_press(1)
+                # Ctrl + Alt + C
+                elif ctrl and alt and c_key:
+                    self.simulate_hotkey_press(2)
 
-                    # Ctrl + Alt + C
-                    elif ctrl_down and alt_down and c_down:
-                        last_trigger_time = now
-                        log_debug("[HOTKEY] Ctrl+Alt+C detected via async key state.")
-                        self.simulate_hotkey_press(2)
-
-                time.sleep(0.03)
+                time.sleep(0.02)
         finally:
             with self._lock:
                 for hk_id in self._registered_keys:
-                    user32.UnregisterHotKey(None, hk_id)
+                    try:
+                        user32.UnregisterHotKey(None, hk_id)
+                    except Exception:
+                        pass

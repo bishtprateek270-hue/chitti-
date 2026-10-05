@@ -89,14 +89,48 @@ class AmbientVoiceListener:
 
         log_chitti(f"[AMBIENT] ⚡ Wake word spotted: '{event.keyword}'. Transitioning to LISTENING...")
 
-        # Update HUD state to listening with active pulse
+        # Update HUD state to listening and pop up on screen
         if self.hud:
+            self.hud.show()
             self.hud.set_mode(HUDMode.LISTENING)
             self.hud.set_progress("Listening (speak now)...")
 
-        # Start recording in background worker
-        worker = threading.Thread(target=self._record_and_process_speech, daemon=True, name="AmbientSpeechWorker")
-        worker.start()
+        # If a full command was already captured with the wake word in one breath:
+        if event.command and len(event.command.strip()) >= 3:
+            worker = threading.Thread(
+                target=self._process_direct_command,
+                args=(event.command.strip(),),
+                daemon=True,
+                name="AmbientDirectWorker",
+            )
+            worker.start()
+        else:
+            # Start streaming recording in background worker
+            worker = threading.Thread(
+                target=self._record_and_process_speech,
+                daemon=True,
+                name="AmbientSpeechWorker",
+            )
+            worker.start()
+
+    def _process_direct_command(self, command_text: str):
+        """Directly processes a command captured alongside the wake word."""
+        try:
+            self.wake_detector.pause()
+            log_chitti(f"[AMBIENT] 🗣️ User said: '{command_text}'")
+
+            with self._lock:
+                self.state = AmbientState.THINKING
+
+            if self.hud:
+                self.hud.set_mode(HUDMode.THINKING)
+                self.hud.set_progress(f"Processing: '{command_text}'")
+
+            self.command_handler(command_text)
+        except Exception as e:
+            log_warn(f"[AMBIENT] Direct command processing notice: {e}")
+        finally:
+            self._return_to_standby()
 
     def _record_and_process_speech(self):
         """Records speech until silence, transcribes, and executes command."""
