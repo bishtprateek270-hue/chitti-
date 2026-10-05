@@ -50,6 +50,8 @@ class WakeWordDetector:
         "hey chitti", "chitti", "ok chitti", "hello chitti", "hi chitti",
         "chiti", "chitty", "cheeti", "citi", "kitty", "he chitti",
         "ay chitti", "a chitti", "kitti", "jitti", "titti", "shitti", "chutti",
+        "city", "chitta", "chithi", "chithii", "cheetah", "hey city",
+        "suno chitti", "chitti suno", "hey cheeti",
     ]
 
     def __init__(

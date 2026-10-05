@@ -130,25 +130,11 @@ class FloatingHUD:
             hud_y = 25
             self._root.geometry(f"{hud_w}x{hud_h}+{hud_x}+{hud_y}")
             self._root.configure(bg=HUD_THEME["bg_dark"])
-            self._root.update_idletasks()
-
-            # Remove standard window decorations while keeping full Windows keyboard focus
             if sys.platform == "win32":
                 try:
-                    import ctypes
-                    self._root.overrideredirect(True)
-                    self._root.update_idletasks()
-                    top_hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
-                    GWL_EXSTYLE = -20
-                    WS_EX_APPWINDOW = 0x00040000
-                    WS_EX_TOOLWINDOW = 0x00000080
-                    ex_style = ctypes.windll.user32.GetWindowLongW(top_hwnd, GWL_EXSTYLE)
-                    ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-                    ctypes.windll.user32.SetWindowLongW(top_hwnd, GWL_EXSTYLE, ex_style)
+                    self._root.attributes("-toolwindow", True)
                 except Exception:
-                    self._root.overrideredirect(True)
-            else:
-                self._root.overrideredirect(True)
+                    pass
 
             # Outer border container
             border_frame = tk.Frame(
@@ -163,21 +149,9 @@ class FloatingHUD:
             card = tk.Frame(border_frame, bg=HUD_THEME["bg_card"], padx=14, pady=10)
             card.pack(fill="both", expand=True)
 
-            # Enable dragging window via title header
-            def start_move(event):
-                self._root.x = event.x_root - self._root.winfo_x()
-                self._root.y = event.y_root - self._root.winfo_y()
-
-            def do_move(event):
-                x = event.x_root - self._root.x
-                y = event.y_root - self._root.y
-                self._root.geometry(f"+{x}+{y}")
-
-            # TOP ROW: Status Indicator & Mode (drag handle)
-            top_row = tk.Frame(card, bg=HUD_THEME["bg_card"], cursor="fleur")
+            # TOP ROW: Status Indicator & Mode
+            top_row = tk.Frame(card, bg=HUD_THEME["bg_card"])
             top_row.pack(fill="x", pady=(0, 6))
-            top_row.bind("<Button-1>", start_move)
-            top_row.bind("<B1-Motion>", do_move)
 
             self._mode_dot = tk.Label(
                 top_row,
@@ -187,8 +161,6 @@ class FloatingHUD:
                 fg=HUD_THEME["accent_blue"],
             )
             self._mode_dot.pack(side="left", padx=(0, 8))
-            self._mode_dot.bind("<Button-1>", start_move)
-            self._mode_dot.bind("<B1-Motion>", do_move)
 
             self._status_lbl = tk.Label(
                 top_row,
@@ -199,8 +171,6 @@ class FloatingHUD:
                 anchor="w",
             )
             self._status_lbl.pack(side="left", fill="x", expand=True)
-            self._status_lbl.bind("<Button-1>", start_move)
-            self._status_lbl.bind("<B1-Motion>", do_move)
 
             # Close / Dismiss Button
             close_btn = tk.Label(
@@ -218,68 +188,42 @@ class FloatingHUD:
             entry_frame = tk.Frame(card, bg=HUD_THEME["bg_input"], padx=10, pady=5)
             entry_frame.pack(fill="x", pady=(0, 6))
 
+            self._entry_var = tk.StringVar(value=self.PLACEHOLDER_TEXT)
             self._entry = tk.Entry(
                 entry_frame,
+                textvariable=self._entry_var,
                 font=("Segoe UI", 11),
                 bg=HUD_THEME["bg_input"],
                 fg=HUD_THEME["text_secondary"],
                 insertbackground=HUD_THEME["accent_blue"],
+                insertwidth=2,
                 relief="flat",
                 highlightthickness=0,
             )
-            self._entry.insert(0, self.PLACEHOLDER_TEXT)
-            self._has_placeholder = True
             self._entry.pack(fill="x", side="left", expand=True)
 
-            def clear_placeholder(event=None):
-                if self._has_placeholder or self._entry.get() == self.PLACEHOLDER_TEXT:
-                    self._entry.delete(0, "end")
+            def on_entry_focus_in(event=None):
+                if self._entry_var.get() == self.PLACEHOLDER_TEXT:
+                    self._entry_var.set("")
                     self._entry.config(fg=HUD_THEME["text_primary"])
-                    self._has_placeholder = False
-
-            def restore_placeholder(event=None):
-                if not self._entry.get().strip():
-                    self._entry.delete(0, "end")
-                    self._entry.insert(0, self.PLACEHOLDER_TEXT)
-                    self._entry.config(fg=HUD_THEME["text_secondary"])
-                    self._has_placeholder = True
-
-            def force_window_foreground(event=None):
-                self._root.lift()
-                self._root.attributes("-topmost", True)
-                if sys.platform == "win32":
-                    try:
-                        import ctypes
-                        top_hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
-                        fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
-                        fg_thread = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
-                        cur_thread = ctypes.windll.kernel32.GetCurrentThreadId()
-                        if fg_thread != cur_thread:
-                            ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, True)
-                            ctypes.windll.user32.SetForegroundWindow(top_hwnd)
-                            ctypes.windll.user32.SetFocus(top_hwnd)
-                            ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, False)
-                        else:
-                            ctypes.windll.user32.SetForegroundWindow(top_hwnd)
-                            ctypes.windll.user32.SetFocus(top_hwnd)
-                    except Exception:
-                        pass
-                clear_placeholder()
                 self._entry.focus_set()
-                self._entry.focus_force()
+
+            def on_entry_focus_out(event=None):
+                if not self._entry_var.get().strip():
+                    self._entry_var.set(self.PLACEHOLDER_TEXT)
+                    self._entry.config(fg=HUD_THEME["text_secondary"])
 
             def on_entry_key_down(event):
-                if self._has_placeholder or self._entry.get() == self.PLACEHOLDER_TEXT:
-                    self._entry.delete(0, "end")
+                if self._entry_var.get() == self.PLACEHOLDER_TEXT:
+                    self._entry_var.set("")
                     self._entry.config(fg=HUD_THEME["text_primary"])
-                    self._has_placeholder = False
 
-            self._entry.bind("<FocusIn>", force_window_foreground)
-            self._entry.bind("<FocusOut>", restore_placeholder)
-            self._entry.bind("<Button-1>", force_window_foreground)
+            self._entry.bind("<FocusIn>", on_entry_focus_in)
+            self._entry.bind("<FocusOut>", on_entry_focus_out)
+            self._entry.bind("<Button-1>", on_entry_focus_in)
             self._entry.bind("<KeyPress>", on_entry_key_down)
             self._entry.bind("<Return>", self._on_enter_pressed)
-            entry_frame.bind("<Button-1>", force_window_foreground)
+            entry_frame.bind("<Button-1>", on_entry_focus_in)
             self._root.bind("<Escape>", lambda e: self.hide())
 
             # Send Button
@@ -450,16 +394,22 @@ class FloatingHUD:
         if self._root:
             self._root.after(50, self._process_queue)
 
-    def _on_enter_pressed(self, event):
+    def _on_enter_pressed(self, event=None):
         """Handles Enter key or Send button in the quick input box."""
-        if self._entry:
+        if hasattr(self, "_entry_var"):
+            text = self._entry_var.get().strip()
+            if text == self.PLACEHOLDER_TEXT:
+                text = ""
+            self._entry_var.set("")
+            if self._entry:
+                self._entry.config(fg=HUD_THEME["text_primary"])
+            if text:
+                self._submit_text(text)
+        elif self._entry:
             text = self._entry.get().strip()
             if text == self.PLACEHOLDER_TEXT:
                 text = ""
             self._entry.delete(0, "end")
-            self._entry.insert(0, self.PLACEHOLDER_TEXT)
-            self._entry.config(fg=HUD_THEME["text_secondary"])
-            self._has_placeholder = True
             if text:
                 self._submit_text(text)
 

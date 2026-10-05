@@ -96,7 +96,7 @@ class AudioConfig:
         default_factory=lambda: int(os.getenv("AUDIO_CHANNELS", "1"))
     )
     silence_threshold: float = field(
-        default_factory=lambda: float(os.getenv("AUDIO_SILENCE_THRESHOLD", "0.015"))
+        default_factory=lambda: float(os.getenv("AUDIO_SILENCE_THRESHOLD", "0.0035"))
     )
     silence_duration: float = field(
         default_factory=lambda: float(os.getenv("AUDIO_SILENCE_DURATION", "1.5"))

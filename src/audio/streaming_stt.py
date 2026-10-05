@@ -66,8 +66,8 @@ class StreamingSTTEngine:
         self._lock = threading.Lock()
 
         # Dynamic VAD Energy Thresholds calibrated for laptop array mic
-        self.silence_threshold = 0.010
-        self._adaptive_floor = 0.005
+        self.silence_threshold = 0.0035
+        self._adaptive_floor = 0.0015
 
     def record_until_silence(
         self,
