@@ -136,18 +136,15 @@ class FloatingHUD:
             if sys.platform == "win32":
                 try:
                     import ctypes
-                    hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
-                    GWL_STYLE = -16
-                    WS_CAPTION = 0x00C00000
-                    WS_THICKFRAME = 0x00040000
-                    WS_MINIMIZEBOX = 0x00020000
-                    WS_MAXIMIZEBOX = 0x00010000
-                    WS_SYSMENU = 0x00080000
-                    
-                    style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)
-                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
-                    ctypes.windll.user32.SetWindowPos(hwnd, -1, hud_x, hud_y, hud_w, hud_h, 0x0020 | 0x0040)
+                    self._root.overrideredirect(True)
+                    self._root.update_idletasks()
+                    top_hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                    GWL_EXSTYLE = -20
+                    WS_EX_APPWINDOW = 0x00040000
+                    WS_EX_TOOLWINDOW = 0x00000080
+                    ex_style = ctypes.windll.user32.GetWindowLongW(top_hwnd, GWL_EXSTYLE)
+                    ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+                    ctypes.windll.user32.SetWindowLongW(top_hwnd, GWL_EXSTYLE, ex_style)
                 except Exception:
                     self._root.overrideredirect(True)
             else:
@@ -166,24 +163,21 @@ class FloatingHUD:
             card = tk.Frame(border_frame, bg=HUD_THEME["bg_card"], padx=14, pady=10)
             card.pack(fill="both", expand=True)
 
-            # Enable dragging window
+            # Enable dragging window via title header
             def start_move(event):
-                self._root.x = event.x
-                self._root.y = event.y
+                self._root.x = event.x_root - self._root.winfo_x()
+                self._root.y = event.y_root - self._root.winfo_y()
 
             def do_move(event):
-                deltax = event.x - self._root.x
-                deltay = event.y - self._root.y
-                x = self._root.winfo_x() + deltax
-                y = self._root.winfo_y() + deltay
+                x = event.x_root - self._root.x
+                y = event.y_root - self._root.y
                 self._root.geometry(f"+{x}+{y}")
 
-            card.bind("<Button-1>", start_move)
-            card.bind("<B1-Motion>", do_move)
-
-            # TOP ROW: Status Indicator & Mode
-            top_row = tk.Frame(card, bg=HUD_THEME["bg_card"])
+            # TOP ROW: Status Indicator & Mode (drag handle)
+            top_row = tk.Frame(card, bg=HUD_THEME["bg_card"], cursor="fleur")
             top_row.pack(fill="x", pady=(0, 6))
+            top_row.bind("<Button-1>", start_move)
+            top_row.bind("<B1-Motion>", do_move)
 
             self._mode_dot = tk.Label(
                 top_row,
@@ -193,6 +187,8 @@ class FloatingHUD:
                 fg=HUD_THEME["accent_blue"],
             )
             self._mode_dot.pack(side="left", padx=(0, 8))
+            self._mode_dot.bind("<Button-1>", start_move)
+            self._mode_dot.bind("<B1-Motion>", do_move)
 
             self._status_lbl = tk.Label(
                 top_row,
@@ -203,6 +199,8 @@ class FloatingHUD:
                 anchor="w",
             )
             self._status_lbl.pack(side="left", fill="x", expand=True)
+            self._status_lbl.bind("<Button-1>", start_move)
+            self._status_lbl.bind("<B1-Motion>", do_move)
 
             # Close / Dismiss Button
             close_btn = tk.Label(
@@ -233,39 +231,55 @@ class FloatingHUD:
             self._has_placeholder = True
             self._entry.pack(fill="x", side="left", expand=True)
 
-            def on_entry_focus_in(event):
-                if self._has_placeholder:
+            def clear_placeholder(event=None):
+                if self._has_placeholder or self._entry.get() == self.PLACEHOLDER_TEXT:
                     self._entry.delete(0, "end")
                     self._entry.config(fg=HUD_THEME["text_primary"])
                     self._has_placeholder = False
 
-            def on_entry_focus_out(event):
+            def restore_placeholder(event=None):
                 if not self._entry.get().strip():
                     self._entry.delete(0, "end")
                     self._entry.insert(0, self.PLACEHOLDER_TEXT)
                     self._entry.config(fg=HUD_THEME["text_secondary"])
                     self._has_placeholder = True
 
-            def focus_input_directly(event=None):
+            def force_window_foreground(event=None):
                 self._root.lift()
                 self._root.attributes("-topmost", True)
                 if sys.platform == "win32":
                     try:
                         import ctypes
-                        hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
-                        ctypes.windll.user32.SetForegroundWindow(hwnd)
+                        top_hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                        fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
+                        fg_thread = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
+                        cur_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+                        if fg_thread != cur_thread:
+                            ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, True)
+                            ctypes.windll.user32.SetForegroundWindow(top_hwnd)
+                            ctypes.windll.user32.SetFocus(top_hwnd)
+                            ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, False)
+                        else:
+                            ctypes.windll.user32.SetForegroundWindow(top_hwnd)
+                            ctypes.windll.user32.SetFocus(top_hwnd)
                     except Exception:
                         pass
+                clear_placeholder()
                 self._entry.focus_set()
                 self._entry.focus_force()
 
-            self._entry.bind("<FocusIn>", on_entry_focus_in)
-            self._entry.bind("<FocusOut>", on_entry_focus_out)
+            def on_entry_key_down(event):
+                if self._has_placeholder or self._entry.get() == self.PLACEHOLDER_TEXT:
+                    self._entry.delete(0, "end")
+                    self._entry.config(fg=HUD_THEME["text_primary"])
+                    self._has_placeholder = False
+
+            self._entry.bind("<FocusIn>", force_window_foreground)
+            self._entry.bind("<FocusOut>", restore_placeholder)
+            self._entry.bind("<Button-1>", force_window_foreground)
+            self._entry.bind("<KeyPress>", on_entry_key_down)
             self._entry.bind("<Return>", self._on_enter_pressed)
-            self._entry.bind("<Button-1>", focus_input_directly)
-            entry_frame.bind("<Button-1>", focus_input_directly)
-            card.bind("<Button-1>", focus_input_directly)
-            self._root.bind("<Button-1>", focus_input_directly)
+            entry_frame.bind("<Button-1>", force_window_foreground)
             self._root.bind("<Escape>", lambda e: self.hide())
 
             # Send Button
@@ -369,8 +383,18 @@ class FloatingHUD:
                         if sys.platform == "win32":
                             try:
                                 import ctypes
-                                hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
-                                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                                top_hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                                fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
+                                fg_thread = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
+                                cur_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+                                if fg_thread != cur_thread:
+                                    ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, True)
+                                    ctypes.windll.user32.SetForegroundWindow(top_hwnd)
+                                    ctypes.windll.user32.SetFocus(top_hwnd)
+                                    ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, False)
+                                else:
+                                    ctypes.windll.user32.SetForegroundWindow(top_hwnd)
+                                    ctypes.windll.user32.SetFocus(top_hwnd)
                             except Exception:
                                 pass
                         if self._entry:
@@ -397,8 +421,18 @@ class FloatingHUD:
                             if sys.platform == "win32":
                                 try:
                                     import ctypes
-                                    hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
-                                    ctypes.windll.user32.SetForegroundWindow(hwnd)
+                                    top_hwnd = ctypes.windll.user32.GetParent(self._root.winfo_id()) or self._root.winfo_id()
+                                    fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
+                                    fg_thread = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
+                                    cur_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+                                    if fg_thread != cur_thread:
+                                        ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, True)
+                                        ctypes.windll.user32.SetForegroundWindow(top_hwnd)
+                                        ctypes.windll.user32.SetFocus(top_hwnd)
+                                        ctypes.windll.user32.AttachThreadInput(cur_thread, fg_thread, False)
+                                    else:
+                                        ctypes.windll.user32.SetForegroundWindow(top_hwnd)
+                                        ctypes.windll.user32.SetFocus(top_hwnd)
                                 except Exception:
                                     pass
                             if self._entry:

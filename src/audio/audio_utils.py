@@ -44,8 +44,8 @@ def resample_to_16k(audio: np.ndarray, orig_sr: int) -> np.ndarray:
 
 def get_best_input_device(preferred_index: Optional[int] = None) -> Tuple[Optional[int], int]:
     """
-    Finds and caches the best working microphone device index by testing live RMS energy.
-    Picks the real physical laptop microphone with highest signal clarity.
+    Finds and caches the best working microphone device index safely.
+    Uses the Windows system default input or standard WASAPI/DirectSound device.
     """
     global _CACHED_INPUT_DEVICE, _CACHED_SAMPLE_RATE
 
@@ -58,43 +58,36 @@ def get_best_input_device(preferred_index: Optional[int] = None) -> Tuple[Option
     if not HAS_SOUNDDEVICE or not sd:
         return None, 16000
 
-    best_dev = None
-    best_rate = 16000
-    best_rms = -1.0
+    try:
+        # Check system default input device first
+        def_idx = sd.default.device[0]
+        if def_idx is not None and def_idx >= 0:
+            dev = sd.query_devices(def_idx)
+            if dev.get("max_input_channels", 0) > 0:
+                sr = int(dev.get("default_samplerate", 16000))
+                _CACHED_INPUT_DEVICE = def_idx
+                _CACHED_SAMPLE_RATE = sr
+                return def_idx, sr
+    except Exception:
+        pass
 
     try:
+        # Fallback to finding first valid standard input device (excluding virtual speakers and WDM-KS)
         devices = sd.query_devices()
         for idx, d in enumerate(devices):
             if d.get("max_input_channels", 0) > 0:
                 name = d.get("name", "").lower()
-                # Skip virtual speakers / stereo mix
-                if "speaker" in name or "stereo mix" in name or "output" in name:
+                hostapi = d.get("hostapi", 0)
+                # Skip output/stereo mix and unstable WDM-KS exclusive devices (hostapi == 3)
+                if "speaker" in name or "stereo mix" in name or "output" in name or hostapi == 3:
                     continue
-                native_sr = int(d.get("default_samplerate", 16000))
-                for rate in [native_sr, 16000, 44100, 48000]:
-                    try:
-                        test_samples = int(rate * 0.08)
-                        data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=idx)
-                        sd.wait()
-                        rms = float(np.sqrt(np.mean(data**2)))
-                        if np.isfinite(rms) and rms > best_rms:
-                            best_rms = rms
-                            best_dev = idx
-                            best_rate = rate
-                        break
-                    except Exception:
-                        continue
-
-        if best_dev is not None:
-            _CACHED_INPUT_DEVICE = best_dev
-            _CACHED_SAMPLE_RATE = best_rate
-            return best_dev, best_rate
-
-        _CACHED_INPUT_DEVICE = None
-        _CACHED_SAMPLE_RATE = 16000
-        return None, 16000
-
+                sr = int(d.get("default_samplerate", 16000))
+                _CACHED_INPUT_DEVICE = idx
+                _CACHED_SAMPLE_RATE = sr
+                return idx, sr
     except Exception:
-        _CACHED_INPUT_DEVICE = None
-        _CACHED_SAMPLE_RATE = 16000
-        return None, 16000
+        pass
+
+    _CACHED_INPUT_DEVICE = None
+    _CACHED_SAMPLE_RATE = 16000
+    return None, 16000
