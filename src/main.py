@@ -222,6 +222,9 @@ class ChittiController:
                 hud=self.hud,
             )
             self.ambient_listener.start()
+            if self.hud:
+                self.hud.show()
+                self.hud.set_mode(HUDMode.IDLE, "🤖 Chitti is Online (Say 'Hey Chitti' or Alt+Space)")
         except Exception as e:
             log_warning(f"Ambient voice listener initialization notice: {e}")
 
