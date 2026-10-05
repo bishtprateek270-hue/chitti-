@@ -1,7 +1,7 @@
 """
 Chitti Ambient Wake-Word Detection Engine (Phase 5).
 Continuously processes incoming microphone audio frames in a dedicated background worker
-with zero PortAudio callback blocking, dynamic SNR gating, 0-latency local STT keyword verification,
+with zero PortAudio callback blocking, dynamic SNR gating, high-sensitivity phonetic matching,
 and automatic stream watchdog recovery.
 """
 
@@ -10,6 +10,7 @@ import io
 import math
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -40,14 +41,15 @@ class WakeWordEvent:
 
 class WakeWordDetector:
     """
-    Lightweight, continuous keyword spotting engine.
-    Uses non-blocking PortAudio buffering and a dedicated worker thread
-    to ensure 100% reliable 24/7 background wake-word listening.
+    High-sensitivity, continuous keyword spotting engine.
+    Uses non-blocking PortAudio buffering, calibrated low-noise onset gating,
+    and fast phonetic keyword verification to guarantee hands-free wake-up.
     """
 
     DEFAULT_KEYWORDS = [
-        "hey chitti", "chitti", "ok chitti", "hello chitti",
+        "hey chitti", "chitti", "ok chitti", "hello chitti", "hi chitti",
         "chiti", "chitty", "cheeti", "citi", "kitty", "he chitti",
+        "ay chitti", "a chitti", "kitti", "jitti", "titti", "shitti", "chutti",
     ]
 
     def __init__(
@@ -79,13 +81,13 @@ class WakeWordDetector:
         # Thread-safe audio queue for decoupled non-blocking stream processing
         self._audio_queue: queue.Queue = queue.Queue(maxsize=100)
 
-        # Ring buffer for sliding audio window (1.2 seconds @ 16kHz)
-        self._buffer_size = int(self.sample_rate * 1.2)
+        # Ring buffer for sliding audio window (1.4 seconds @ 16kHz)
+        self._buffer_size = int(self.sample_rate * 1.4)
         self._audio_buffer = np.zeros(self._buffer_size, dtype=np.float32)
         self._buffer_lock = threading.Lock()
 
         # Dynamic noise floor baseline tracking
-        self._noise_floor = 0.010
+        self._noise_floor = 0.005
         self._calibrated = False
 
     def start(self, callback: Optional[Callable[[WakeWordEvent], None]] = None, device_index: Optional[int] = None):
@@ -181,7 +183,6 @@ class WakeWordDetector:
     def pause(self):
         """Pauses wake-word processing (e.g. while Chitti is actively speaking or listening)."""
         self._is_paused = True
-        # Drain pending chunks to prevent stale processing on resume
         while not self._audio_queue.empty():
             try:
                 self._audio_queue.get_nowait()
@@ -190,11 +191,9 @@ class WakeWordDetector:
 
     def resume(self, cooldown: Optional[float] = None):
         """Resumes wake-word detection with optional cooldown period."""
-        # Reset ring buffer on resume to discard pre-sleep audio
         with self._buffer_lock:
             self._audio_buffer.fill(0)
 
-        # Drain queue
         while not self._audio_queue.empty():
             try:
                 self._audio_queue.get_nowait()
@@ -209,7 +208,6 @@ class WakeWordDetector:
         """
         Ultra-fast sounddevice callback (<0.02ms).
         ONLY copies incoming data to the thread-safe queue and returns immediately.
-        Never blocks or executes heavy logic in the PortAudio thread.
         """
         if not self._is_running or self._is_paused:
             return
@@ -229,7 +227,6 @@ class WakeWordDetector:
             try:
                 chunk = self._audio_queue.get(timeout=0.2)
             except queue.Empty:
-                # Watchdog: ensure stream is alive if running
                 if self._is_running and not self._is_paused:
                     if self._stream is None or not self._stream.active:
                         self._open_stream()
@@ -238,7 +235,6 @@ class WakeWordDetector:
             if self._is_paused:
                 continue
 
-            # Resample chunk to 16kHz if needed
             if self._stream_sample_rate != self.sample_rate:
                 chunk_16k = resample_to_16k(chunk, self._stream_sample_rate)
             else:
@@ -259,19 +255,16 @@ class WakeWordDetector:
         if chunk is None or len(chunk) == 0:
             return None
 
-        # Ensure float32 1D
         if chunk.dtype != np.float32:
             chunk = chunk.astype(np.float32)
         if chunk.ndim > 1:
             chunk = chunk.flatten()
 
-        # Update sliding ring buffer (16kHz)
         with self._buffer_lock:
             self._audio_buffer = np.roll(self._audio_buffer, -len(chunk))
             self._audio_buffer[-len(chunk):] = chunk
             current_window = self._audio_buffer.copy()
 
-        # Check cooldown
         now = time.time()
         if now - self._last_trigger_time < self.cooldown_seconds:
             return None
@@ -279,15 +272,15 @@ class WakeWordDetector:
         # 1. Compute acoustic energy
         rms = float(np.sqrt(np.mean(chunk**2) + 1e-12))
 
-        # Dynamic noise floor adaptation (tracks ambient baseline when low)
+        # Dynamic noise floor adaptation
         if not self._calibrated:
-            self._noise_floor = min(0.012, max(0.002, rms))
+            self._noise_floor = min(0.010, max(0.001, rms))
             self._calibrated = True
-        elif rms < 0.012:
+        elif rms < 0.008:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate calibrated for laptop array mic (RMS >= 0.006)
-        min_voice_rms = max(0.006, self._noise_floor * 1.2)
+        # Speech onset gate calibrated for normal conversational voice (RMS >= 0.003)
+        min_voice_rms = max(0.003, self._noise_floor * 1.15)
         if rms < min_voice_rms:
             return None
 
@@ -296,9 +289,9 @@ class WakeWordDetector:
         extracted_command = None
         confidence = 0.0
 
-        # 2. Strict Verification via STT Engine (debounced to once every 0.30s using local Whisper)
+        # 2. Strict Verification via STT Engine (debounced to once every 0.25s)
         if self.stt_engine:
-            if now - self._last_stt_check_time < 0.30:
+            if now - self._last_stt_check_time < 0.25:
                 return None
             self._last_stt_check_time = now
 
@@ -306,8 +299,9 @@ class WakeWordDetector:
                 engine = getattr(self.stt_engine, "whisper_stt", self.stt_engine)
                 snippet_text = engine.transcribe(current_window).lower().strip()
                 if snippet_text:
+                    clean_text = re.sub(r"[^\w\s]", " ", snippet_text)
                     for kw in self.keywords:
-                        if kw in snippet_text:
+                        if kw in clean_text or kw in snippet_text:
                             matched = True
                             matched_kw = kw.title()
                             confidence = 0.95
