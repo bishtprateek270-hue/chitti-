@@ -236,6 +236,8 @@ class WhisperSTT(STTEngine):
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
+        else:
+            options["language"] = "en"
 
         try:
             with contextlib.redirect_stderr(io.StringIO()):
