@@ -243,9 +243,11 @@ class WhisperSTT(STTEngine):
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
+        else:
+            options["language"] = "en"
 
         try:
-            with contextlib.redirect_stderr(io.StringIO()):
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 if HAS_TORCH and torch:
                     with torch.no_grad():
                         result = self._model.transcribe(audio, **options)

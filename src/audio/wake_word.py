@@ -267,6 +267,11 @@ class WakeWordDetector:
                 return None
             self._last_stt_check_time = now
 
+            # Ignore fan, static, and ambient room noise by requiring human voice pitch periodicity
+            acoustic_score = self._evaluate_acoustic_signature(current_window)
+            if acoustic_score < 0.35:
+                return None
+
             try:
                 snippet_text = self.stt_engine.transcribe(current_window).lower().strip()
                 if snippet_text:
