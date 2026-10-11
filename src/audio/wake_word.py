@@ -10,6 +10,7 @@ import io
 import math
 import os
 import sys
+import queue
 import threading
 import time
 from dataclasses import dataclass
@@ -44,7 +45,10 @@ class WakeWordDetector:
     or 'Chitti' is explicitly spoken, and stays completely silent in standby.
     """
 
-    DEFAULT_KEYWORDS = ["hey chitti", "chitti", "ok chitti", "hello chitti", "chiti", "chitty", "cheeti", "citi", "kitty"]
+    DEFAULT_KEYWORDS = [
+        "hey chitti", "chitti", "ok chitti", "hello chitti", "suno chitti", "chitti suno",
+        "chia", "chiya", "chitu", "chittu", "chiti", "chitty", "cheeti", "citi", "kitty"
+    ]
 
     def __init__(
         self,
@@ -68,7 +72,12 @@ class WakeWordDetector:
         self._stream: Optional[Any] = None
         self._callback: Optional[Callable[[WakeWordEvent], None]] = None
         self._last_trigger_time = 0.0
+        self._last_stt_check_time = 0.0
         self._stream_sample_rate = 16000
+
+        # Non-blocking audio queue and dedicated consumer worker
+        self._audio_queue: queue.Queue = queue.Queue(maxsize=100)
+        self._worker_thread: Optional[threading.Thread] = None
 
         # Ring buffer for sliding audio window (1.2 seconds)
         self._buffer_size = int(self.sample_rate * 1.2)
@@ -76,7 +85,7 @@ class WakeWordDetector:
         self._buffer_lock = threading.Lock()
 
         # Background noise baseline tracking
-        self._noise_floor = 0.012
+        self._noise_floor = 0.008
         self._calibrated = False
 
     def start(self, callback: Optional[Callable[[WakeWordEvent], None]] = None, device_index: Optional[int] = None):
@@ -87,6 +96,14 @@ class WakeWordDetector:
         self._callback = callback
         self._is_running = True
         self._is_paused = False
+
+        # Start background worker consumer thread
+        self._worker_thread = threading.Thread(
+            target=self._worker_loop,
+            daemon=True,
+            name="WakeWordWorker",
+        )
+        self._worker_thread.start()
 
         if HAS_SOUNDDEVICE and sd:
             dev_idx, stream_sr = get_best_input_device(device_index)
@@ -134,39 +151,69 @@ class WakeWordDetector:
                 pass
             self._stream = None
 
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
-            self._thread = None
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=1.0)
+            self._worker_thread = None
 
         log_debug("[WAKE WORD] Wake-word detector stopped.")
 
     def pause(self):
         """Pauses wake-word detection (e.g. while Chitti is actively speaking or listening)."""
         self._is_paused = True
+        # Drain pending queue items
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except queue.Empty:
+                break
 
     def resume(self, cooldown: Optional[float] = None):
         """Resumes wake-word detection with optional cooldown period."""
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except queue.Empty:
+                break
         self._is_paused = False
         cd = cooldown if cooldown is not None else self.cooldown_seconds
         self._last_trigger_time = time.time() + (cd - self.cooldown_seconds)
 
     def _audio_stream_callback(self, indata, frames, time_info, status):
-        """Audio callback triggered by sounddevice stream."""
+        """
+        Ultra-fast sounddevice callback (<0.02ms).
+        Enqueues audio chunk and returns immediately to keep PortAudio thread non-blocking.
+        """
         if not self._is_running or self._is_paused:
             return
 
-        chunk = indata[:, 0] if indata.ndim > 1 else indata.flatten()
-        if self._stream_sample_rate != self.sample_rate:
-            chunk_16k = resample_to_16k(chunk, self._stream_sample_rate)
-        else:
-            chunk_16k = chunk
+        chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
+        try:
+            self._audio_queue.put_nowait(chunk)
+        except queue.Full:
+            pass
 
-        event = self.process_audio_chunk(chunk_16k)
-        if event and self._callback:
+    def _worker_loop(self):
+        """Background worker consuming audio from queue and evaluating wake-word logic."""
+        while self._is_running:
             try:
-                self._callback(event)
-            except Exception as e:
-                log_warn(f"[WAKE WORD] Callback error: {e}")
+                chunk = self._audio_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if self._is_paused:
+                continue
+
+            if self._stream_sample_rate != self.sample_rate:
+                chunk_16k = resample_to_16k(chunk, self._stream_sample_rate)
+            else:
+                chunk_16k = chunk
+
+            event = self.process_audio_chunk(chunk_16k)
+            if event and self._callback:
+                try:
+                    self._callback(event)
+                except Exception as e:
+                    log_warn(f"[WAKE WORD] Callback error: {e}")
 
     def process_audio_chunk(self, chunk: np.ndarray) -> Optional[WakeWordEvent]:
         """
@@ -198,13 +245,13 @@ class WakeWordDetector:
 
         # Dynamic noise floor adaptation (tracks ambient baseline when low)
         if not self._calibrated:
-            self._noise_floor = min(0.012, max(0.002, rms))
+            self._noise_floor = min(0.010, max(0.001, rms))
             self._calibrated = True
-        elif rms < 0.012:
+        elif rms < 0.010:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate calibrated for laptop array mic (RMS >= 0.008)
-        min_voice_rms = max(0.008, self._noise_floor * 1.3)
+        # Speech onset gate calibrated for laptop array mic (RMS >= 0.0028)
+        min_voice_rms = max(0.0028, self._noise_floor * 1.25)
         if rms < min_voice_rms:
             return None
 
@@ -215,6 +262,11 @@ class WakeWordDetector:
 
         # 2. Strict Verification via STT Engine when available
         if self.stt_engine:
+            # Debounce STT checks to at most once per 0.40s
+            if now - self._last_stt_check_time < 0.40:
+                return None
+            self._last_stt_check_time = now
+
             try:
                 snippet_text = self.stt_engine.transcribe(current_window).lower().strip()
                 if snippet_text:
@@ -223,7 +275,7 @@ class WakeWordDetector:
                             matched = True
                             matched_kw = kw.title()
                             confidence = 0.95
-                            
+
                             # Extract any following command (e.g. "hey chitti open chrome" -> "open chrome")
                             idx = snippet_text.find(kw)
                             after_kw = snippet_text[idx + len(kw):].strip(" ,.-!?")

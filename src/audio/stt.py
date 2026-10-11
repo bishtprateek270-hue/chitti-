@@ -23,6 +23,13 @@ except ImportError:
     sr = None
     HAS_SPEECH_RECOGNITION = False
 
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    torch = None
+    HAS_TORCH = False
+
 
 class STTError(Exception):
     """Base exception for STT failures."""
@@ -239,7 +246,11 @@ class WhisperSTT(STTEngine):
 
         try:
             with contextlib.redirect_stderr(io.StringIO()):
-                result = self._model.transcribe(audio, **options)
+                if HAS_TORCH and torch:
+                    with torch.no_grad():
+                        result = self._model.transcribe(audio, **options)
+                else:
+                    result = self._model.transcribe(audio, **options)
             text = result.get("text", "").strip()
 
             if self.is_hallucination(text):
