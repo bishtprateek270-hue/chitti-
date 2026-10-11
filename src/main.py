@@ -853,7 +853,7 @@ def main():
             import ctypes
             kernel32 = ctypes.windll.kernel32
             ERROR_ALREADY_EXISTS = 183
-            mutex = kernel32.CreateMutexW(None, False, "Global\\Chitti_AI_Companion_Mutex")
+            mutex = kernel32.CreateMutexW(None, False, "Local\\Chitti_AI_Companion_Mutex")
             if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
                 print("\n[INFO] Chitti is already running in the background.")
                 print("Press Alt+Space or say 'Hey Chitti' to interact.\n")

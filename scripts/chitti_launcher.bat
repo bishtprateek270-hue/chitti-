@@ -8,5 +8,9 @@ powershell -NoProfile -Command "$p = Get-Process ollama -ErrorAction SilentlyCon
 REM Start Chitti Main Process in 24/7 background mode (Windowless Daemon)
 set PYTHONIOENCODING=utf-8
 set PYTHONUNBUFFERED=1
-start "" pythonw src\main.py --daemon
+if exist "%LOCALAPPDATA%\Programs\Python\Python314\pythonw.exe" (
+    start "" "%LOCALAPPDATA%\Programs\Python\Python314\pythonw.exe" src\main.py --daemon
+) else (
+    start "" pythonw src\main.py --daemon
+)
 exit
