@@ -43,6 +43,11 @@ class MemoryManager:
         self.router = MemoryRouter()
         self.pending_confirmation: Optional[str] = None
 
+        # Preload embedding model asynchronously so first query experiences zero lag
+        if hasattr(self.embedding_engine, "_load"):
+            import threading
+            threading.Thread(target=self.embedding_engine._load, daemon=True, name="ChittiEmbeddingPreload").start()
+
     def remember(
         self,
         content: str,
@@ -460,13 +465,52 @@ class MemoryManager:
                 else:
                     return "I don't have your profession stored in my memory yet."
 
-        # 7. Project Query (e.g. "What project am I building?", "What am I building?")
-        if re.search(r"(?i)\b(?:what\s+(?:project\s+)?am\s+i\s+(?:building|working\s+on)|what\s+am\s+i\s+making)\b", lower):
+        # 8. General Identity & Memory Summary ("What do you know about me?", "Tell me about me", etc.)
+        know_me_patterns = [
+            r"(?i)\b(?:what\s+do\s+(?:you|u)\s+(?:know|remember)\s+about\s+me|tell\s+me\s+(?:everything\s+)?about\s+me|what\s+do\s+(?:you|u)\s+have\s+on\s+me|list\s+(?:all\s+)?my\s+memories|my\s+memories)\b",
+            r"(?i)\b(?:mere\s+baare\s+me(?:in)?\s+(?:kya\s+jaante\s+ho|batao|kya\s+yaad\s+hai)|mujhe\s+kitna\s+jaante\s+ho)\b",
+            r"(?:तुम्हें\s+मेरे\s+बारे\s+में\s+क्या\s+(?:याद|पता)\s+है|मेरे\s+बारे\s+में\s+बताओ)",
+        ]
+        if any(re.search(pat, lower) for pat in know_me_patterns):
+            facts = []
+            name = self.get_user_name()
+            if name:
+                facts.append(f"Name: {name}")
+            creator = self.get_creator_name()
+            if creator:
+                facts.append(f"Creator: {creator}")
+            college = self.get_college_name()
+            if college:
+                facts.append(f"College: {college}")
+            occ = self.get_user_occupation()
+            if occ:
+                facts.append(f"Profession: {occ}")
             proj = self.get_project_name()
             if proj:
-                return f"You are building {proj}." if not proj.lower().startswith("user") else proj
+                facts.append(f"Project: {proj}")
+
+            # Also include up to 5 highest-importance stored memories
+            all_mems = self.db.list_all_memories()
+            sorted_mems = sorted(all_mems, key=lambda m: m.importance, reverse=True)
+            for m in sorted_mems:
+                c = m.content.strip().rstrip(".")
+                if c and not any(c.lower() in f.lower() for f in facts) and len(facts) < 7:
+                    facts.append(c)
+
+            if facts:
+                if lang == "hi":
+                    return "मुझे आपके बारे में यह जानकारी याद है:\n• " + "\n• ".join(facts)
+                elif lang in ("hinglish", "mixed"):
+                    return "Mujhe aapke baare mein yeh sab yaad hai:\n• " + "\n• ".join(facts)
+                else:
+                    return "Here is what I know about you:\n• " + "\n• ".join(facts)
             else:
-                return "I don't have information about your project in memory yet."
+                if lang == "hi":
+                    return "मुझे अभी मेमोरी में आपके बारे में कोई विशेष जानकारी नहीं मिली।"
+                elif lang in ("hinglish", "mixed"):
+                    return "Mujhe abhi memory mein aapke baare mein koi information nahi mili."
+                else:
+                    return "I don't have any personal details stored about you in my memory yet."
 
         return None
 

@@ -40,7 +40,10 @@ class SentenceTransformerEmbedding(BaseEmbeddingEngine):
         try:
             from sentence_transformers import SentenceTransformer
             log_debug(f"Loading SentenceTransformer embedding model: {self.model_name}")
-            self._model = SentenceTransformer(self.model_name)
+            try:
+                self._model = SentenceTransformer(self.model_name, local_files_only=True)
+            except Exception:
+                self._model = SentenceTransformer(self.model_name)
         except Exception as e:
             log_warning(f"Failed to load SentenceTransformer ({e}). Using lightweight local fallback.")
             self._model = None

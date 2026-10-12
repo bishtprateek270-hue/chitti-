@@ -646,8 +646,14 @@ class ChittiController:
         # 5. Check for Explicit Memory Command & Fact Statement (multilingual: "yaad rakhna ki...", "remember that...", "my name is...", "forget...")
         if self.memory is not None and (master_decision.route == MasterRoute.EXPLICIT_MEMORY or master_decision.requires_memory):
             try:
-                # Also extract relational knowledge into Knowledge Graph
-                self.knowledge_graph.extract_and_store_from_text(user_text, llm=self.llm)
+                # Asynchronously extract relational knowledge so conversational response is not delayed
+                import threading
+                threading.Thread(
+                    target=self.knowledge_graph.extract_and_store_from_text,
+                    args=(user_text, self.llm),
+                    daemon=True,
+                    name="KnowledgeGraphExtractWorker",
+                ).start()
 
                 mem_result = self.memory.handle_interaction(user_text, lang=active_lang)
                 if mem_result is None and parsed_intent.normalized_text != user_text:
@@ -701,13 +707,10 @@ class ChittiController:
         relevant_memories = []
         if self.memory is not None and master_decision.requires_memory:
             try:
-                # Query memories using both raw text and normalized English text
+                # Fast single-pass memory recall
                 relevant_memories = self.memory.recall(user_text, top_k=self.config.memory.top_k)
-                if parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
-                    norm_mems = self.memory.recall(parsed_intent.normalized_text, top_k=self.config.memory.top_k)
-                    for nm in norm_mems:
-                        if nm.id not in [m.id for m in relevant_memories]:
-                            relevant_memories.append(nm)
+                if not relevant_memories and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                    relevant_memories = self.memory.recall(parsed_intent.normalized_text, top_k=self.config.memory.top_k)
 
                 # If a recognized person was detected in vision, also fetch memories about them
                 for person_name in recognized_names_seen:
@@ -776,6 +779,9 @@ class ChittiController:
         self.history.add_assistant_message(sanitized_response)
         if self.memory is not None:
             self.memory.auto_capture_interaction(user_text, sanitized_response, lang=active_lang)
+        if self.hud:
+            self.hud.set_response(sanitized_response)
+            self.hud.set_mode(HUDMode.IDLE)
         self.speak(sanitized_response)
 
     def trigger_vision_snapshot(self):
