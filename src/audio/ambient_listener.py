@@ -100,10 +100,11 @@ class AmbientVoiceListener:
         if hasattr(self.tts, "stop"):
             self.tts.stop()
         self.barge_in.stop_monitoring()
-        self.wake_detector.resume(cooldown=2.0)
+        self.wake_detector.resume(cooldown=4.0)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
-            self.hud.set_progress("Sleeping (Say 'Hey Chitti' to wake)")
+            self.hud.set_progress("")
+            self.hud.hide()
 
     def _on_system_wake(self):
         """Callback when SystemStateManager wakes up."""
@@ -116,8 +117,13 @@ class AmbientVoiceListener:
         if hasattr(self.tts, "stop"):
             self.tts.stop()
         self.barge_in.stop_monitoring()
+        with self._lock:
+            self.state = AmbientState.STANDBY
         if self.hud:
-            self.hud.set_progress("Stopped.")
+            self.hud.set_mode(HUDMode.IDLE)
+            self.hud.set_progress("")
+            self.hud.hide()
+        self.wake_detector.resume(cooldown=3.0)
 
     def _on_wake_word_triggered(self, event: WakeWordEvent):
         """Triggered automatically when a wake phrase is recognized by the detector."""
@@ -205,31 +211,34 @@ class AmbientVoiceListener:
         # ---------------- PRIORITY 1: GLOBAL STOP / INTERRUPT ----------------
         if match_res.command == ControlCommand.STOP:
             log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{match_res.matched_phrase}'")
-            self.state_mgr.interrupt(reason="user_stop")
             if self.tts and hasattr(self.tts, "stop"):
                 self.tts.stop()
+            self.barge_in.stop_monitoring()
+            self.state_mgr.interrupt(reason="user_stop")
+            self.state_mgr.sleep()
+            with self._lock:
+                self.state = AmbientState.STANDBY
             if self.hud:
                 self.hud.set_mode(HUDMode.IDLE)
-                self.hud.set_progress("Stopped.")
-                self.hud.set_response("Ruk gaya.")
-            # Speak brief stop confirmation if awake
-            if self.tts:
-                try:
-                    self.tts.speak("Ruk gaya.", wait=False)
-                except Exception:
-                    pass
+                self.hud.set_progress("")
+                self.hud.hide()
+            self.wake_detector.resume(cooldown=4.0)
             return
 
         # ---------------- PRIORITY 2: SLEEP COMMAND ----------------
         if match_res.command == ControlCommand.SLEEP:
             log_chitti(f"[CHITTI][CONTROL] 😴 SLEEP command recognized: '{match_res.matched_phrase}'")
-            self.state_mgr.sleep()
             if self.tts and hasattr(self.tts, "stop"):
                 self.tts.stop()
+            self.barge_in.stop_monitoring()
+            self.state_mgr.sleep()
+            with self._lock:
+                self.state = AmbientState.STANDBY
             if self.hud:
                 self.hud.set_mode(HUDMode.IDLE)
-                self.hud.set_progress("Sleeping (Say 'Hey Chitti' to wake)")
-                self.hud.set_response("Sleeping...")
+                self.hud.set_progress("")
+                self.hud.hide()
+            self.wake_detector.resume(cooldown=4.0)
             return
 
         # ---------------- PRIORITY 3: WAKE COMMAND ----------------
@@ -312,17 +321,20 @@ class AmbientVoiceListener:
         self.barge_in.stop_monitoring()
         with self._lock:
             self.state = AmbientState.STANDBY
-        self.wake_detector.resume(cooldown=3.0)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
-            self.hud.set_progress("Sleeping (Say 'Hey Chitti' to wake)")
+            self.hud.set_progress("")
+            self.hud.hide()
+        self.wake_detector.resume(cooldown=4.0)
 
     def _return_to_standby(self):
         """Resets the state machine back to passive standby."""
         with self._lock:
             self.state = AmbientState.STANDBY
 
-        self.wake_detector.resume(cooldown=1.5)
+        self.wake_detector.resume(cooldown=2.0)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")
+            if self.state_mgr.is_sleeping():
+                self.hud.hide()

@@ -47,14 +47,14 @@ class WakeWordDetector:
 
     DEFAULT_KEYWORDS = [
         # English
-        "chitti", "hey chitti", "wake up chitti", "chitti wake up", "ok chitti", "hello chitti",
+        "hey chitti", "chitti wake up", "wake up chitti", "ok chitti", "hello chitti", "chitti",
         # Hindi
         "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti sun", "chitti suno",
-        "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "जाग जा चिट्टी",
+        "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "जाग जा चिट्टी", "चिट्टी",
         # Hinglish
         "hey chitti suno", "chitti active ho ja", "chitti active ho jao", "active ho ja chitti",
         # Phonetic & Accent variations
-        "chia", "chiya", "chitu", "chittu", "chiti", "chitty", "cheeti", "citi", "kitty"
+        "chitty", "cheeti"
     ]
 
     def __init__(
@@ -287,19 +287,28 @@ class WakeWordDetector:
                 if snippet_text:
                     from src.core.phrase_matcher import ControlCommand
                     phrase_res = self.phrase_matcher.classify_command(snippet_text)
+
+                    # CRITICAL: Stop or Sleep commands MUST NEVER trigger a wake event!
+                    if phrase_res.command in (ControlCommand.STOP, ControlCommand.SLEEP):
+                        log_debug(f"[WAKE WORD] Suppressed wake event on '{phrase_res.command.value}' command: '{snippet_text}'")
+                        return None
+
                     if phrase_res.command == ControlCommand.WAKE:
                         matched = True
                         matched_kw = phrase_res.matched_phrase.title()
                         confidence = phrase_res.confidence
                         extracted_command = phrase_res.extracted_tail
                     else:
+                        import re
                         for kw in self.keywords:
-                            if kw in snippet_text:
+                            # Enforce whole-word boundary matching so ambient talk and words don't trigger
+                            pattern = r"\b" + re.escape(kw) + r"\b"
+                            match = re.search(pattern, snippet_text)
+                            if match:
                                 matched = True
                                 matched_kw = kw.title()
                                 confidence = 0.95
-                                idx = snippet_text.find(kw)
-                                after_kw = snippet_text[idx + len(kw):].strip(" ,.-!?")
+                                after_kw = snippet_text[match.end():].strip(" ,.-!?")
                                 if len(after_kw) >= 2:
                                     extracted_command = after_kw
                                 break
@@ -309,10 +318,10 @@ class WakeWordDetector:
         # 3. Acoustic Signature verification (Used when STT is not provided / standalone tests)
         else:
             acoustic_score = self._evaluate_acoustic_signature(current_window)
-            if acoustic_score >= 0.50:
+            if acoustic_score >= 0.70:
                 matched = True
                 confidence = float(acoustic_score)
-                matched_kw = "Hey Chitti" if acoustic_score > 0.65 else "Chitti"
+                matched_kw = "Hey Chitti" if acoustic_score > 0.80 else "Chitti"
 
         if not matched:
             return None

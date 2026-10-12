@@ -200,6 +200,12 @@ class AutonomousPerceptionEngine:
                 last_time = self._last_greeted.get(name, 0.0)
 
                 if now - last_time >= cooldown_dur:
+                    # Guard: If Chitti is sleeping or interrupted, never trigger proactive greetings or show HUD!
+                    from src.core.state_manager import get_state_manager
+                    sm = get_state_manager()
+                    if sm.is_sleeping() or sm.is_interrupted():
+                        continue
+
                     # Update greeting timestamp
                     self._last_greeted[name] = now
                     greeting_text = self._generate_greeting(name, is_known)

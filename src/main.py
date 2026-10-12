@@ -256,6 +256,9 @@ class ChittiController:
 
     def _on_person_recognized_proactive(self, person_name: str, is_known: bool, greeting: str):
         """Triggered autonomously when a human appears and is recognized by the camera."""
+        if self.state_manager.is_sleeping() or self.state_manager.is_interrupted():
+            log_debug(f"[PERCEPTION] Suppressed proactive greeting while sleeping/interrupted: '{person_name}'")
+            return
         log_chitti(f"[PERCEPTION] 👁️ Autonomous detection: '{person_name}'. Greeting: '{greeting}'")
         if self.hud:
             self.hud.show()
@@ -269,8 +272,8 @@ class ChittiController:
         """Speaks the response using TTS with real-time barge-in interruption."""
         if not text:
             return
-        if self.state_manager.is_sleeping():
-            log_debug(f"[CHITTI][TTS] Suppressed speech while sleeping: '{text}'")
+        if self.state_manager.is_sleeping() or self.state_manager.is_interrupted():
+            log_debug(f"[CHITTI][TTS] Suppressed speech while sleeping or interrupted: '{text}'")
             return
         if self.ambient_listener:
             try:
@@ -301,22 +304,18 @@ class ChittiController:
         if control_res.command == ControlCommand.STOP:
             log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{control_res.matched_phrase}'")
             self.state_manager.interrupt(reason="user_stop")
+            self.state_manager.sleep()
             if self.tts:
                 self.tts.stop()
             if self.agent:
                 self.agent.cancel_active_task()
             if self.ambient_listener:
-                self.ambient_listener.state_mgr.interrupt(reason="user_stop")
-            resp = "Ruk gaya."
-            print(f"\nChitti: {resp}")
+                self.ambient_listener.go_to_sleep()
             if self.hud:
-                self.hud.set_response(resp)
                 self.hud.set_mode(HUDMode.IDLE)
-            if self.tts:
-                try:
-                    self.tts.speak(resp, wait=False)
-                except Exception:
-                    pass
+                self.hud.set_progress("")
+                self.hud.hide()
+            print("\nChitti: [Stopped & Silent Standby - Say 'Hey Chitti' to wake]")
             return
 
         # ---------------- PRIORITY 2: SLEEP COMMAND ----------------
@@ -330,8 +329,9 @@ class ChittiController:
             if self.ambient_listener:
                 self.ambient_listener.go_to_sleep()
             if self.hud:
-                self.hud.set_response("Sleeping (Say 'Hey Chitti' to wake)")
                 self.hud.set_mode(HUDMode.IDLE)
+                self.hud.set_progress("")
+                self.hud.hide()
             print("\nChitti: [Silent Standby - Say 'Hey Chitti' to wake]")
             return
 

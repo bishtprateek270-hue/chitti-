@@ -406,6 +406,64 @@ class TestGlobalVoiceControlSystem(unittest.TestCase):
         mock_llm.generate_response.assert_called_once()
         mock_tts.speak.assert_called_once_with("I am Chitti, your desktop companion.", wait=True)
 
+    # ---------------- TEST N: STOP COMMAND HIDES HUD, ENTERS SLEEP, AND PREVENTS FALSE WAKE ----------------
+    def test_n_stop_command_hides_hud_enters_sleep_and_prevents_false_wake(self):
+        """
+        Test N: Verifies that after saying 'Stop' or 'Chitti stop':
+        1. HUD is hidden immediately.
+        2. System enters SLEEPING state.
+        3. Wake detector rejects 'chitti stop', 'stop', 'kitty', 'citi'.
+        4. No TTS audio feedback is played that could echo into the mic.
+        """
+        controller = ChittiController()
+        mock_tts = MagicMock()
+        mock_hud = MagicMock()
+        controller.tts = mock_tts
+        controller.hud = mock_hud
+
+        # User gives stop command
+        controller.process_user_input("Chitti stop")
+
+        self.assertTrue(self.state_mgr.is_sleeping())
+        self.assertTrue(self.state_mgr.is_interrupted())
+        mock_hud.hide.assert_called()
+        # Ensure TTS was halted and didn't speak out loud
+        mock_tts.stop.assert_called()
+        mock_tts.speak.assert_not_called()
+
+        # Test wake detector with mock STT
+        mock_stt = MagicMock()
+        detector = WakeWordDetector(sample_rate=16000, sensitivity=0.75, stt_engine=mock_stt)
+        detector._evaluate_acoustic_signature = MagicMock(return_value=0.8)
+
+        dummy_audio = np.ones(1280, dtype=np.float32) * 0.1
+
+        # Stop phrase in audio must return None (no wake event)
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = "chitti stop"
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNone(event)
+
+        # Standalone 'stop' must return None
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = "stop"
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNone(event)
+
+        # 'kitty' or 'city' must return None
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = "kitty"
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNone(event)
+
+        # Only genuine wake word should trigger
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = "hey chitti"
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNotNone(event)
+        self.assertEqual(event.keyword, "Hey Chitti")
+
 
 if __name__ == "__main__":
     unittest.main()
+
