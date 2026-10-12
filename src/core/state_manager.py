@@ -1,7 +1,8 @@
 """
 Chitti Centralized State Manager & Global Interruption Architecture.
 Acts as the single authoritative source of truth for Chitti's lifecycle and operational states,
-coordinating high-priority interrupts, cancellation tokens, background task cleanup, and thread synchronization.
+coordinating high-priority interrupts, request generation invalidation, cancellation tokens,
+background task cleanup, and thread synchronization.
 """
 
 import enum
@@ -9,7 +10,7 @@ import logging
 import subprocess
 import threading
 import time
-from typing import Callable, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set
 
 from src.utils.logging import log_chitti, log_debug, log_info, log_warning
 
@@ -43,6 +44,51 @@ class SystemStateManager:
     Enforces valid state transitions and guarantees high-priority immediate cancellation.
     """
 
+    LEGAL_TRANSITIONS: Dict[SystemState, Set[SystemState]] = {
+        SystemState.STARTING: {SystemState.SLEEPING, SystemState.AWAKE, SystemState.STOPPING},
+        SystemState.SLEEPING: {SystemState.AWAKE, SystemState.INTERRUPTING, SystemState.STOPPING},
+        SystemState.AWAKE: {
+            SystemState.LISTENING,
+            SystemState.PROCESSING,
+            SystemState.EXECUTING,
+            SystemState.SPEAKING,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+        },
+        SystemState.LISTENING: {
+            SystemState.PROCESSING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+        },
+        SystemState.PROCESSING: {
+            SystemState.EXECUTING,
+            SystemState.SPEAKING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+        },
+        SystemState.EXECUTING: {
+            SystemState.SPEAKING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+        },
+        SystemState.SPEAKING: {
+            SystemState.LISTENING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+        },
+        SystemState.INTERRUPTING: {SystemState.AWAKE, SystemState.SLEEPING, SystemState.STOPPING},
+        SystemState.STOPPING: set(),
+    }
+
     def __init__(self, initial_state: SystemState = SystemState.AWAKE):
         self._state = initial_state
         self._lock = threading.RLock()
@@ -51,6 +97,9 @@ class SystemStateManager:
         self._interrupt_event = threading.Event()
         self._task_cancel_event = threading.Event()
         self._tts_cancel_event = threading.Event()
+
+        # Request generation counter for invalidating stale tasks / TTS
+        self._current_generation_id = 0
 
         # Registered active subprocesses
         self._active_processes: Set[subprocess.Popen] = set()
@@ -75,6 +124,64 @@ class SystemStateManager:
         with self._lock:
             self._operating_mode = "continuous" if mode.lower().startswith("cont") else "wake_word"
             log_info(f"[CHITTI][CONFIG] Operating mode set to: {self._operating_mode.upper()}")
+
+    # ---------------- Request Generation Protocol ----------------
+
+    def new_request(self) -> int:
+        """
+        Starts a new user request session.
+        Increments request generation ID and resets interrupt signals.
+        """
+        with self._lock:
+            self._current_generation_id += 1
+            gen_id = self._current_generation_id
+            self.reset_interrupt()
+            log_info(f"[CHITTI][REQUEST] Started Request #{gen_id}")
+            return gen_id
+
+    def get_current_generation(self) -> int:
+        """Returns the current request generation ID."""
+        with self._lock:
+            return self._current_generation_id
+
+    def invalidate_generation(self, gen_id: Optional[int] = None) -> int:
+        """
+        Atomically invalidates the active request generation.
+        Any worker or TTS with an earlier generation ID will be discarded.
+        """
+        with self._lock:
+            old_id = self._current_generation_id
+            self._current_generation_id += 1
+            new_id = self._current_generation_id
+            log_info(f"[CHITTI][CONTROL] Request #{old_id} invalidated -> #{new_id}")
+            return new_id
+
+    def is_generation_valid(self, gen_id: Optional[int] = None) -> bool:
+        """
+        Validates whether a generation is still active and valid.
+        Returns False if the system is sleeping, interrupted, or gen_id is superseded.
+        """
+        with self._lock:
+            if self._state == SystemState.SLEEPING:
+                return False
+            if self._interrupt_event.is_set() or self._task_cancel_event.is_set():
+                return False
+            if gen_id is not None and gen_id != self._current_generation_id:
+                return False
+            return True
+
+    def can_speak(self, gen_id: Optional[int] = None) -> bool:
+        """Returns True if speech playback is permitted for the given generation."""
+        with self._lock:
+            if self._state == SystemState.SLEEPING:
+                return False
+            if self._tts_cancel_event.is_set() or self._interrupt_event.is_set():
+                return False
+            if gen_id is not None and gen_id != self._current_generation_id:
+                return False
+            return True
+
+    # ---------------- Authoritative State Accessors ----------------
 
     def get_state(self) -> SystemState:
         """Returns the current authoritative state."""
@@ -102,6 +209,8 @@ class SystemStateManager:
     def get_tts_cancellation_event(self) -> threading.Event:
         """Returns the shared event used to immediately abort ongoing TTS."""
         return self._tts_cancel_event
+
+    # ---------------- State Transition Callbacks ----------------
 
     def register_on_interrupt(self, callback: Callable[[], None]):
         """Registers a callback executed immediately upon global interrupt."""
@@ -137,13 +246,17 @@ class SystemStateManager:
             if old_state == new_state:
                 return True
 
-            # Guard against contradictory state assignments
+            # Reject changing SLEEPING to active states without waking
             if old_state == SystemState.SLEEPING and new_state in (
                 SystemState.EXECUTING,
                 SystemState.PROCESSING,
                 SystemState.SPEAKING,
+                SystemState.LISTENING,
             ):
-                log_warning(f"[CHITTI][STATE] Rejected contradictory transition: {old_state.value} -> {new_state.value} (Cannot execute/speak while sleeping)")
+                log_warning(
+                    f"[CHITTI][STATE] Rejected invalid transition: {old_state.value} -> {new_state.value} "
+                    f"(System is SLEEPING; must wake first)"
+                )
                 return False
 
             self._state = new_state
@@ -159,6 +272,8 @@ class SystemStateManager:
                 log_debug(f"[CHITTI][STATE] Callback error: {e}")
 
         return True
+
+    # ---------------- Explicit State Lifecycle Methods ----------------
 
     def wake(self) -> bool:
         """
@@ -186,7 +301,7 @@ class SystemStateManager:
     def sleep(self) -> bool:
         """
         Enters SLEEPING state:
-        1. Immediately cancels current tasks.
+        1. Immediately cancels current tasks and invalidates generation ID.
         2. Halts TTS speech playback.
         3. Clears pending speech and execution.
         4. Transitions state to SLEEPING.
@@ -208,6 +323,56 @@ class SystemStateManager:
 
         return True
 
+    def begin_listening(self) -> bool:
+        """Transitions state to LISTENING. Rejects if SLEEPING."""
+        with self._lock:
+            if self._state == SystemState.SLEEPING:
+                log_warning("[CHITTI][STATE] Rejected begin_listening: System is SLEEPING.")
+                return False
+            return self.set_state(SystemState.LISTENING)
+
+    def begin_processing(self, gen_id: Optional[int] = None) -> bool:
+        """Transitions state to PROCESSING. Verifies generation ID and sleeping state."""
+        with self._lock:
+            if not self.is_generation_valid(gen_id):
+                log_warning(f"[CHITTI][STATE] Rejected begin_processing: Request {gen_id} is invalid or sleeping.")
+                return False
+            return self.set_state(SystemState.PROCESSING)
+
+    def begin_execution(self, gen_id: Optional[int] = None) -> bool:
+        """Transitions state to EXECUTING. Verifies generation ID and sleeping state."""
+        with self._lock:
+            if not self.is_generation_valid(gen_id):
+                log_warning(f"[CHITTI][STATE] Rejected begin_execution: Request {gen_id} is invalid or sleeping.")
+                return False
+            return self.set_state(SystemState.EXECUTING)
+
+    def begin_speaking(self, gen_id: Optional[int] = None) -> bool:
+        """Transitions state to SPEAKING. Strictly rejects if sleeping or interrupted."""
+        with self._lock:
+            if not self.can_speak(gen_id):
+                log_warning(f"[CHITTI][STATE] Rejected begin_speaking: Speech disallowed for gen #{gen_id} (state={self._state.value})")
+                return False
+            return self.set_state(SystemState.SPEAKING)
+
+    def finish_task(self, gen_id: Optional[int] = None) -> bool:
+        """Concludes active processing or speaking, returning to AWAKE or configured state."""
+        with self._lock:
+            if self._state == SystemState.SLEEPING:
+                return True
+            if self._state in (SystemState.SPEAKING, SystemState.EXECUTING, SystemState.PROCESSING, SystemState.LISTENING):
+                next_state = SystemState.LISTENING if self._operating_mode == "continuous" else SystemState.AWAKE
+                return self.set_state(next_state)
+            return True
+
+    def shutdown(self) -> bool:
+        """Transitions state to STOPPING and releases resources."""
+        log_info("[CHITTI][STATE] Shutting down...")
+        self.interrupt(reason="shutdown")
+        with self._lock:
+            self._state = SystemState.STOPPING
+        return True
+
     def interrupt(self, reason: str = "user_stop") -> bool:
         """
         HIGH-PRIORITY GLOBAL INTERRUPT (Priority 1).
@@ -215,32 +380,36 @@ class SystemStateManager:
         1. Ongoing TTS playback.
         2. Cancellable active tasks, computer actions, LLM requests.
         3. Terminating registered child subprocesses.
+        4. Invalidates the active request generation ID.
         """
         log_chitti(f"[CHITTI][INTERRUPT] 🛑 Global cancellation signal issued (Reason: {reason})")
 
-        # 1. Set interruption flags atomically
+        # 1. Invalidate request generation ID atomically
+        self.invalidate_generation()
+
+        # 2. Set interruption flags atomically
         self._interrupt_event.set()
         self._task_cancel_event.set()
         self._tts_cancel_event.set()
 
-        # 2. Terminate any active child subprocesses
+        # 3. Terminate any active child subprocesses
         self.terminate_active_processes()
 
-        # 3. Transition to INTERRUPTING then return to AWAKE or SLEEPING
+        # 4. Transition to INTERRUPTING
         with self._lock:
             old_state = self._state
             self._state = SystemState.INTERRUPTING
             log_info(f"[CHITTI][STATE] {old_state.value} -> INTERRUPTING")
             callbacks = list(self._on_interrupt_callbacks)
 
-        # 4. Trigger registered interrupt handlers immediately
+        # 5. Trigger registered interrupt handlers immediately
         for cb in callbacks:
             try:
                 cb()
             except Exception as e:
                 log_debug(f"[CHITTI][INTERRUPT] Interrupt callback notice: {e}")
 
-        # 5. Transition to resting state (SLEEPING if we were sleeping, AWAKE otherwise)
+        # 6. Transition to resting state (SLEEPING if we were sleeping or sleep requested, AWAKE otherwise)
         with self._lock:
             next_state = SystemState.SLEEPING if reason == "sleep" else SystemState.AWAKE
             log_info(f"[CHITTI][STATE] INTERRUPTING -> {next_state.value}")
@@ -258,6 +427,7 @@ class SystemStateManager:
     def cancel_current_task(self) -> bool:
         """Explicitly cancels the active background or agent task."""
         log_info("[CHITTI][TASK] Current task cancelled.")
+        self.invalidate_generation()
         self._task_cancel_event.set()
         self.terminate_active_processes()
         return True

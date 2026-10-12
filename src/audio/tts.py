@@ -195,7 +195,7 @@ class EdgeNeuralTTS(TTSEngine):
         )
         await communicate.save(output_path)
 
-    def speak(self, text: str, wait: bool = True) -> None:
+    def speak(self, text: str, wait: bool = True, request_id: Optional[int] = None) -> None:
         """Synthesizes text into high-fidelity neural speech and plays it."""
         if not HAS_EDGE_TTS or edge_tts is None:
             raise TTSError("edge-tts package is not installed.")
@@ -206,8 +206,8 @@ class EdgeNeuralTTS(TTSEngine):
 
         # Check state manager
         state_mgr = get_state_manager()
-        if state_mgr.is_sleeping():
-            log_debug("[TTS] Suppressed speech output: Chitti is SLEEPING.")
+        if not state_mgr.can_speak(request_id):
+            log_debug(f"[TTS] Suppressed speech output: request #{request_id} is invalid, sleeping, or interrupted.")
             return
 
         # Prepare generation cycle
@@ -221,7 +221,7 @@ class EdgeNeuralTTS(TTSEngine):
         def _run_speak():
             temp_file = None
             try:
-                if self._cancel_requested.is_set() or gen_id != self._current_gen_id:
+                if self._cancel_requested.is_set() or gen_id != self._current_gen_id or not state_mgr.can_speak(request_id):
                     return
 
                 with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf:
@@ -231,8 +231,8 @@ class EdgeNeuralTTS(TTSEngine):
                 asyncio.run(self._synthesize_async(clean_text, voice, temp_file))
 
                 # Check cancellation immediately after download/synthesis
-                if self._cancel_requested.is_set() or gen_id != self._current_gen_id:
-                    log_debug("[TTS] Speech discarded after synthesis: Stop was requested.")
+                if self._cancel_requested.is_set() or gen_id != self._current_gen_id or not state_mgr.can_speak(request_id):
+                    log_debug(f"[TTS] Speech discarded after synthesis: Stop was requested for request #{request_id}.")
                     return
 
                 self._play_audio_file(temp_file, gen_id)
@@ -407,11 +407,11 @@ class HybridTTS(TTSEngine):
             return True
         return self.fallback_tts.is_speaking()
 
-    def speak(self, text: str, wait: bool = True) -> None:
+    def speak(self, text: str, wait: bool = True, request_id: Optional[int] = None) -> None:
         """Speaks using Neural TTS first, falling back to local SAPI5 if offline."""
         if self.edge_tts:
             try:
-                self.edge_tts.speak(text, wait=wait)
+                self.edge_tts.speak(text, wait=wait, request_id=request_id)
                 return
             except Exception as e:
                 log_debug(f"[HYBRID TTS] Edge Neural TTS exception, falling back: {e}")
@@ -464,31 +464,35 @@ class SpeechController:
         self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="ChittiSpeechController")
         self._worker_thread.start()
 
-    def speak(self, text: str, wait: bool = False, priority: bool = False) -> None:
+    def speak(self, text: str, wait: bool = False, priority: bool = False, request_id: Optional[int] = None) -> None:
         """Queues or synchronously executes speech."""
         if not text or not text.strip():
             return
 
         state_mgr = get_state_manager()
-        if state_mgr.is_sleeping():
-            log_debug("[SPEECH CONTROLLER] Ignored speech request while SLEEPING.")
+        if not state_mgr.can_speak(request_id):
+            log_debug(f"[SPEECH CONTROLLER] Ignored speech request for invalid generation #{request_id} (state={state_mgr.get_state().value}).")
             return
 
         if wait:
             # Synchronous direct speak
-            self.engine.speak(text, wait=True)
+            try:
+                self.engine.speak(text, wait=True, request_id=request_id)
+            except TypeError:
+                self.engine.speak(text, wait=True)
         else:
             if priority:
                 # Clear queue and put priority speech
                 self.clear_speech_queue()
-            self._queue.put(text)
+            self._queue.put((text, request_id))
 
     def stop_speaking(self) -> float:
         """Immediately halts ongoing speech and clears all pending speech."""
         # 1. Clear speech queue first so no more utterances start
         self.clear_speech_queue()
         # 2. Stop active engine playback
-        latency_ms = self.engine.stop()
+        res = self.engine.stop()
+        latency_ms = float(res) if isinstance(res, (int, float)) else 0.0
         log_info(f"[CHITTI][TTS] Speech playback stopped immediately (latency: {latency_ms:.2f}ms).")
         return latency_ms
 
@@ -520,14 +524,24 @@ class SpeechController:
         """Sequential single-worker loop to prevent multiple speech voices overlapping."""
         while self._is_running:
             try:
-                text = self._queue.get(timeout=0.1)
+                item = self._queue.get(timeout=0.1)
             except queue.Empty:
                 continue
 
             try:
+                if isinstance(item, tuple):
+                    text, req_id = item
+                else:
+                    text, req_id = item, None
+
                 state_mgr = get_state_manager()
-                if not state_mgr.is_sleeping() and not state_mgr.is_interrupted():
-                    self.engine.speak(text, wait=True)
+                if state_mgr.can_speak(req_id):
+                    try:
+                        self.engine.speak(text, wait=True, request_id=req_id)
+                    except TypeError:
+                        self.engine.speak(text, wait=True)
+                else:
+                    log_debug(f"[SPEECH CONTROLLER] Discarded queued utterance for invalid generation #{req_id}: '{text}'")
             except Exception as e:
                 log_debug(f"[SPEECH CONTROLLER] Synthesis notice: {e}")
             finally:

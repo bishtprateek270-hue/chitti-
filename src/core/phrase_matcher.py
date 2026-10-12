@@ -45,6 +45,8 @@ class PhraseMatcher:
         "wake up chitti",
         "hey chitti",
         "chitti",
+        "chitti are you there",
+        "are you there chitti",
     ]
     WAKE_PHRASES_HI = [
         "chitti jaag ja",

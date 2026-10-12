@@ -9,6 +9,7 @@ import time
 from typing import Any, Callable, Optional
 import numpy as np
 
+from src.audio.capture_service import get_audio_capture_service
 from src.utils.logging import log_chitti, log_debug, log_info
 
 try:
@@ -60,31 +61,19 @@ class BargeInDetector:
         self._start_time = time.time()
         self._is_active = True
 
-        if HAS_SOUNDDEVICE and sd:
-            try:
-                self._stream = sd.InputStream(
-                    samplerate=self.sample_rate,
-                    channels=1,
-                    dtype="float32",
-                    blocksize=self.chunk_size,
-                    device=device_index,
-                    callback=self._audio_callback,
-                )
-                self._stream.start()
-                log_debug("[BARGE-IN] Active barge-in monitoring enabled.")
-            except Exception as e:
-                log_debug(f"[BARGE-IN] Monitoring stream failed: {e}")
+        if HAS_SOUNDDEVICE:
+            capture_service = get_audio_capture_service()
+            if not capture_service.is_running():
+                capture_service.start(device_index=device_index)
+            capture_service.subscribe("barge_in", self._audio_callback)
+            log_debug("[BARGE-IN] Active barge-in monitoring enabled via AudioCaptureService.")
 
     def stop_monitoring(self):
         """Stops microphone monitoring after TTS playback concludes."""
         self._is_active = False
-        if self._stream:
-            try:
-                self._stream.stop()
-                self._stream.close()
-            except Exception:
-                pass
-            self._stream = None
+        if HAS_SOUNDDEVICE:
+            capture_service = get_audio_capture_service()
+            capture_service.unsubscribe("barge_in")
         log_debug("[BARGE-IN] Monitoring stopped.")
 
     def _is_voiced(self, chunk: np.ndarray) -> bool:
@@ -107,7 +96,7 @@ class BargeInDetector:
         pitch_corr = float(np.max(corr[min_lag:max_lag]))
         return pitch_corr >= 0.30
 
-    def _audio_callback(self, indata, frames, time_info, status):
+    def _audio_callback(self, indata, energy: float = 0.0, *args):
         """Processes audio frame to detect intentional speech interruption."""
         if not self._is_active:
             return

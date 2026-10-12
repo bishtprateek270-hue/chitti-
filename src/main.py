@@ -268,27 +268,31 @@ class ChittiController:
         if self.ambient_listener:
             self.ambient_listener.resume(cooldown=1.0)
 
-    def speak(self, text: str):
-        """Speaks the response using TTS with real-time barge-in interruption."""
+    def speak(self, text: str, request_id: Optional[int] = None):
+        """Speaks the response using TTS with real-time barge-in interruption and request validation."""
         if not text:
             return
-        if self.state_manager.is_sleeping() or self.state_manager.is_interrupted():
-            log_debug(f"[CHITTI][TTS] Suppressed speech while sleeping or interrupted: '{text}'")
+        if not self.state_manager.can_speak(request_id):
+            log_debug(f"[CHITTI][TTS] Suppressed speech for invalidated/sleeping request #{request_id}: '{text}'")
             return
         if self.ambient_listener:
             try:
-                self.ambient_listener.speak_with_barge_in(text)
+                self.ambient_listener.speak_with_barge_in(text, request_id=request_id)
                 return
             except Exception as e:
                 log_warning(f"Ambient barge-in speech notice: {e}")
 
         if self.tts:
             try:
-                self.tts.speak(text, wait=True)
+                from src.audio.tts import EdgeNeuralTTS, HybridTTS, SpeechController
+                if isinstance(self.tts, (EdgeNeuralTTS, HybridTTS, SpeechController)) and request_id is not None:
+                    self.tts.speak(text, wait=True, request_id=request_id)
+                else:
+                    self.tts.speak(text, wait=True)
             except Exception as e:
                 log_warning(f"Speech playback failed: {e}")
 
-    def process_user_input(self, user_text: str):
+    def process_user_input(self, user_text: str, request_id: Optional[int] = None):
         """Processes user input through Multilingual/Vision/Memory/LLM, records history, and speaks output."""
         if not user_text or not user_text.strip():
             log_debug("[INPUT] Empty voice or text input received. Remaining in quiet standby.")
@@ -355,6 +359,11 @@ class ChittiController:
             log_debug(f"[CHITTI][SLEEP] Ignored input while sleeping: '{user_text}'")
             print("\nChitti: [Sleeping - Say 'Hey Chitti' to wake]")
             return
+
+        # Allocate new request generation if not already assigned
+        if request_id is None:
+            request_id = self.state_manager.new_request()
+        self.state_manager.begin_processing(request_id)
 
         # 0. Multilingual Understanding & Intent Normalization (Phase 4)
         parsed_intent = self.language_normalizer.parse_intent(user_text)
@@ -774,6 +783,10 @@ class ChittiController:
         )
 
         # Display and speak Chitti's sanitized response
+        if not self.state_manager.is_generation_valid(request_id):
+            log_debug(f"[CHITTI] Discarding response: request #{request_id} has been invalidated.")
+            return
+
         log_state("CHITTI")
         print(sanitized_response)
         self.history.add_assistant_message(sanitized_response)
@@ -782,7 +795,8 @@ class ChittiController:
         if self.hud:
             self.hud.set_response(sanitized_response)
             self.hud.set_mode(HUDMode.IDLE)
-        self.speak(sanitized_response)
+        self.speak(sanitized_response, request_id=request_id)
+        self.state_manager.finish_task(request_id)
 
     def trigger_vision_snapshot(self):
         """Performs an instant camera snapshot and reports what Chitti sees."""

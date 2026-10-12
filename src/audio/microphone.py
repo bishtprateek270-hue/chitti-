@@ -98,51 +98,46 @@ class MicrophoneManager:
         silence_start_time: Optional[float] = None
         start_time = time.time()
 
+        from src.audio.capture_service import get_audio_capture_service
+
+        capture_service = get_audio_capture_service()
+        if not capture_service.is_running():
+            capture_service.start(device_index=device)
+
+        recorded_chunks: List[np.ndarray] = []
+        speech_detected = False
+        silence_start_time: Optional[float] = None
+        start_time = time.time()
+        is_done = False
+
+        def mic_callback(chunk_16k: np.ndarray, rms: float):
+            nonlocal speech_detected, silence_start_time, is_done
+            if is_done:
+                return
+            recorded_chunks.append(chunk_16k)
+            if rms > threshold:
+                speech_detected = True
+                silence_start_time = None
+            elif speech_detected:
+                if silence_start_time is None:
+                    silence_start_time = time.time()
+                elif time.time() - silence_start_time >= silence_dur:
+                    is_done = True
+            else:
+                if (time.time() - start_time) >= 5.0 and not speech_detected:
+                    is_done = True
+
+        capture_service.subscribe("microphone_manager", mic_callback)
         try:
-            with sd.InputStream(
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                dtype="float32",
-                device=device,
-                blocksize=chunk_samples,
-            ) as stream:
-                log_debug(f"Audio stream opened on device: {device}")
-
-                while True:
-                    elapsed = time.time() - start_time
-                    if elapsed >= max_dur:
-                        log_debug("Max recording duration reached.")
-                        break
-
-                    data, overflowed = stream.read(chunk_samples)
-                    if overflowed:
-                        log_debug("Audio buffer overflowed during recording.")
-
-                    chunk = data.flatten()
-                    recorded_chunks.append(chunk)
-
-                    # Compute RMS energy of chunk
-                    rms = np.sqrt(np.mean(chunk**2)) if len(chunk) > 0 else 0.0
-
-                    if rms > threshold:
-                        speech_detected = True
-                        silence_start_time = None  # Reset silence timer
-                    elif speech_detected:
-                        # User was speaking and now went silent
-                        if silence_start_time is None:
-                            silence_start_time = time.time()
-                        elif time.time() - silence_start_time >= silence_dur:
-                            log_debug("End of speech detected via silence.")
-                            break
-                    else:
-                        # Waiting for user to start speaking
-                        # If silent for more than 5 seconds without initiating speech, break
-                        if elapsed >= 5.0 and not speech_detected:
-                            log_debug("No speech detected within initial timeout.")
-                            break
-
+            while not is_done:
+                time.sleep(0.02)
+                if (time.time() - start_time) >= max_dur:
+                    break
         except Exception as e:
             raise AudioCaptureError(f"Microphone recording failed: {e}") from e
+        finally:
+            is_done = True
+            capture_service.unsubscribe("microphone_manager")
 
         if not recorded_chunks:
             return np.zeros(0, dtype=np.float32)

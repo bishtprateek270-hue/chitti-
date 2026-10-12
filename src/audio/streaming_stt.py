@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from src.audio.audio_utils import get_best_input_device, resample_to_16k
+from src.audio.capture_service import get_audio_capture_service
 from src.audio.stt import STTEngine, get_stt
 from src.config import AudioConfig, get_config
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
@@ -94,20 +95,14 @@ class StreamingSTTEngine:
         self._is_recording = True
         speech_started = False
 
-        dev_idx, stream_sr = get_best_input_device(device_index)
+        capture_service = get_audio_capture_service()
+        if not capture_service.is_running():
+            capture_service.start(device_index=device_index)
 
-        def stream_callback(indata, frames, time_info, status):
+        def subscriber_callback(chunk_16k: np.ndarray, energy: float):
             nonlocal speech_started
             if not self._is_recording:
                 return
-
-            raw_chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
-            if stream_sr != self.sample_rate:
-                chunk_16k = resample_to_16k(raw_chunk, stream_sr)
-            else:
-                chunk_16k = raw_chunk
-
-            energy = float(np.sqrt(np.mean(chunk_16k**2) + 1e-12))
 
             # Adapt noise floor on quiet frames
             if not state.is_speaking and energy < 0.020:
@@ -147,39 +142,30 @@ class StreamingSTTEngine:
                 except Exception:
                     pass
 
-        stream_opened = False
+        capture_service.subscribe("streaming_stt", subscriber_callback)
+        start_time = time.time()
         try:
-            chunk_samples = int(stream_sr * 0.05)
-            with sd.InputStream(
-                samplerate=stream_sr,
-                channels=1,
-                dtype="float32",
-                blocksize=chunk_samples,
-                device=dev_idx,
-                callback=stream_callback,
-            ):
-                stream_opened = True
-                start_time = time.time()
-                while self._is_recording:
-                    time.sleep(0.025)
-                    elapsed = time.time() - start_time
+            while self._is_recording:
+                time.sleep(0.025)
+                elapsed = time.time() - start_time
 
-                    # Check exit conditions
-                    with self._lock:
-                        if state.is_speaking and state.silence_frames >= silence_cutoff_frames:
-                            log_debug(f"[STREAMING STT] Auto-silence cutoff triggered ({elapsed:.2f}s).")
-                            break
-                        if elapsed >= max_sec:
-                            log_debug(f"[STREAMING STT] Max recording timeout reached ({max_sec}s).")
-                            break
-                        # Timeout if user never spoke after 3.0s
-                        if not state.is_speaking and elapsed >= 3.0:
-                            log_debug("[STREAMING STT] No speech detected within initial window.")
-                            break
+                # Check exit conditions
+                with self._lock:
+                    if state.is_speaking and state.silence_frames >= silence_cutoff_frames:
+                        log_debug(f"[STREAMING STT] Auto-silence cutoff triggered ({elapsed:.2f}s).")
+                        break
+                    if elapsed >= max_sec:
+                        log_debug(f"[STREAMING STT] Max recording timeout reached ({max_sec}s).")
+                        break
+                    # Timeout if user never spoke after 3.0s
+                    if not state.is_speaking and elapsed >= 3.0:
+                        log_debug("[STREAMING STT] No speech detected within initial window.")
+                        break
         except Exception as e:
-            log_warn(f"[STREAMING STT] InputStream recording notice: {e}")
+            log_warn(f"[STREAMING STT] Audio capture notice: {e}")
         finally:
             self._is_recording = False
+            capture_service.unsubscribe("streaming_stt")
 
         # Assemble full audio: pre-speech buffer + recorded speech chunks (all 16kHz)
         with self._lock:

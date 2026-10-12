@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from src.audio.audio_utils import get_best_input_device, resample_to_16k
+from src.audio.capture_service import get_audio_capture_service
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
 
 try:
@@ -115,51 +116,19 @@ class WakeWordDetector:
         )
         self._worker_thread.start()
 
-        if HAS_SOUNDDEVICE and sd:
-            dev_idx, stream_sr = get_best_input_device(device_index)
-            self._stream_sample_rate = stream_sr
-            chunk_samples = int(stream_sr * (self.chunk_size / self.sample_rate))
-
-            try:
-                self._stream = sd.InputStream(
-                    samplerate=stream_sr,
-                    channels=1,
-                    dtype="float32",
-                    blocksize=chunk_samples,
-                    device=dev_idx,
-                    callback=self._audio_stream_callback,
-                )
-                self._stream.start()
-                dev_label = f"device #{dev_idx}" if dev_idx is not None else "default mic"
-                log_info(f"[WAKE WORD] Ambient wake-word listening active on {dev_label} @ {stream_sr}Hz.")
-                return
-            except Exception as e:
-                log_warn(f"[WAKE WORD] Primary stream open failed: {e}. Trying fallback...")
-                try:
-                    self._stream = sd.InputStream(
-                        samplerate=16000,
-                        channels=1,
-                        dtype="float32",
-                        blocksize=self.chunk_size,
-                        callback=self._audio_stream_callback,
-                    )
-                    self._stream.start()
-                    self._stream_sample_rate = 16000
-                    log_info("[WAKE WORD] Fallback stream active @ 16000Hz.")
-                    return
-                except Exception as fallback_err:
-                    log_warn(f"[WAKE WORD] Could not start audio stream: {fallback_err}")
+        if HAS_SOUNDDEVICE:
+            capture_service = get_audio_capture_service()
+            if not capture_service.is_running():
+                capture_service.start(device_index=device_index)
+            capture_service.subscribe("wake_word", self._audio_stream_callback)
+            log_info("[WAKE WORD] Ambient wake-word listening active via AudioCaptureService.")
 
     def stop(self):
         """Stops the ambient wake-word detection engine and releases audio resources."""
         self._is_running = False
-        if self._stream:
-            try:
-                self._stream.stop()
-                self._stream.close()
-            except Exception:
-                pass
-            self._stream = None
+        if HAS_SOUNDDEVICE:
+            capture_service = get_audio_capture_service()
+            capture_service.unsubscribe("wake_word")
 
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=1.0)
@@ -188,15 +157,19 @@ class WakeWordDetector:
         cd = cooldown if cooldown is not None else self.cooldown_seconds
         self._last_trigger_time = time.time() + (cd - self.cooldown_seconds)
 
-    def _audio_stream_callback(self, indata, frames, time_info, status):
+    def _audio_stream_callback(self, indata, energy: float = 0.0, *args):
         """
-        Ultra-fast sounddevice callback (<0.02ms).
-        Enqueues audio chunk and returns immediately to keep PortAudio thread non-blocking.
+        Receives audio frame from AudioCaptureService (<0.02ms).
+        Enqueues audio chunk and returns immediately to keep capture thread non-blocking.
         """
         if not self._is_running or self._is_paused:
             return
 
-        chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
+        if isinstance(indata, np.ndarray):
+            chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
+        else:
+            return
+
         try:
             self._audio_queue.put_nowait(chunk)
         except queue.Full:

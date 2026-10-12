@@ -127,6 +127,10 @@ class AmbientVoiceListener:
 
     def _on_wake_word_triggered(self, event: WakeWordEvent):
         """Triggered automatically when a wake phrase is recognized by the detector."""
+        if self.state_mgr.get_state() in (SystemState.SPEAKING, SystemState.INTERRUPTING):
+            log_debug("[AMBIENT] Suppressed wake event during speech output.")
+            return
+
         with self._lock:
             if self.state != AmbientState.STANDBY:
                 return
@@ -134,8 +138,9 @@ class AmbientVoiceListener:
 
         log_chitti(f"[AMBIENT] ⚡ Wake word spotted: '{event.keyword}'. Transitioning to LISTENING...")
 
-        # Transition authoritative state to AWAKE
+        # Transition authoritative state to AWAKE and LISTENING
         self.state_mgr.wake()
+        self.state_mgr.begin_listening()
 
         if self.hud:
             self.hud.show()
@@ -267,6 +272,9 @@ class AmbientVoiceListener:
             log_debug(f"[CHITTI][SLEEP] Ignored ordinary conversation while SLEEPING: '{raw}'")
             return
 
+        request_id = self.state_mgr.new_request()
+        self.state_mgr.begin_processing(request_id)
+
         with self._lock:
             self.state = AmbientState.THINKING
 
@@ -275,7 +283,10 @@ class AmbientVoiceListener:
             self.hud.set_progress(f"Processing: '{raw}'")
 
         # Dispatch command to Chitti's main pipeline
-        self.command_handler(raw)
+        try:
+            self.command_handler(raw, request_id=request_id)
+        except TypeError:
+            self.command_handler(raw)
 
     def _on_audio_chunk(self, chunk: np.ndarray, energy: float):
         """Feeds audio energy into HUD visualizer if available."""
@@ -285,13 +296,21 @@ class AmbientVoiceListener:
             except Exception:
                 pass
 
-    def speak_with_barge_in(self, text: str):
+    def speak_with_barge_in(self, text: str, request_id: Optional[int] = None):
         """
         Plays speech through TTS with active barge-in monitoring so user can interrupt.
         Prevents Chitti from hearing its own speech as commands while allowing user interruptions.
         """
         if not self.tts or not text:
             return
+
+        state_mgr = get_state_manager()
+        if not state_mgr.can_speak(request_id):
+            log_debug(f"[AMBIENT] Suppressed speech output: request #{request_id} is invalid or sleeping.")
+            return
+
+        state_mgr.begin_speaking(request_id)
+        self.wake_detector.pause()
 
         with self._lock:
             self.state = AmbientState.SPEAKING
@@ -307,9 +326,15 @@ class AmbientVoiceListener:
 
         self.barge_in.start_monitoring(on_interrupt=interrupt_callback)
         try:
-            self.tts.speak(text, wait=True)
+            from src.audio.tts import EdgeNeuralTTS, HybridTTS, SpeechController
+            if isinstance(self.tts, (EdgeNeuralTTS, HybridTTS, SpeechController)) and request_id is not None:
+                self.tts.speak(text, wait=True, request_id=request_id)
+            else:
+                self.tts.speak(text, wait=True)
         finally:
             self.barge_in.stop_monitoring()
+            time.sleep(0.4)  # 400ms acoustic dampening to absorb room echo
+            state_mgr.finish_task(request_id)
             self._return_to_standby()
 
     def go_to_sleep(self):
@@ -332,7 +357,7 @@ class AmbientVoiceListener:
         with self._lock:
             self.state = AmbientState.STANDBY
 
-        self.wake_detector.resume(cooldown=2.0)
+        self.wake_detector.resume(cooldown=1.5)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")
