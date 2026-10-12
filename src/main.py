@@ -90,6 +90,7 @@ class ChittiController:
         self.hotkey_manager = GlobalHotkeyManager()
         self.hud = FloatingHUD(on_command_submit=self.process_user_input)
         self.ambient_listener = None
+        self.perception_engine = None
         self.rl_policy = PolicyOptimizer()
 
     def initialize(self):
@@ -225,7 +226,36 @@ class ChittiController:
         except Exception as e:
             log_warning(f"Ambient voice listener initialization notice: {e}")
 
+        # 11. Initialize Autonomous Visual Perception & Greeting Engine
+        self.perception_engine = None
+        if self.vision and self.config.vision.enabled and getattr(self.config.vision, "autonomous_perception", True):
+            try:
+                from src.vision.autonomous_perception import AutonomousPerceptionEngine
+                poll_sec = 1.0 / max(0.5, float(getattr(self.config.vision, "perception_fps", 2.0)))
+                cooldown_sec = float(getattr(self.config.vision, "greet_cooldown_seconds", 600.0))
+                self.perception_engine = AutonomousPerceptionEngine(
+                    vision_manager=self.vision,
+                    on_person_detected=self._on_person_recognized_proactive,
+                    hud=self.hud,
+                    poll_interval=poll_sec,
+                    greet_cooldown=cooldown_sec,
+                )
+                self.perception_engine.start()
+            except Exception as e:
+                log_warning(f"Autonomous perception initialization notice: {e}")
+
         log_chitti("System initialization complete. Ready for interaction! (Say 'Hey Chitti' or press Alt+Space)\n")
+
+    def _on_person_recognized_proactive(self, person_name: str, is_known: bool, greeting: str):
+        """Triggered autonomously when a human appears and is recognized by the camera."""
+        log_chitti(f"[PERCEPTION] 👁️ Autonomous detection: '{person_name}'. Greeting: '{greeting}'")
+        if self.hud:
+            self.hud.show()
+            self.hud.set_mode(HUDMode.SPEAKING)
+            self.hud.set_progress(f"Recognized: {person_name}")
+        self.speak(greeting)
+        if self.ambient_listener:
+            self.ambient_listener.resume(cooldown=1.0)
 
     def speak(self, text: str):
         """Speaks the response using TTS with real-time barge-in interruption."""
@@ -306,6 +336,38 @@ class ChittiController:
                 self.hud.set_response("Sleeping (Say 'Hey Chitti' to wake)")
                 self.hud.set_mode(HUDMode.IDLE)
             print("\nChitti: [Silent Standby - Say 'Hey Chitti' to wake]")
+            return
+
+        # 1.61. Autonomous Room Observation & Privacy Mode Interceptor
+        watch_cmds = ("start watching", "watch the room", "start vision", "look around", "start patrol", "observe room", "start observation")
+        privacy_cmds = ("stop watching", "stop vision", "stop camera", "privacy mode", "close camera", "don't watch", "stop observation")
+        lower_input = user_text.lower().strip()
+        if any(w in lower_input for w in watch_cmds):
+            if self.perception_engine:
+                self.perception_engine.start()
+                resp = "I am now actively observing the room and will recognize and greet anyone who enters."
+            else:
+                resp = "Vision perception engine is not currently available."
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
+        if any(p in lower_input for p in privacy_cmds):
+            if self.perception_engine:
+                self.perception_engine.stop()
+                resp = "Visual observation paused. Camera is now in privacy mode."
+            else:
+                resp = "Vision engine is already inactive."
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
             return
 
         # Start tracking current execution episode in RL
@@ -741,6 +803,8 @@ class ChittiController:
                     time.sleep(1)
             except (KeyboardInterrupt, SystemExit):
                 log_chitti("Background daemon exiting cleanly...")
+                if self.perception_engine:
+                    self.perception_engine.stop()
                 if self.ambient_listener:
                     self.ambient_listener.stop()
                 if self.vision and self.vision.camera:
@@ -756,6 +820,7 @@ class ChittiController:
         print("   [ENTER]      : Speak to Chitti via Microphone")
         print("   [T] + ENTER  : Type a text message (Keyboard fallback)")
         print("   [V] + ENTER  : Instant Camera Vision Snapshot")
+        print("   [O] + ENTER  : Toggle Autonomous Room Observation Mode")
         print("   [R] + ENTER  : Register a new Person's Face")
         print("   [L] + ENTER  : List all Registered People in Face Database")
         print("   [M] + ENTER  : View all stored persistent long-term memories")
@@ -766,7 +831,7 @@ class ChittiController:
         while True:
             try:
                 try:
-                    raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, R=register, L=list faces, M=memory, C=clear, Q=quit): ").strip()
+                    raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, O=observe, R=register, L=list, M=memory, C=clear, Q=quit): ").strip()
                 except EOFError:
                     time.sleep(1)
                     continue
@@ -775,11 +840,25 @@ class ChittiController:
                 if user_choice in ("q", "quit", "exit", ":q", "qq", "qqq", "q!", "stop"):
                     log_chitti("Shutting down Chitti. Goodbye!")
                     self.speak("Goodbye!")
+                    if self.perception_engine:
+                        self.perception_engine.stop()
                     if self.ambient_listener:
                         self.ambient_listener.stop()
                     if self.vision and self.vision.camera:
                         self.vision.camera.release()
                     break
+
+                if user_choice in ("o", "observe", "watch"):
+                    if self.perception_engine:
+                        if self.perception_engine._is_running:
+                            self.perception_engine.stop()
+                            print("\nChitti: [Room observation mode PAUSED - Privacy mode active]")
+                        else:
+                            self.perception_engine.start()
+                            print("\nChitti: [Room observation mode ACTIVE - Watching for people]")
+                    else:
+                        print("\nChitti: [Autonomous perception engine not available]")
+                    continue
 
                 if user_choice in ("v", "vision", "see"):
                     self.trigger_vision_snapshot()
@@ -835,6 +914,8 @@ class ChittiController:
             except KeyboardInterrupt:
                 print("\n")
                 log_chitti("Session interrupted by user. Exiting cleanly...")
+                if self.perception_engine:
+                    self.perception_engine.stop()
                 if self.ambient_listener:
                     self.ambient_listener.stop()
                 if self.vision and self.vision.camera:

@@ -52,7 +52,7 @@ class STTConfig:
         default_factory=lambda: os.getenv("STT_MODEL", "base")
     )
     requested_device: str = field(
-        default_factory=lambda: os.getenv("STT_DEVICE", "auto")
+        default_factory=lambda: os.getenv("STT_DEVICE", "cpu")
     )
     language: Optional[str] = field(
         default_factory=lambda: (os.getenv("STT_LANGUAGE", "").strip() or None)
@@ -172,6 +172,15 @@ class VisionConfig:
     )
     faces_db_path: str = field(
         default_factory=lambda: os.getenv("FACES_DB_PATH", "data/vision/faces.db")
+    )
+    autonomous_perception: bool = field(
+        default_factory=lambda: os.getenv("AUTONOMOUS_VISION_ENABLED", "true").lower() in ("true", "1", "yes")
+    )
+    perception_fps: float = field(
+        default_factory=lambda: float(os.getenv("PERCEPTION_FPS", "2.0"))
+    )
+    greet_cooldown_seconds: float = field(
+        default_factory=lambda: float(os.getenv("GREET_COOLDOWN_SECONDS", "600"))
     )
 
 
