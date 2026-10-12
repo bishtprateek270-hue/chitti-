@@ -91,6 +91,20 @@ class LaptopAgentManager:
         self.active_task_state: Optional[TaskState] = None
         self.session_context: TaskContext = TaskContext(workspace=self.workspace_dir)
 
+        # Wire with authoritative SystemStateManager
+        from src.core.state_manager import get_state_manager
+        self.state_mgr = get_state_manager()
+        self.state_mgr.register_on_interrupt(self.cancel_active_task)
+        self.state_mgr.register_on_sleep(self.cancel_active_task)
+
+    def cancel_active_task(self):
+        """Immediately cancels any active task or pending action."""
+        if self.active_task_state:
+            self.active_task_state.cancel()
+            self.active_task_state.status = TaskStatus.CANCELLED
+            log_chitti("[AGENT][TASK] Active task cancelled.")
+        self.pending_destructive_action = None
+
     def handle_command(self, user_text: str, lang: str = "en") -> Optional[Tuple[bool, str, Optional[ActionResult]]]:
         """
         Parses and evaluates if the user's message is a single-step or multi-step laptop action command.
@@ -107,18 +121,18 @@ class LaptopAgentManager:
             self.active_task_state = None
             self.pending_destructive_action = None
 
-        # 0. User Interruption / Cancellation
-        if re.search(r"^(?:stop|cancel|abort|pause|ruk\s*jao|chhod\s*do|band\s*karo|don'?t\s+do\s+that)$", lower):
-            if self.active_task_state and self.active_task_state.status in (TaskStatus.EXECUTING, TaskStatus.PLANNING, TaskStatus.WAITING_FOR_CONFIRMATION):
-                if "pause" in lower:
+        # 0. High-Priority User Interruption / Cancellation
+        from src.core.phrase_matcher import get_phrase_matcher, ControlCommand
+        match_cmd = get_phrase_matcher().classify_command(raw)
+        if match_cmd.command == ControlCommand.STOP or re.search(r"^(?:stop|cancel|abort|pause|ruk\s*jao|ruk\s*ja|chhod\s*do|band\s*karo|band\s*kar|don'?t\s+do\s+that)$", lower):
+            if "pause" in lower:
+                if self.active_task_state:
                     self.active_task_state.pause()
-                    log_chitti("[AGENT] Task paused by user.")
-                    return True, "Task has been paused." if lang == "en" else "कार्य रोक दिया गया है।", None
-                else:
-                    self.active_task_state.cancel()
-                    self.pending_destructive_action = None
-                    log_chitti("[AGENT] Task cancelled by user.")
-                    return True, "Task cancelled." if lang == "en" else "कार्य रद्द कर दिया गया है।", None
+                log_chitti("[AGENT] Task paused by user.")
+                return True, "Task has been paused." if lang == "en" else "कार्य रोक दिया गया है।", None
+            else:
+                self.cancel_active_task()
+                return True, "Task cancelled." if lang == "en" else "कार्य रद्द कर दिया गया है।", None
 
         # 1. Handle Pending Confirmation State (Multi-step Resumable Task or Single-step Action)
         if self.active_task_state is not None and self.active_task_state.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION):

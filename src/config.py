@@ -232,6 +232,37 @@ class AgentConfig:
 
 
 @dataclass
+class SystemControlConfig:
+    wake_word_mode: bool = field(
+        default_factory=lambda: os.getenv("WAKE_WORD_MODE", "true").lower() in ("true", "1", "yes")
+    )
+    wake_phrase: str = field(
+        default_factory=lambda: os.getenv("WAKE_PHRASE", "chitti")
+    )
+    enable_hindi_commands: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_HINDI_COMMANDS", "true").lower() in ("true", "1", "yes")
+    )
+    enable_hinglish_commands: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_HINGLISH_COMMANDS", "true").lower() in ("true", "1", "yes")
+    )
+    enable_global_interrupt: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_GLOBAL_INTERRUPT", "true").lower() in ("true", "1", "yes")
+    )
+    stop_tts_on_interrupt: bool = field(
+        default_factory=lambda: os.getenv("STOP_TTS_ON_INTERRUPT", "true").lower() in ("true", "1", "yes")
+    )
+    cancel_tasks_on_sleep: bool = field(
+        default_factory=lambda: os.getenv("CANCEL_TASKS_ON_SLEEP", "true").lower() in ("true", "1", "yes")
+    )
+    clear_speech_queue_on_stop: bool = field(
+        default_factory=lambda: os.getenv("CLEAR_SPEECH_QUEUE_ON_STOP", "true").lower() in ("true", "1", "yes")
+    )
+    allow_user_interruption_during_tts: bool = field(
+        default_factory=lambda: os.getenv("ALLOW_USER_INTERRUPTION_DURING_TTS", "true").lower() in ("true", "1", "yes")
+    )
+
+
+@dataclass
 class AppConfig:
     log_level: str = field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper()
@@ -245,6 +276,7 @@ class AppConfig:
     vision: VisionConfig = field(default_factory=VisionConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
+    system_control: SystemControlConfig = field(default_factory=SystemControlConfig)
 
 
 # Global singleton instance

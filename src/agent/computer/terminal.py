@@ -119,44 +119,93 @@ class TerminalController:
         timeout_sec: float = 30.0,
         env: Optional[Dict[str, str]] = None,
     ) -> TerminalResult:
-        """Executes a command safely via powershell / cmd and captures output."""
+        """Executes a command safely via powershell / cmd with cancellation support and output capture."""
+        from src.core.state_manager import get_state_manager
+        state_mgr = get_state_manager()
+
         risk = self.classify_risk(command)
         work_dir = Path(cwd).resolve() if cwd else self.default_cwd
         if not work_dir.exists():
             work_dir.mkdir(parents=True, exist_ok=True)
 
-        log_info(f"[TERMINAL] Running (Risk: {risk.value}): '{command}' in '{work_dir}'")
+        if state_mgr.is_interrupted() or state_mgr.is_sleeping():
+            log_warn(f"[TERMINAL] Command aborted before execution: system is interrupted/sleeping.")
+            return TerminalResult(
+                command=command,
+                exit_code=-999,
+                stdout="",
+                stderr="Execution cancelled before start.",
+                elapsed_time_sec=0.0,
+                risk_level=risk,
+            )
 
+        log_info(f"[TERMINAL] Running (Risk: {risk.value}): '{command}' in '{work_dir}'")
         start_time = time.time()
+        proc = None
         try:
             # Use PowerShell for rich Windows terminal support
-            process = subprocess.run(
+            proc = subprocess.Popen(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
                 cwd=str(work_dir),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout_sec,
                 env={**os.environ, **(env or {})},
                 errors="replace",
             )
+            state_mgr.register_process(proc)
+
+            # Poll with timeout and cancellation check
+            while True:
+                ret = proc.poll()
+                if ret is not None:
+                    break
+
+                if state_mgr.is_interrupted() or state_mgr.is_sleeping():
+                    log_warn(f"[TERMINAL] Cancellation signal detected during command execution. Terminating...")
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=0.5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=0.5)
+                    elapsed = time.time() - start_time
+                    return TerminalResult(
+                        command=command,
+                        exit_code=-999,
+                        stdout="",
+                        stderr="Command terminated by user stop signal.",
+                        elapsed_time_sec=elapsed,
+                        risk_level=risk,
+                    )
+
+                if (time.time() - start_time) > timeout_sec:
+                    log_warn(f"[TERMINAL] Command timed out after {timeout_sec}s: {command}")
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=0.5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    elapsed = time.time() - start_time
+                    return TerminalResult(
+                        command=command,
+                        exit_code=-1,
+                        stdout="",
+                        stderr=f"Command timed out after {timeout_sec} seconds.",
+                        elapsed_time_sec=elapsed,
+                        risk_level=risk,
+                    )
+
+                time.sleep(0.04)
+
+            stdout, stderr = proc.communicate()
             elapsed = time.time() - start_time
-            log_info(f"[TERMINAL] Finished with exit code {process.returncode} in {elapsed:.2f}s")
+            log_info(f"[TERMINAL] Finished with exit code {proc.returncode} in {elapsed:.2f}s")
             return TerminalResult(
                 command=command,
-                exit_code=process.returncode,
-                stdout=process.stdout,
-                stderr=process.stderr,
-                elapsed_time_sec=elapsed,
-                risk_level=risk,
-            )
-        except subprocess.TimeoutExpired as e:
-            elapsed = time.time() - start_time
-            log_warn(f"[TERMINAL] Command timed out after {timeout_sec}s: {command}")
-            return TerminalResult(
-                command=command,
-                exit_code=-1,
-                stdout=e.stdout or "" if isinstance(e.stdout, str) else "",
-                stderr=f"Command timed out after {timeout_sec} seconds.",
+                exit_code=proc.returncode,
+                stdout=stdout,
+                stderr=stderr,
                 elapsed_time_sec=elapsed,
                 risk_level=risk,
             )
@@ -171,3 +220,6 @@ class TerminalController:
                 elapsed_time_sec=elapsed,
                 risk_level=risk,
             )
+        finally:
+            if proc is not None:
+                state_mgr.unregister_process(proc)

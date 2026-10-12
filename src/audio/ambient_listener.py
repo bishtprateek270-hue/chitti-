@@ -1,7 +1,8 @@
 """
-Chitti Ambient Hands-Free Voice Listener (Phase 5).
+Chitti Ambient Hands-Free Voice Listener & System State Coordinator.
 Orchestrates continuous background wake-word listening, streaming speech recording,
-real-time Dynamic Island HUD state updates, and barge-in speech interruption.
+real-time Dynamic Island HUD state updates, barge-in speech interruption,
+and authoritative SystemStateManager coordination for Mode A (Wake-Word) & Mode B (Continuous).
 """
 
 import enum
@@ -14,6 +15,9 @@ from src.audio.interrupter import BargeInDetector
 from src.audio.streaming_stt import StreamingSTTEngine
 from src.audio.tts import TTSEngine
 from src.audio.wake_word import WakeWordDetector, WakeWordEvent
+from src.config import get_config
+from src.core.phrase_matcher import get_phrase_matcher, ControlCommand
+from src.core.state_manager import get_state_manager, SystemState
 from src.ui.hud_overlay import FloatingHUD, HUDMode
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
 
@@ -31,8 +35,8 @@ class AmbientState(str, enum.Enum):
 class AmbientVoiceListener:
     """
     Coordinates 100% hands-free conversation with Chitti.
-    Runs silently in the background, wakes up on 'Hey Chitti', records speech,
-    hands off command to main pipeline, and speaks response with barge-in support.
+    Runs silently in the background, wakes up on configured wake phrases,
+    enforces sleep/wake state, and routes emergency stops via high-priority fast path.
     """
 
     def __init__(
@@ -53,10 +57,18 @@ class AmbientVoiceListener:
         self.streaming_stt = streaming_stt or StreamingSTTEngine(stt_engine=stt_engine)
         self.barge_in = BargeInDetector()
 
+        self.state_mgr = get_state_manager()
+        self.phrase_matcher = get_phrase_matcher()
+
         self.state = AmbientState.STANDBY
         self._is_running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+
+        # Wire with authoritative state manager
+        self.state_mgr.register_on_sleep(self._on_system_sleep)
+        self.state_mgr.register_on_wake(self._on_system_wake)
+        self.state_mgr.register_on_interrupt(self._on_system_interrupt)
 
     def start(self):
         """Starts the ambient hands-free background loop."""
@@ -70,7 +82,8 @@ class AmbientVoiceListener:
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
 
-        log_chitti("[AMBIENT] 🎙️ Ambient hands-free voice mode active. Say 'Hey Chitti' to interact.")
+        mode_desc = "Wake-Word Mode (Say 'Hey Chitti' to interact)" if self.state_mgr.operating_mode == "wake_word" else "Continuous Assistant Mode"
+        log_chitti(f"[AMBIENT] 🎙️ Ambient hands-free voice mode active: {mode_desc}.")
 
     def stop(self):
         """Stops the ambient hands-free voice listener."""
@@ -80,8 +93,34 @@ class AmbientVoiceListener:
         self.state = AmbientState.STANDBY
         log_debug("[AMBIENT] Ambient voice listener stopped.")
 
+    def _on_system_sleep(self):
+        """Callback when SystemStateManager enters SLEEPING state."""
+        with self._lock:
+            self.state = AmbientState.STANDBY
+        if hasattr(self.tts, "stop"):
+            self.tts.stop()
+        self.barge_in.stop_monitoring()
+        self.wake_detector.resume(cooldown=2.0)
+        if self.hud:
+            self.hud.set_mode(HUDMode.IDLE)
+            self.hud.set_progress("Sleeping (Say 'Hey Chitti' to wake)")
+
+    def _on_system_wake(self):
+        """Callback when SystemStateManager wakes up."""
+        if self.hud:
+            self.hud.set_mode(HUDMode.IDLE)
+            self.hud.set_progress("Awake (Ready)")
+
+    def _on_system_interrupt(self):
+        """Callback when SystemStateManager triggers global interrupt."""
+        if hasattr(self.tts, "stop"):
+            self.tts.stop()
+        self.barge_in.stop_monitoring()
+        if self.hud:
+            self.hud.set_progress("Stopped.")
+
     def _on_wake_word_triggered(self, event: WakeWordEvent):
-        """Triggered automatically ONLY when keyword ('Hey Chitti') is recognized."""
+        """Triggered automatically when a wake phrase is recognized by the detector."""
         with self._lock:
             if self.state != AmbientState.STANDBY:
                 return
@@ -89,7 +128,9 @@ class AmbientVoiceListener:
 
         log_chitti(f"[AMBIENT] ⚡ Wake word spotted: '{event.keyword}'. Transitioning to LISTENING...")
 
-        # Update HUD state to listening and pop up on screen
+        # Transition authoritative state to AWAKE
+        self.state_mgr.wake()
+
         if self.hud:
             self.hud.show()
             self.hud.set_mode(HUDMode.LISTENING)
@@ -117,28 +158,18 @@ class AmbientVoiceListener:
         """Directly processes a command captured alongside the wake word."""
         try:
             self.wake_detector.pause()
-            log_chitti(f"[AMBIENT] 🗣️ User said: '{command_text}'")
-
-            with self._lock:
-                self.state = AmbientState.THINKING
-
-            if self.hud:
-                self.hud.set_mode(HUDMode.THINKING)
-                self.hud.set_progress(f"Processing: '{command_text}'")
-
-            self.command_handler(command_text)
+            self._handle_incoming_transcript(command_text)
         except Exception as e:
             log_warn(f"[AMBIENT] Direct command processing notice: {e}")
         finally:
             self._return_to_standby()
 
     def _record_and_process_speech(self):
-        """Records speech until silence, transcribes, and executes command."""
+        """Records speech until silence, transcribes, and routes through priority handler."""
         try:
             with self._lock:
                 self.state = AmbientState.LISTENING
 
-            # Pause wake word detector during active recording
             self.wake_detector.pause()
 
             # Record and transcribe with streaming VAD
@@ -152,22 +183,90 @@ class AmbientVoiceListener:
                 self._return_to_standby()
                 return
 
-            log_chitti(f"[AMBIENT] 🗣️ User said: '{transcribed_text}'")
-
-            with self._lock:
-                self.state = AmbientState.THINKING
-
-            if self.hud:
-                self.hud.set_mode(HUDMode.THINKING)
-                self.hud.set_progress(f"Processing: '{transcribed_text}'")
-
-            # Dispatch command to Chitti's main pipeline
-            self.command_handler(transcribed_text)
+            self._handle_incoming_transcript(transcribed_text)
 
         except Exception as e:
             log_warn(f"[AMBIENT] Speech processing notice: {e}")
         finally:
             self._return_to_standby()
+
+    def _handle_incoming_transcript(self, transcript: str):
+        """
+        HIGH-PRIORITY FAST PATH ROUTER:
+        Evaluates commands against Priority Hierarchy (Stop > Sleep > Wake > Normal)
+        BEFORE sending any audio or text to the LLM.
+        """
+        raw = transcript.strip()
+        log_chitti(f"[AMBIENT] 🗣️ User said: '{raw}'")
+
+        # Fast-Path Phrase Evaluation
+        match_res = self.phrase_matcher.classify_command(raw)
+
+        # ---------------- PRIORITY 1: GLOBAL STOP / INTERRUPT ----------------
+        if match_res.command == ControlCommand.STOP:
+            log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{match_res.matched_phrase}'")
+            self.state_mgr.interrupt(reason="user_stop")
+            if self.tts and hasattr(self.tts, "stop"):
+                self.tts.stop()
+            if self.hud:
+                self.hud.set_mode(HUDMode.IDLE)
+                self.hud.set_progress("Stopped.")
+                self.hud.set_response("Ruk gaya.")
+            # Speak brief stop confirmation if awake
+            if self.tts:
+                try:
+                    self.tts.speak("Ruk gaya.", wait=False)
+                except Exception:
+                    pass
+            return
+
+        # ---------------- PRIORITY 2: SLEEP COMMAND ----------------
+        if match_res.command == ControlCommand.SLEEP:
+            log_chitti(f"[CHITTI][CONTROL] 😴 SLEEP command recognized: '{match_res.matched_phrase}'")
+            self.state_mgr.sleep()
+            if self.tts and hasattr(self.tts, "stop"):
+                self.tts.stop()
+            if self.hud:
+                self.hud.set_mode(HUDMode.IDLE)
+                self.hud.set_progress("Sleeping (Say 'Hey Chitti' to wake)")
+                self.hud.set_response("Sleeping...")
+            return
+
+        # ---------------- PRIORITY 3: WAKE COMMAND ----------------
+        if match_res.command == ControlCommand.WAKE:
+            log_chitti(f"[CHITTI][CONTROL] ⚡ WAKE command recognized: '{match_res.matched_phrase}'")
+            self.state_mgr.wake()
+            if self.hud:
+                self.hud.set_mode(HUDMode.IDLE)
+                self.hud.set_progress("Awake (Haan, boliye)")
+                self.hud.set_response("Haan, boliye.")
+
+            if match_res.extracted_tail:
+                # User said wake phrase + command together (e.g. "Chitti open Chrome")
+                self._handle_incoming_transcript(match_res.extracted_tail)
+            else:
+                if self.tts:
+                    try:
+                        self.tts.speak("Haan, boliye.", wait=False)
+                    except Exception:
+                        pass
+            return
+
+        # ---------------- PRIORITY 4: NORMAL USER COMMAND ----------------
+        # Guard: If Chitti is SLEEPING, ignore ordinary speech entirely!
+        if self.state_mgr.is_sleeping():
+            log_debug(f"[CHITTI][SLEEP] Ignored ordinary conversation while SLEEPING: '{raw}'")
+            return
+
+        with self._lock:
+            self.state = AmbientState.THINKING
+
+        if self.hud:
+            self.hud.set_mode(HUDMode.THINKING)
+            self.hud.set_progress(f"Processing: '{raw}'")
+
+        # Dispatch command to Chitti's main pipeline
+        self.command_handler(raw)
 
     def _on_audio_chunk(self, chunk: np.ndarray, energy: float):
         """Feeds audio energy into HUD visualizer if available."""
@@ -180,6 +279,7 @@ class AmbientVoiceListener:
     def speak_with_barge_in(self, text: str):
         """
         Plays speech through TTS with active barge-in monitoring so user can interrupt.
+        Prevents Chitti from hearing its own speech as commands while allowing user interruptions.
         """
         if not self.tts or not text:
             return
@@ -192,6 +292,7 @@ class AmbientVoiceListener:
 
         def interrupt_callback():
             log_chitti("[AMBIENT] ✋ Speech interrupted by user barge-in!")
+            self.state_mgr.interrupt(reason="barge_in")
             if hasattr(self.tts, "stop"):
                 self.tts.stop()
 
@@ -205,6 +306,7 @@ class AmbientVoiceListener:
     def go_to_sleep(self):
         """Immediately stops ongoing speech and puts ambient listener in quiet standby."""
         log_chitti("[AMBIENT] 😴 Entering quiet standby mode. Say 'Hey Chitti' or press Alt+Space to wake.")
+        self.state_mgr.sleep()
         if self.tts and hasattr(self.tts, "stop"):
             self.tts.stop()
         self.barge_in.stop_monitoring()
@@ -220,7 +322,7 @@ class AmbientVoiceListener:
         with self._lock:
             self.state = AmbientState.STANDBY
 
-        self.wake_detector.resume(cooldown=2.0)
+        self.wake_detector.resume(cooldown=1.5)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")

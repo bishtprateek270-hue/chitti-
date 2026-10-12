@@ -93,6 +93,14 @@ class ChittiController:
         self.perception_engine = None
         self.rl_policy = PolicyOptimizer()
 
+        # Core Centralized State & Global Priority Control Architecture
+        from src.core.state_manager import get_state_manager, SystemState
+        from src.core.phrase_matcher import get_phrase_matcher, ControlCommand
+        from src.audio.tts import get_speech_controller
+        self.state_manager = get_state_manager()
+        self.phrase_matcher = get_phrase_matcher()
+        self.speech_controller = get_speech_controller(self.config.tts)
+
     def initialize(self):
         """Initializes all hardware and AI subsystems."""
         print(BANNER)
@@ -261,6 +269,9 @@ class ChittiController:
         """Speaks the response using TTS with real-time barge-in interruption."""
         if not text:
             return
+        if self.state_manager.is_sleeping():
+            log_debug(f"[CHITTI][TTS] Suppressed speech while sleeping: '{text}'")
+            return
         if self.ambient_listener:
             try:
                 self.ambient_listener.speak_with_barge_in(text)
@@ -281,6 +292,69 @@ class ChittiController:
             return
 
         print(f"\nYou: {user_text}")
+
+        # -1. HIGH-PRIORITY CONTROL INTERCEPTOR (Emergency Stop, Sleep, Wake)
+        from src.core.phrase_matcher import ControlCommand
+        control_res = self.phrase_matcher.classify_command(user_text)
+
+        # ---------------- PRIORITY 1: EMERGENCY STOP ----------------
+        if control_res.command == ControlCommand.STOP:
+            log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{control_res.matched_phrase}'")
+            self.state_manager.interrupt(reason="user_stop")
+            if self.tts:
+                self.tts.stop()
+            if self.agent:
+                self.agent.cancel_active_task()
+            if self.ambient_listener:
+                self.ambient_listener.state_mgr.interrupt(reason="user_stop")
+            resp = "Ruk gaya."
+            print(f"\nChitti: {resp}")
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            if self.tts:
+                try:
+                    self.tts.speak(resp, wait=False)
+                except Exception:
+                    pass
+            return
+
+        # ---------------- PRIORITY 2: SLEEP COMMAND ----------------
+        if control_res.command == ControlCommand.SLEEP:
+            log_chitti(f"[CHITTI][CONTROL] 😴 SLEEP command received: '{control_res.matched_phrase}'")
+            self.state_manager.sleep()
+            if self.tts:
+                self.tts.stop()
+            if self.agent:
+                self.agent.cancel_active_task()
+            if self.ambient_listener:
+                self.ambient_listener.go_to_sleep()
+            if self.hud:
+                self.hud.set_response("Sleeping (Say 'Hey Chitti' to wake)")
+                self.hud.set_mode(HUDMode.IDLE)
+            print("\nChitti: [Silent Standby - Say 'Hey Chitti' to wake]")
+            return
+
+        # ---------------- PRIORITY 3: WAKE COMMAND ----------------
+        if control_res.command == ControlCommand.WAKE:
+            log_chitti(f"[CHITTI][CONTROL] ⚡ WAKE command received: '{control_res.matched_phrase}'")
+            self.state_manager.wake()
+            resp = "Haan, boliye."
+            print(f"\nChitti: {resp}")
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            if control_res.extracted_tail:
+                self.process_user_input(control_res.extracted_tail)
+                return
+            self.speak(resp)
+            return
+
+        # ---------------- PRIORITY 4: SLEEP GUARD ----------------
+        if self.state_manager.is_sleeping():
+            log_debug(f"[CHITTI][SLEEP] Ignored input while sleeping: '{user_text}'")
+            print("\nChitti: [Sleeping - Say 'Hey Chitti' to wake]")
+            return
 
         # 0. Multilingual Understanding & Intent Normalization (Phase 4)
         parsed_intent = self.language_normalizer.parse_intent(user_text)

@@ -46,7 +46,14 @@ class WakeWordDetector:
     """
 
     DEFAULT_KEYWORDS = [
-        "hey chitti", "chitti", "ok chitti", "hello chitti", "suno chitti", "chitti suno",
+        # English
+        "chitti", "hey chitti", "wake up chitti", "chitti wake up", "ok chitti", "hello chitti",
+        # Hindi
+        "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti sun", "chitti suno",
+        "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "जाग जा चिट्टी",
+        # Hinglish
+        "hey chitti suno", "chitti active ho ja", "chitti active ho jao", "active ho ja chitti",
+        # Phonetic & Accent variations
         "chia", "chiya", "chitu", "chittu", "chiti", "chitty", "cheeti", "citi", "kitty"
     ]
 
@@ -59,6 +66,9 @@ class WakeWordDetector:
         cooldown_seconds: float = 1.5,
         stt_engine: Optional[Any] = None,
     ):
+        from src.core.phrase_matcher import get_phrase_matcher
+        self.phrase_matcher = get_phrase_matcher()
+
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self.keywords = [k.lower().strip() for k in (keywords or self.DEFAULT_KEYWORDS)]
@@ -275,18 +285,24 @@ class WakeWordDetector:
             try:
                 snippet_text = self.stt_engine.transcribe(current_window).lower().strip()
                 if snippet_text:
-                    for kw in self.keywords:
-                        if kw in snippet_text:
-                            matched = True
-                            matched_kw = kw.title()
-                            confidence = 0.95
-
-                            # Extract any following command (e.g. "hey chitti open chrome" -> "open chrome")
-                            idx = snippet_text.find(kw)
-                            after_kw = snippet_text[idx + len(kw):].strip(" ,.-!?")
-                            if len(after_kw) >= 2:
-                                extracted_command = after_kw
-                            break
+                    from src.core.phrase_matcher import ControlCommand
+                    phrase_res = self.phrase_matcher.classify_command(snippet_text)
+                    if phrase_res.command == ControlCommand.WAKE:
+                        matched = True
+                        matched_kw = phrase_res.matched_phrase.title()
+                        confidence = phrase_res.confidence
+                        extracted_command = phrase_res.extracted_tail
+                    else:
+                        for kw in self.keywords:
+                            if kw in snippet_text:
+                                matched = True
+                                matched_kw = kw.title()
+                                confidence = 0.95
+                                idx = snippet_text.find(kw)
+                                after_kw = snippet_text[idx + len(kw):].strip(" ,.-!?")
+                                if len(after_kw) >= 2:
+                                    extracted_command = after_kw
+                                break
             except Exception:
                 pass
 

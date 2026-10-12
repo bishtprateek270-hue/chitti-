@@ -657,11 +657,15 @@ class ComputerAgentLoop:
         step_count = 0
         last_search_results: List[str] = []
 
+        from src.core.state_manager import get_state_manager
+        state_mgr = get_state_manager()
+
         while state.current_step_index < len(state.steps) and step_count < max_steps:
-            # Check for user cancellation
-            if state.is_cancelled:
+            # Check for user cancellation or global interrupt
+            if state.is_cancelled or state_mgr.is_interrupted() or state_mgr.is_sleeping():
+                state.cancel()
                 state.status = TaskStatus.CANCELLED
-                log_warn("[AGENT LOOP] Task cancelled by user.")
+                log_warn("[AGENT LOOP] Task cancelled by user interrupt or state manager.")
                 return False, "Task execution was cancelled."
 
             # Check for user pause
@@ -817,6 +821,12 @@ class ComputerAgentLoop:
 
     def _execute_step_action(self, step: AgentStep, state: TaskState, search_cache: List[str]) -> Tuple[bool, str, Optional[str]]:
         """Executes a single step action with strict honest verification."""
+        from src.core.state_manager import get_state_manager
+        state_mgr = get_state_manager()
+        if state_mgr.is_interrupted() or state_mgr.is_sleeping() or state.is_cancelled:
+            state.cancel()
+            return False, "Action cancelled due to user stop signal.", None
+
         act = step.action_type
         params = step.parameters
 
