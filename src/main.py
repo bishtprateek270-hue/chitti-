@@ -902,11 +902,28 @@ class ChittiController:
         print("   [Q] + ENTER  : Quit Chitti")
         print("------------------------------------------------------------------\n")
 
+        is_daemon = "--daemon" in sys.argv or sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty()
+        if is_daemon:
+            log_chitti("Chitti is active in 24/7 background mode. Say 'Hey Chitti' or press Alt+Space to interact.")
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+            finally:
+                if self.perception_engine:
+                    self.perception_engine.stop()
+                if self.ambient_listener:
+                    self.ambient_listener.stop()
+                if self.vision and self.vision.camera:
+                    self.vision.camera.release()
+            return
+
         while True:
             try:
                 try:
                     raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, O=observe, R=register, L=list, M=memory, C=clear, Q=quit): ").strip()
-                except EOFError:
+                except (EOFError, OSError):
                     time.sleep(1)
                     continue
                 user_choice = raw_input_line.lower()
