@@ -378,9 +378,11 @@ class LanguageNormalizer:
             canonical_desc = []
             for act in app_actions:
                 if act.is_negated:
-                    canonical_desc.append(f"Do not {act.action.replace('_', ' ')} {act.target}")
+                    verb = "open" if act.action == "open_application" else "close" if act.action == "close_application" else act.action.replace('_', ' ')
+                    canonical_desc.append(f"Do not {verb} {act.target}")
                 else:
-                    canonical_desc.append(f"{act.action.replace('_', ' ').capitalize()} {act.target}")
+                    verb = "Open" if act.action == "open_application" else "Close" if act.action == "close_application" else act.action.replace('_', ' ').capitalize()
+                    canonical_desc.append(f"{verb} {act.target}")
 
             return NormalizedIntent(
                 raw_text=raw_text,

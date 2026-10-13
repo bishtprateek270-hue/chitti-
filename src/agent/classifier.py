@@ -132,6 +132,8 @@ class TaskClassifier:
         """
         raw = cls._normalize_text(user_text.strip())
         lower = raw.lower()
+        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean_lower = clean.lower()
 
         # 1. Check for Personal & Identity Queries
         if any(re.search(pat, raw) for pat in cls.PERSONAL_PATTERNS):
@@ -241,10 +243,10 @@ class TaskClassifier:
             )
 
         # 6. Check for Dedicated Computer Control / App Launch / Browser / Messaging
-        if any(re.search(pat, raw) for pat in cls.COMPUTER_CONTROL_PATTERNS):
-            if any(w in lower for w in ["whatsapp", "youtube", "song", "gaana", "browser", "chrome", "web", "gmail", "message", "telegram", "slack"]):
+        if any(re.search(pat, raw) for pat in cls.COMPUTER_CONTROL_PATTERNS) or any(re.search(pat, clean) for pat in cls.COMPUTER_CONTROL_PATTERNS):
+            if any(w in lower or w in clean_lower for w in ["whatsapp", "youtube", "song", "gaana", "browser", "chrome", "web", "gmail", "message", "telegram", "slack"]):
                 intent = TaskIntent.BROWSER_TASK
-            elif "folder" in lower or "file" in lower or "desktop" in lower or "delete" in lower:
+            elif "folder" in lower or "folder" in clean_lower or "file" in lower or "desktop" in lower or "delete" in lower:
                 intent = TaskIntent.FILE_OPERATION
             else:
                 intent = TaskIntent.COMPUTER_TASK

@@ -36,14 +36,32 @@ class ActionValidator:
         # 3. Action-Specific Validations
         if action.action == ActionType.OPEN_APPLICATION:
             app_target = action.parameters["target"]
-            resolved = AppDiscovery.resolve_application(app_target)
+            # Strip redundant words like "application", "app", "the"
+            import re
+            clean_target = re.sub(r"(?i)^(?:application|app|the|my|a|an)\s+", "", app_target).strip()
+            action.parameters["target"] = clean_target
+
+            resolved = AppDiscovery.resolve_application(clean_target)
             if not resolved:
-                log_warning(f"[AGENT] Validation: FAILED | Reason: Application '{app_target}' could not be resolved on Windows.")
-                return False, f"I couldn't find '{app_target}' on this computer.", None
+                # Check if target is a web URL, website, or mapped web service (YouTube, Google, WhatsApp, etc.)
+                from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
+                if ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP:
+                    target_url = ResourceDiscovery.to_url(clean_target)
+                    log_chitti(f"[AGENT] Re-routing web target '{clean_target}' from OPEN_APPLICATION to OPEN_URL: {target_url}")
+                    action.action = ActionType.OPEN_URL
+                    action.parameters["url"] = target_url
+                    action.parameters["site_name"] = clean_target.title()
+                    return True, "Validation successful.", action
+
+                log_warning(f"[AGENT] Validation: FAILED | Reason: Application '{clean_target}' could not be resolved on Windows.")
+                return False, f"I couldn't find '{clean_target}' on this computer.", None
             action.parameters["resolved_app"] = resolved
 
         elif action.action == ActionType.CLOSE_APPLICATION:
+            import re
             app_target = action.parameters["target"]
+            app_target = re.sub(r"(?i)^(?:application|app|the|my|a|an)\s+", "", app_target).strip()
+            action.parameters["target"] = app_target
             # Basic validation of target string
             if not app_target or len(app_target) < 2:
                 return False, "Please specify a valid application name to close.", None

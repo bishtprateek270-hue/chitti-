@@ -132,7 +132,7 @@ class ActionIntentAnalyzer:
         lower = normalized.lower()
 
         # Clean conversational prefixes and trailing fillers
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
         clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
@@ -650,13 +650,14 @@ class ActionIntentAnalyzer:
         # 8. DYNAMIC RESOURCE & APPLICATION OPENING ("open X", "launch X", "start X", "X kholo", "X chalao")
         # -------------------------------------------------------------
         # English verb-first pattern: "open X", "launch X", "start X", "run X"
-        m_open_en = re.search(r"(?i)^(?:open|launch|start|run|visit|go\s+to|show)\s+(?:the\s+|app\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
+        m_open_en = re.search(r"(?i)^(?:open|launch|start|run|visit|go\s+to|show)\s+(?:the\s+|application\s+|app\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
         # Hindi/Hinglish target-first pattern: "X kholo", "X chalao", "X open karo"
         m_open_hi = re.search(r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|dikhao|खोलो|चलाओ|दिखाओ)\s*[.!?]?$", clean)
 
         m_open = m_open_en or m_open_hi
         if m_open:
             raw_target = m_open.group(1).strip().rstrip(".!? \t\n")
+            raw_target = re.sub(r"(?i)^(?:application|app|the|my|a|an)\s+", "", raw_target).strip()
 
             # Reject compound instructions that belong to multi-step planning or project generation
             if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type|implement|banao|likho)\b", raw_target):
@@ -686,7 +687,9 @@ class ActionIntentAnalyzer:
                 )
 
             # Check if this target is a URL / Website / Web Service
-            if ResourceDiscovery.is_url(raw_target) or "browser" in clean_lower or "website" in clean_lower or "site" in clean_lower or "web" in clean_lower:
+            from src.agent.registry import DEFAULT_URL_MAP
+            clean_target_lower = raw_target.lower()
+            if ResourceDiscovery.is_url(raw_target) or clean_target_lower in DEFAULT_URL_MAP or "browser" in clean_lower or "website" in clean_lower or "site" in clean_lower or "web" in clean_lower:
                 target_url = ResourceDiscovery.to_url(raw_target)
                 site_name = raw_target.title()
                 return ActionIntent(

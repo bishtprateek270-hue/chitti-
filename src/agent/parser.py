@@ -22,7 +22,7 @@ class ActionParser:
         lower = raw.lower()
 
         # Clean Chitti invocation prefix if present & trailing fillers
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
         clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
@@ -182,7 +182,7 @@ class ActionParser:
             )
 
         for site_name, url in DEFAULT_URL_MAP.items():
-            if re.search(rf"(?i)(?:^open\s+{site_name}|^{site_name}\s+(?:kholo|chalao|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
+            if re.search(rf"(?i)(?:^open\s+(?:the\s+|my\s+|application\s+|app\s+|website\s+|site\s+)?{site_name}\b|\bopen\s+{site_name}\b|^{site_name}\s+(?:kholo|chalao|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
                 return StructuredAction(
                     action=ActionType.OPEN_URL,
                     parameters={"url": url, "site_name": site_name.title()},
@@ -227,18 +227,20 @@ class ActionParser:
             r"(?i)^([A-Za-z0-9_\-\.\:\/\s]+?)(?:\s+ko|\s+app)?\s+(?:kholo|chalao|open\s+karo|chala\s+do|dikhao|खोलो|चलाओ|दिखाओ)(?:\s+|$|[.,!?])",
             clean
         )
-        m_app_en = re.search(r"(?i)^(?:open|launch|start|run|show)\s+(?:the\s+|app\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
+        m_app_en = re.search(r"(?i)^(?:open|launch|start|run|show)\s+(?:the\s+|application\s+|app\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\.\:\/\s]+)$", clean)
 
         m_app_match = m_app_hi or m_app_en
         if m_app_match:
             target_str = m_app_match.group(1).strip().rstrip(".!? \t\n")
+            target_str = re.sub(r"(?i)^(?:application|app|the|my|a|an)\s+", "", target_str).strip()
 
             # Exclude compound phrases containing conjunctions or complex sub-actions
             if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type)\b", target_str):
                 return None
 
-            # Check if target is a web URL/domain
-            if ResourceDiscovery.is_url(target_str):
+            # Check if target is a web URL/domain or known web service
+            clean_target_lower = target_str.lower()
+            if ResourceDiscovery.is_url(target_str) or clean_target_lower in DEFAULT_URL_MAP:
                 url_val = ResourceDiscovery.to_url(target_str)
                 return StructuredAction(
                     action=ActionType.OPEN_URL,

@@ -328,6 +328,10 @@ class AppDiscovery:
             log_debug(f"[APP_DISCOVERY] Fuzzy matched '{clean_no_ext}' -> '{matched_name}'")
             return cls.resolve_application(matched_name)
 
+        # Do not treat known web services as local executables if no local executable exists
+        if clean_no_ext in DEFAULT_URL_MAP:
+            return None
+
         # Fallback: if it's a simple alphanumeric name, allow standard Windows shell execution
         if re.match(r"^[a-zA-Z0-9_\-]+$", clean_no_ext):
             return clean_no_ext
