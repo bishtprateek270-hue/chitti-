@@ -180,7 +180,7 @@ class StreamingSTTEngine:
 
         # Assemble full audio: pre-speech buffer + recorded speech chunks (all 16kHz)
         with self._lock:
-            if not self._recorded_chunks:
+            if not self._recorded_chunks or state.speech_frames < min_speech_frames:
                 return np.array([], dtype=np.float32)
 
             recorded_body = np.concatenate(self._recorded_chunks)
@@ -210,7 +210,7 @@ class StreamingSTTEngine:
 
         peak_amp = float(np.max(np.abs(audio)))
         rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-        if peak_amp < 0.004 and rms_val < 0.0008:
+        if peak_amp < 0.012 and rms_val < 0.0018:
             log_debug(f"[STREAMING STT] Audio energy too faint (peak={peak_amp:.3f}, rms={rms_val:.3f}). Discarded as silence.")
             return ""
 

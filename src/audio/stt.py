@@ -52,6 +52,8 @@ WHISPER_HALLUCINATION_PATTERNS = [
     r"(?i)\b(?:humans\s+are\s+so\s+hard|oh\s+julian)\b",
     r"(?i)\b(?:is\s+there\s+something\s+else\s+I\s+can\s+assist|respectful\s+manner|play\s+one\s+Jolly)\b",
     r"(?i)\b(?:have\s+fun\s+coding|see\s+you\s+in\s+the\s+next\s+video)\b",
+    r"(?i)\b(?:c'mon|we're gonna have a good time|have a good time)\b",
+    r"(?i)\b(?:kholna hai bhejna hai|ckko kholna|we are next)\b",
     r"(?i)^\[.*\]$",  # e.g. [Music], [Applause], [Silence]
 ]
 
@@ -229,6 +231,13 @@ class WhisperSTT(STTEngine):
             if max_val > 1.0:
                 audio = audio / 32768.0
 
+            # Guard against silence / faint background hiss to prevent hallucinations
+            peak_val = float(np.max(np.abs(audio)))
+            rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
+            if peak_val < 0.012 and rms_val < 0.0015:
+                log_debug(f"[WHISPER] Audio energy too faint (peak={peak_val:.4f}, rms={rms_val:.4f}). Returning empty.")
+                return ""
+
         if isinstance(audio, Path):
             audio = str(audio)
 
@@ -239,13 +248,7 @@ class WhisperSTT(STTEngine):
             "verbose": False,
             "temperature": 0.0,
             "condition_on_previous_text": False,
-            "initial_prompt": (
-                "Chitti, Hey Chitti, open Chrome, Notepad, VS Code, "
-                "yaar kal jo Python project banaya tha usko kholna, "
-                "this code is not working can you figure out why, "
-                "Rahul ko message bhejna hai, simple website bana do, "
-                "screen pe error dekho, volume kam karo, so jao, ruk jao."
-            ),
+            "initial_prompt": "Chitti, Hey Chitti.",
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
@@ -258,6 +261,15 @@ class WhisperSTT(STTEngine):
                 else:
                     result = self._model.transcribe(audio, **options)
             text = result.get("text", "").strip()
+
+            # Reject if Whisper detected silence or low confidence across segments
+            segments = result.get("segments", [])
+            if segments:
+                high_no_speech = all(s.get("no_speech_prob", 0.0) > 0.55 for s in segments)
+                low_logprob = all(s.get("avg_logprob", 0.0) < -1.1 for s in segments)
+                if high_no_speech or low_logprob:
+                    log_debug(f"Rejected Whisper low-confidence hallucination: '{text}'")
+                    return ""
 
             if self.is_hallucination(text):
                 log_debug(f"Rejected Whisper hallucination: '{text}'")

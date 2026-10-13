@@ -420,6 +420,19 @@ class AmbientVoiceListener:
             self.hud.hide()
         self.wake_detector.resume(cooldown=4.0)
 
+    def resume(self, cooldown: float = 1.0):
+        """Resumes ambient listening after proactive greeting or interruption."""
+        with self._lock:
+            self.state = AmbientState.STANDBY
+
+        if self.wake_detector:
+            self.wake_detector.resume(cooldown=cooldown)
+        if self.hud:
+            self.hud.set_mode(HUDMode.IDLE)
+            self.hud.set_progress("")
+            if self.state_mgr.is_sleeping():
+                self.hud.hide()
+
     def _return_to_standby(self):
         """Resets the state machine back to passive standby."""
         with self._lock:
