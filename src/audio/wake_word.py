@@ -90,13 +90,13 @@ class WakeWordDetector:
         self._audio_queue: queue.Queue = queue.Queue(maxsize=100)
         self._worker_thread: Optional[threading.Thread] = None
 
-        # Ring buffer for sliding audio window (1.2 seconds)
-        self._buffer_size = int(self.sample_rate * 1.2)
+        # Ring buffer for sliding audio window (2.0 seconds)
+        self._buffer_size = int(self.sample_rate * 2.0)
         self._audio_buffer = np.zeros(self._buffer_size, dtype=np.float32)
         self._buffer_lock = threading.Lock()
 
         # Background noise baseline tracking
-        self._noise_floor = 0.008
+        self._noise_floor = 0.005
         self._calibrated = False
 
     def start(self, callback: Optional[Callable[[WakeWordEvent], None]] = None, device_index: Optional[int] = None):
@@ -233,8 +233,8 @@ class WakeWordDetector:
         elif rms < 0.010:
             self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
 
-        # Speech onset gate calibrated for laptop array mic (RMS >= 0.0028)
-        min_voice_rms = max(0.0028, self._noise_floor * 1.25)
+        # Speech onset gate calibrated for laptop array mic and earbud headsets (RMS >= 0.0018)
+        min_voice_rms = max(0.0018, self._noise_floor * 1.15)
         if rms < min_voice_rms:
             return None
 
@@ -245,15 +245,10 @@ class WakeWordDetector:
 
         # 2. Strict Verification via STT Engine when available
         if self.stt_engine:
-            # Debounce STT checks to at most once per 0.40s
-            if now - self._last_stt_check_time < 0.40:
+            # Debounce STT checks to at most once per 0.35s
+            if now - self._last_stt_check_time < 0.35:
                 return None
             self._last_stt_check_time = now
-
-            # Ignore fan, static, and ambient room noise by requiring human voice pitch periodicity
-            acoustic_score = self._evaluate_acoustic_signature(current_window)
-            if acoustic_score < 0.35:
-                return None
 
             try:
                 snippet_text = self.stt_engine.transcribe(current_window).lower().strip()
@@ -320,7 +315,21 @@ class WakeWordDetector:
         # 1. Human vocal pitch periodicity check (80Hz - 350Hz)
         min_lag = int(self.sample_rate / 350)  # ~45 samples
         max_lag = int(self.sample_rate / 80)   # ~200 samples
-        seg = audio[-int(self.sample_rate * 0.4):]
+        seg_len = int(self.sample_rate * 0.4)
+        if len(audio) <= seg_len:
+            seg = audio
+        else:
+            step = int(self.sample_rate * 0.1)
+            best_seg = audio[-seg_len:]
+            best_en = 0.0
+            for start in range(0, len(audio) - seg_len + 1, step):
+                cand = audio[start : start + seg_len]
+                en = float(np.mean(cand**2))
+                if en > best_en:
+                    best_en = en
+                    best_seg = cand
+            seg = best_seg
+
         seg = seg - np.mean(seg)
         norm = np.sum(seg**2)
         if norm < 1e-6:
@@ -329,7 +338,7 @@ class WakeWordDetector:
         corr = np.correlate(seg, seg, mode="full")[len(seg) - 1 :] / norm
         pitch_corr = float(np.max(corr[min_lag:max_lag])) if len(corr) > max_lag else 0.0
 
-        if pitch_corr < 0.25:
+        if pitch_corr < 0.20:
             return 0.0
 
         # 2. Syllable Envelope

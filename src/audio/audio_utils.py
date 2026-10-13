@@ -42,35 +42,63 @@ def resample_to_16k(audio: np.ndarray, orig_sr: int) -> np.ndarray:
     return resampled
 
 
-def get_best_input_device(preferred_index: Optional[int] = None) -> Tuple[Optional[int], int]:
+def get_best_input_device(preferred_index: Optional[int] = None, force_refresh: bool = False) -> Tuple[Optional[int], int]:
     """
-    Finds and caches the best working microphone device index and its native sample rate.
-    Avoids expensive device querying on every audio capture.
+    Finds the best working microphone device index and its native sample rate.
+    Prioritizes the Windows system default input device (e.g. connected earbuds or headset).
     """
     global _CACHED_INPUT_DEVICE, _CACHED_SAMPLE_RATE
 
     if preferred_index is not None:
+        if HAS_SOUNDDEVICE and sd:
+            try:
+                dev = sd.query_devices(preferred_index)
+                return preferred_index, int(dev.get("default_samplerate", 16000))
+            except Exception:
+                pass
         return preferred_index, 16000
 
-    if _CACHED_INPUT_DEVICE is not None:
+    if not force_refresh and _CACHED_INPUT_DEVICE is not None:
         return _CACHED_INPUT_DEVICE, _CACHED_SAMPLE_RATE
 
     if not HAS_SOUNDDEVICE or not sd:
         return None, 16000
 
     try:
+        # 1. Prioritize Windows system default input device (user's chosen mic / connected earbuds)
+        try:
+            default_idx = int(sd.default.device[0])
+            if default_idx >= 0:
+                d = sd.query_devices(default_idx)
+                if d.get("max_input_channels", 0) > 0:
+                    native_sr = int(d.get("default_samplerate", 44100))
+                    for rate in [native_sr, 44100, 48000, 16000]:
+                        try:
+                            test_samples = int(rate * 0.04)
+                            data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=default_idx)
+                            sd.wait()
+                            rms = float(np.sqrt(np.mean(data**2)))
+                            if np.isfinite(rms):
+                                _CACHED_INPUT_DEVICE = default_idx
+                                _CACHED_SAMPLE_RATE = rate
+                                return default_idx, rate
+                        except Exception:
+                            continue
+        except Exception:
+            pass
+
+        # 2. Search all physical input devices (skipping virtual mappers & stereo mix)
         devices = sd.query_devices()
         candidates = []
         for idx, d in enumerate(devices):
             if d.get("max_input_channels", 0) > 0:
                 name = d.get("name", "").lower()
-                # Skip virtual speakers / stereo mix
-                if "speaker" in name or "stereo mix" in name or "output" in name:
+                # Skip virtual speakers, sound mapper, and stereo mix unless no alternative
+                if any(k in name for k in ("speaker", "stereo mix", "output", "mapper")):
                     continue
                 native_sr = int(d.get("default_samplerate", 44100))
                 candidates.append((idx, native_sr, d.get("name", "")))
 
-        # Test candidates to verify openability
         for dev_idx, native_sr, d_name in candidates:
             for rate in [native_sr, 44100, 48000, 16000]:
                 try:
@@ -85,11 +113,10 @@ def get_best_input_device(preferred_index: Optional[int] = None) -> Tuple[Option
                 except Exception:
                     continue
 
-        # Fallback to default device
-        _CACHED_INPUT_DEVICE = None
+        # 3. Fallback: try device index 0
+        _CACHED_INPUT_DEVICE = 0
         _CACHED_SAMPLE_RATE = 16000
-        return None, 16000
-
+        return 0, 16000
     except Exception:
         _CACHED_INPUT_DEVICE = None
         _CACHED_SAMPLE_RATE = 16000
