@@ -1141,6 +1141,23 @@ class ChittiController:
 
 def main():
     """Application entry point with Single-Instance Mutex lock."""
+    # Check for restart or kill flags to clean up background processes
+    if any(arg in sys.argv for arg in ("--restart", "--kill", "--force")):
+        if sys.platform == "win32":
+            import subprocess
+            try:
+                subprocess.run(
+                    ["powershell", "-Command", "Get-Process pythonw -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*src*main*' -or $_.CommandLine -like '*main.py*' } | Stop-Process -Force"],
+                    capture_output=True,
+                    check=False,
+                )
+            except Exception:
+                pass
+            time.sleep(0.5)
+        if "--kill" in sys.argv:
+            print("[OK] Stopped any background Chitti instances.")
+            return
+
     # Win32 Single-Instance Mutex (Prevents duplicate processes & acoustic echo loops)
     mutex = None
     if sys.platform == "win32":
@@ -1151,7 +1168,9 @@ def main():
             mutex = kernel32.CreateMutexW(None, False, "Local\\Chitti_AI_Companion_Mutex")
             if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
                 print("\n[INFO] Chitti is already running in the background.")
-                print("Press Alt+Space or say 'Hey Chitti' to interact.\n")
+                print("Press Alt+Space or say 'Hey Chitti' to interact.")
+                print("Hint: To terminate the background instance and run here in the console, run:")
+                print("      python -m src.main --restart\n")
                 if mutex:
                     kernel32.CloseHandle(mutex)
                 sys.exit(0)
