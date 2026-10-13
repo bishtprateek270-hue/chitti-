@@ -41,14 +41,14 @@ class AmbientVoiceListener:
 
     def __init__(
         self,
-        command_handler: Callable[[str], None],
+        command_handler: Callable[..., Any],
         tts_engine: Optional[TTSEngine] = None,
         stt_engine: Optional[Any] = None,
         streaming_stt: Optional[StreamingSTTEngine] = None,
         wake_detector: Optional[WakeWordDetector] = None,
         hud: Optional[FloatingHUD] = None,
     ):
-        self.command_handler = command_handler
+        self.command_handler: Callable[..., Any] = command_handler
         self.tts = tts_engine
         self.stt = stt_engine
         self.hud = hud

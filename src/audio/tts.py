@@ -43,7 +43,7 @@ class TTSEngine(ABC):
     """Abstract interface for Text-to-Speech engines."""
 
     @abstractmethod
-    def speak(self, text: str, wait: bool = True) -> None:
+    def speak(self, text: str, wait: bool = True, request_id: Optional[int] = None) -> None:
         """Synthesizes and speaks text."""
         pass
 
@@ -338,14 +338,14 @@ class Pyttsx3TTS(TTSEngine):
             log_warning(f"Could not query TTS voices: {e}")
             return []
 
-    def speak(self, text: str, wait: bool = True) -> None:
+    def speak(self, text: str, wait: bool = True, request_id: Optional[int] = None) -> None:
         """Speaks the given text using local SAPI5."""
         clean_text = sanitize_text_for_speech(text)
         if not clean_text:
             return
 
         state_mgr = get_state_manager()
-        if state_mgr.is_sleeping():
+        if not state_mgr.can_speak(request_id):
             return
 
         self._cancel_requested.clear()
@@ -417,7 +417,7 @@ class HybridTTS(TTSEngine):
                 log_debug(f"[HYBRID TTS] Edge Neural TTS exception, falling back: {e}")
 
         # Fallback to local SAPI5
-        self.fallback_tts.speak(text, wait=wait)
+        self.fallback_tts.speak(text, wait=wait, request_id=request_id)
 
     def list_voices(self) -> List[Dict[str, Any]]:
         """Returns list of voices available."""
