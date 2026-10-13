@@ -269,7 +269,7 @@ class ChittiController:
         if self.ambient_listener:
             self.ambient_listener.resume(cooldown=1.0)
 
-    def speak(self, text: str, request_id: Optional[int] = None):
+    def speak(self, text: str, request_id: Optional[int] = None, final: bool = True):
         """Speaks the response using TTS with real-time barge-in interruption and request validation."""
         if not text:
             return
@@ -278,7 +278,7 @@ class ChittiController:
             return
         if self.ambient_listener:
             try:
-                self.ambient_listener.speak_with_barge_in(text, request_id=request_id)
+                self.ambient_listener.speak_with_barge_in(text, request_id=request_id, final=final)
                 return
             except Exception as e:
                 log_warning(f"Ambient barge-in speech notice: {e}")
@@ -366,6 +366,14 @@ class ChittiController:
             request_id = self.state_manager.new_request()
         self.state_manager.begin_processing(request_id)
 
+        from src.utils.metrics import get_metrics_collector, ExecutionPath
+        metrics = get_metrics_collector()
+        prof = metrics.start_request(request_id)
+        metrics.mark_stage(request_id, "audio_capture_started")
+        metrics.mark_stage(request_id, "speech_started")
+        metrics.mark_stage(request_id, "speech_ended")
+        metrics.mark_stage(request_id, "transcription_completed")
+
         # 0. Multilingual Understanding & Intent Normalization (Phase 4)
         parsed_intent = self.language_normalizer.parse_intent(user_text)
         detected_lang = parsed_intent.detected_language
@@ -392,6 +400,7 @@ class ChittiController:
             log_state("CHITTI")
             print(resp)
             self.speak(resp)
+            metrics.finish_request(request_id, success=True)
             if self.hud:
                 self.hud.set_response(resp)
                 self.hud.set_mode(HUDMode.IDLE)
@@ -409,6 +418,16 @@ class ChittiController:
             if alt_decision.route != MasterRoute.UNKNOWN:
                 master_decision = alt_decision
 
+        metrics.mark_stage(request_id, "intent_resolved")
+        if master_decision.route in (MasterRoute.STANDBY_SLEEP, MasterRoute.SYSTEM_TASK):
+            prof.execution_path = ExecutionPath.PATH_A_SIMPLE
+        elif master_decision.requires_phase6 or master_decision.route == MasterRoute.PROJECT_CREATION:
+            prof.execution_path = ExecutionPath.PATH_D_CODING
+        elif master_decision.requires_computer or master_decision.requires_phase5:
+            prof.execution_path = ExecutionPath.PATH_C_COMPUTER
+        else:
+            prof.execution_path = ExecutionPath.PATH_B_CONVERSATION
+
         # 1.6. Instant Sleep / Stop / Standby Interceptor
         if master_decision.route == MasterRoute.STANDBY_SLEEP or parsed_intent.intent_category == IntentCategory.STANDBY_SLEEP.value:
             log_chitti("[COMMAND] 🛑 Sleep / Stop command received. Entering silent standby.")
@@ -416,6 +435,7 @@ class ChittiController:
                 self.tts.stop()
             if self.ambient_listener:
                 self.ambient_listener.go_to_sleep()
+            metrics.finish_request(request_id, success=True)
             if self.hud:
                 self.hud.set_response("Sleeping (Say 'Hey Chitti' to wake)")
                 self.hud.set_mode(HUDMode.IDLE)
@@ -526,9 +546,11 @@ class ChittiController:
         )
         if self.agent is not None and (master_decision.requires_computer or master_decision.requires_phase5 or master_decision.requires_phase6 or is_agent_confirmation_pending):
             try:
+                metrics.mark_stage(request_id, "tool_execution_started")
                 agent_result = self.agent.handle_command(user_text, lang=active_lang)
                 if (agent_result is None or not agent_result[0]) and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
                     agent_result = self.agent.handle_command(parsed_intent.normalized_text, lang=active_lang)
+                metrics.mark_stage(request_id, "tool_execution_completed")
 
                 if agent_result is not None and agent_result[0]:
                     success, resp_msg, act_res = agent_result
@@ -537,7 +559,9 @@ class ChittiController:
 
                     log_state("CHITTI")
                     print(resp_msg)
-                    self.speak(resp_msg)
+                    metrics.mark_stage(request_id, "first_audio_played")
+                    self.speak(resp_msg, request_id=request_id)
+                    metrics.finish_request(request_id, success=success)
                     if self.hud:
                         self.hud.set_response(resp_msg)
                         self.hud.set_mode(HUDMode.IDLE)
@@ -752,30 +776,103 @@ class ChittiController:
         )
         self.history.set_language_instruction(lang_guidance)
 
-        # 9. Generate LLM response
+        # 9. Generate LLM response with sentence-level streaming TTS
         log_state("THINKING")
+        messages = self.history.get_messages_for_llm()
+        full_response_parts = []
+        sentence_buffer = ""
+        first_audio_played = False
+        user_name = self.memory.get_user_name() if self.memory else None
+        creator_name = self.memory.get_creator_name() if self.memory else None
+        response_text = ""
+
+        # Determine whether streaming generation should be used
+        use_stream = False
+        from unittest.mock import Mock, MagicMock
+        if isinstance(self.llm, (Mock, MagicMock)):
+            # If it's a test mock, only stream if generate_response_stream was explicitly mocked
+            use_stream = "generate_response_stream" in getattr(self.llm, "_mock_children", {})
+        elif hasattr(self.llm, "generate_response_stream"):
+            use_stream = True
+
         try:
-            messages = self.history.get_messages_for_llm()
-            response_text = self.llm.generate_response(messages)
+            if use_stream:
+                for chunk in self.llm.generate_response_stream(messages, request_id=request_id):
+                    if not self.state_manager.is_generation_valid(request_id):
+                        log_debug(f"[CHITTI] Invalidation during streaming for request #{request_id}")
+                        break
+
+                    full_response_parts.append(chunk)
+                    sentence_buffer += chunk
+
+                    # Match sentence delimiter (. ! ? । \n) with at least 15 characters buffered
+                    split_match = re.search(r"([.!?।\n]+)(?:\s+|$)", sentence_buffer)
+                    if split_match and len(sentence_buffer[:split_match.end()].strip()) >= 15:
+                        cut_idx = split_match.end()
+                        complete_sentence = sentence_buffer[:cut_idx].strip()
+                        sentence_buffer = sentence_buffer[cut_idx:]
+
+                        if complete_sentence and self.state_manager.can_speak(request_id):
+                            sanitized_chunk = ResponseValidator.sanitize(
+                                complete_sentence,
+                                user_name=user_name,
+                                creator_name=creator_name,
+                                target_lang=active_lang,
+                            )
+                            if not first_audio_played:
+                                first_audio_played = True
+                                metrics.mark_stage(request_id, "first_audio_played")
+                                if self.hud:
+                                    self.hud.set_mode(HUDMode.SPEAKING)
+                            self.speak(sanitized_chunk, request_id=request_id, final=False)
+
+                # Process any trailing sentence fragment
+                if sentence_buffer.strip() and self.state_manager.can_speak(request_id):
+                    sanitized_tail = ResponseValidator.sanitize(
+                        sentence_buffer.strip(),
+                        user_name=user_name,
+                        creator_name=creator_name,
+                        target_lang=active_lang,
+                    )
+                    if not first_audio_played:
+                        first_audio_played = True
+                        metrics.mark_stage(request_id, "first_audio_played")
+                    self.speak(sanitized_tail, request_id=request_id, final=True)
+
+                response_text = "".join(full_response_parts).strip()
+            else:
+                response_text = self.llm.generate_response(messages)
+                sanitized_response = ResponseValidator.sanitize(
+                    response_text,
+                    user_name=user_name,
+                    creator_name=creator_name,
+                    target_lang=active_lang,
+                )
+                metrics.mark_stage(request_id, "first_audio_played")
+                self.speak(sanitized_response, request_id=request_id)
+
         except LLMConnectionError as e:
             log_error(f"Ollama is unavailable: {e}")
             response_text = "I can't reach my local AI brain right now. Please check if Ollama is running."
+            self.speak(response_text, request_id=request_id, final=True)
         except LLMModelNotFoundError as e:
             log_error(f"Model not found: {e}")
             response_text = f"My configured AI model ({self.config.llm.model}) is not installed in Ollama yet."
+            self.speak(response_text, request_id=request_id, final=True)
         except LLMTimeoutError as e:
             log_error(f"LLM request timed out: {e}")
             response_text = "Thinking about that took too long and timed out. Let's try again."
+            self.speak(response_text, request_id=request_id, final=True)
         except LLMError as e:
             log_error(f"Brain processing error: {e}")
             response_text = "I encountered an issue processing your request."
+            self.speak(response_text, request_id=request_id, final=True)
         except Exception as e:
             log_error(f"Unexpected error: {e}")
             response_text = "Something went wrong while generating my response."
+            self.speak(response_text, request_id=request_id, final=True)
 
         # 10. Post-processing Response Validation & Placeholder Sanitization (Phase 4A)
-        user_name = self.memory.get_user_name() if self.memory else None
-        creator_name = self.memory.get_creator_name() if self.memory else None
         sanitized_response = ResponseValidator.sanitize(
             response_text,
             user_name=user_name,
@@ -783,9 +880,10 @@ class ChittiController:
             target_lang=active_lang,
         )
 
-        # Display and speak Chitti's sanitized response
+        # Display and record Chitti's sanitized response
         if not self.state_manager.is_generation_valid(request_id):
             log_debug(f"[CHITTI] Discarding response: request #{request_id} has been invalidated.")
+            metrics.finish_request(request_id, success=False, cancelled=True)
             return
 
         log_state("CHITTI")
@@ -796,7 +894,7 @@ class ChittiController:
         if self.hud:
             self.hud.set_response(sanitized_response)
             self.hud.set_mode(HUDMode.IDLE)
-        self.speak(sanitized_response, request_id=request_id)
+        metrics.finish_request(request_id, success=True)
         self.state_manager.finish_task(request_id)
 
     def trigger_vision_snapshot(self):

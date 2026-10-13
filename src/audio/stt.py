@@ -239,12 +239,16 @@ class WhisperSTT(STTEngine):
             "verbose": False,
             "temperature": 0.0,
             "condition_on_previous_text": False,
-            "initial_prompt": "Chitti, Hey Chitti, open Chrome, Notepad, VS Code, read screen, summarize document, mera naam, help me, screen p kya chal rha h.",
+            "initial_prompt": (
+                "Chitti, Hey Chitti, open Chrome, Notepad, VS Code, "
+                "yaar kal jo Python project banaya tha usko kholna, "
+                "this code is not working can you figure out why, "
+                "Rahul ko message bhejna hai, simple website bana do, "
+                "screen pe error dekho, volume kam karo, so jao, ruk jao."
+            ),
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
-        else:
-            options["language"] = "en"
 
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -283,25 +287,32 @@ class HybridSTT(STTEngine):
         """Preloads local engine for instant offline fallback readiness."""
         self.whisper_stt.preload()
 
-    def transcribe(self, audio: Union[np.ndarray, str, Path]) -> str:
+    def transcribe(self, audio: Union[np.ndarray, str, Path], request_id: Optional[int] = None) -> str:
         """Transcribes audio with Google Speech first, seamlessly falling back to Whisper."""
+        from src.utils.metrics import get_metrics_collector
+        metrics = get_metrics_collector()
+        metrics.mark_stage(request_id, "transcription_started")
+
+        transcribed_text = ""
         # 1. Try Google High-Accuracy Speech Recognition
         try:
             text = self.google_stt.transcribe(audio)
             if text and text.strip():
                 log_info(f"[STT] Transcribed: '{text}'")
-                return text.strip()
+                transcribed_text = text.strip()
         except Exception as e:
             log_debug(f"[HYBRID STT] Google STT exception: {e}")
 
         # 2. Local Whisper Offline Fallback
-        log_debug("[HYBRID STT] Falling back to local Whisper STT engine...")
-        whisper_text = self.whisper_stt.transcribe(audio)
-        if whisper_text and whisper_text.strip():
-            log_info(f"[STT (Whisper Fallback)] Transcribed: '{whisper_text}'")
-            return whisper_text.strip()
+        if not transcribed_text:
+            log_debug("[HYBRID STT] Falling back to local Whisper STT engine...")
+            whisper_text = self.whisper_stt.transcribe(audio)
+            if whisper_text and whisper_text.strip():
+                log_info(f"[STT (Whisper Fallback)] Transcribed: '{whisper_text}'")
+                transcribed_text = whisper_text.strip()
 
-        return ""
+        metrics.mark_stage(request_id, "transcription_completed")
+        return transcribed_text
 
 
 def get_stt(config: Optional[STTConfig] = None) -> STTEngine:

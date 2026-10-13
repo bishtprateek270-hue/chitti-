@@ -259,6 +259,61 @@ class MasterRouter:
                 explanation="User querying personal identity, memories, creator, or relationships",
             )
 
+        # 3.5. Semantic Natural Intent Resolution (English, Hindi, Hinglish)
+        try:
+            from src.router.intent_engine import NaturalIntentEngine, IntentType
+            sem = NaturalIntentEngine.analyze(user_text)
+
+            if sem.intent == IntentType.OPEN_PROJECT:
+                return cls._make_decision(
+                    route=MasterRoute.PROJECT_EXECUTION,
+                    confidence=sem.confidence,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=True,
+                    explanation=f"Natural request to open project: {sem.target}",
+                    metadata={"target": sem.target, "project_path": sem.parameters.get("project_path")},
+                )
+
+            if sem.intent == IntentType.DEBUG_CODE:
+                return cls._make_decision(
+                    route=MasterRoute.VISION_TASK,
+                    confidence=sem.confidence,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=False,
+                    explanation="Natural request to inspect and debug code on screen",
+                    metadata={"target": sem.target},
+                )
+
+            if sem.intent == IntentType.SEND_MESSAGE and sem.recipient and sem.content:
+                return cls._make_decision(
+                    route=MasterRoute.BROWSER_TASK,
+                    confidence=sem.confidence,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=False,
+                    explanation=f"Natural request to message {sem.recipient}",
+                    metadata={"recipient": sem.recipient, "content": sem.content, "channel": sem.channel},
+                )
+
+            if sem.intent == IntentType.COMPLEX_TASK:
+                return cls._make_decision(
+                    route=MasterRoute.COMPUTER_TASK,
+                    confidence=sem.confidence,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=False,
+                    explanation="Complex multi-step task requiring planner and verification",
+                    metadata={"task": sem.goal},
+                )
+        except Exception as e:
+            log_debug(f"[MASTER ROUTER] Semantic intent error: {e}")
+
         # 4. Check for Dedicated Project Modification / Debugging / Execution
         for pat, action_route in cls.PROJECT_ACTION_PATTERNS:
             if re.search(pat, clean):

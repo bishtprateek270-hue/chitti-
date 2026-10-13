@@ -137,6 +137,76 @@ class ActionIntentAnalyzer:
         clean_lower = clean.lower()
 
         # -------------------------------------------------------------
+        # 0. NATURAL INTENT ENGINE INTEGRATION (English, Hindi, Hinglish)
+        # -------------------------------------------------------------
+        try:
+            from src.router.intent_engine import NaturalIntentEngine, IntentType
+            sem = NaturalIntentEngine.analyze(user_text)
+
+            if sem.intent == IntentType.OPEN_PROJECT:
+                proj_name = sem.target or "Project"
+                proj_path = sem.parameters.get("project_path") or proj_name
+                return ActionIntent(
+                    intent=ActionIntentType.OPEN_APPLICATION,
+                    goal=sem.goal,
+                    channel="Desktop",
+                    application="Visual Studio Code",
+                    target=proj_name,
+                    destination=str(proj_path),
+                    parameters={"application": "Visual Studio Code", "target": proj_name, "path": str(proj_path)},
+                    execution_required=True,
+                    verification_required=True,
+                )
+
+            if sem.intent == IntentType.DEBUG_CODE:
+                return ActionIntent(
+                    intent=ActionIntentType.DIAGNOSE_SCREEN_ERROR,
+                    goal=sem.goal,
+                    channel="Vision Grounding",
+                    application="Screen Vision",
+                    target="Active Code",
+                    parameters={"query": clean},
+                    execution_required=True,
+                    verification_required=True,
+                )
+
+            if sem.intent == IntentType.SEND_MESSAGE and sem.recipient and sem.content:
+                contact = sem.recipient
+                msg = sem.content
+                channel = sem.channel or "WhatsApp"
+                app = "WhatsApp Web" if channel == "WhatsApp" else channel
+                base_url = "https://web.whatsapp.com" if channel == "WhatsApp" else f"https://{channel.lower()}.com"
+                return ActionIntent(
+                    intent=ActionIntentType.SEND_MESSAGE,
+                    goal=sem.goal,
+                    channel=channel,
+                    application=app,
+                    target=contact,
+                    recipient=contact,
+                    destination=contact,
+                    content=msg,
+                    parameters={"url": base_url, "contact": contact, "search_contact": clean_contact_query(contact), "text": msg},
+                    execution_required=True,
+                    requires_browser=True,
+                    requires_authentication=True,
+                    requires_confirmation=False,
+                    verification_required=True,
+                )
+
+            if sem.intent == IntentType.CREATE_PROJECT and not bool(re.search(r"(?i)^(?:how\s+(?:do\s+i|can\s+i|to)|why\s+would|what\s+is)\b", clean_lower)):
+                return ActionIntent(
+                    intent=ActionIntentType.CREATE_PROJECT,
+                    goal=sem.goal,
+                    channel="Development",
+                    target=sem.target or "Project",
+                    parameters={"task": clean},
+                    execution_required=True,
+                    verification_required=True,
+                )
+        except Exception as e:
+            log_debug(f"[ACTION INTENT] Semantic intent notice: {e}")
+
+        # -------------------------------------------------------------
         # 1. EMAIL DRAFTING vs EMAIL SENDING
         # -------------------------------------------------------------
         email_addr_match = re.search(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", clean)

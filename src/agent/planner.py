@@ -201,7 +201,18 @@ class AgentPlanner:
 
 
 
-        # 6. VS CODE + PROJECT OPENING COMMANDS
+        # 6. VS CODE + PROJECT OPENING COMMANDS (Natural & Explicit)
+        if intent.intent == ActionIntentType.OPEN_APPLICATION and intent.application == "Visual Studio Code" and intent.parameters.get("path"):
+            proj_name = intent.target or "Project"
+            proj_path = str(intent.parameters.get("path"))
+            state.steps = [
+                AgentStep(step_id=1, description=f"Resolve project path for {proj_name}", action_type="RESOLVE_PROJECT", parameters={"name": proj_name, "path": proj_path}),
+                AgentStep(step_id=2, description=f"Launch VS Code with project {proj_name}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [proj_path]}, depends_on=[1]),
+                AgentStep(step_id=3, description="Verify VS Code is open", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}, depends_on=[2]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
         m_vscode_proj = re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\b", clean) or \
                         re.search(r"(?i)\bopen\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\s+in\s+(?:vs\s*code|vscode)\b", clean) or \
                         re.search(r"(?i)\bmera\s+([A-Za-z0-9_\-]+)\s+project\s+vs\s*code\s+me(?:in)?\s+kholo\b", clean)

@@ -296,10 +296,11 @@ class AmbientVoiceListener:
             except Exception:
                 pass
 
-    def speak_with_barge_in(self, text: str, request_id: Optional[int] = None):
+    def speak_with_barge_in(self, text: str, request_id: Optional[int] = None, final: bool = True):
         """
         Plays speech through TTS with active barge-in monitoring so user can interrupt.
         Prevents Chitti from hearing its own speech as commands while allowing user interruptions.
+        Supports streaming sentence chunks via the final parameter.
         """
         if not self.tts or not text:
             return
@@ -333,9 +334,10 @@ class AmbientVoiceListener:
                 self.tts.speak(text, wait=True)
         finally:
             self.barge_in.stop_monitoring()
-            time.sleep(0.4)  # 400ms acoustic dampening to absorb room echo
-            state_mgr.finish_task(request_id)
-            self._return_to_standby()
+            if final:
+                time.sleep(0.3)  # acoustic dampening to absorb room echo
+                state_mgr.finish_task(request_id)
+                self._return_to_standby()
 
     def go_to_sleep(self):
         """Immediately stops ongoing speech and puts ambient listener in quiet standby."""
