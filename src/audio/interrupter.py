@@ -42,14 +42,16 @@ class BargeInDetector:
 
         self._is_active = False
         self._stream: Optional[Any] = None
-        self._on_interrupt: Optional[Callable[[], None]] = None
+        self._on_interrupt: Optional[Callable[..., None]] = None
         self._hit_count = 0
+        self._hit_chunks: list = []
+        self._interruption_audio: Optional[np.ndarray] = None
         self._start_time = 0.0
         self._lock = threading.Lock()
 
     def start_monitoring(
         self,
-        on_interrupt: Callable[[], None],
+        on_interrupt: Callable[..., None],
         device_index: Optional[int] = None,
     ):
         """Starts real-time microphone monitoring during TTS playback."""
@@ -58,6 +60,8 @@ class BargeInDetector:
 
         self._on_interrupt = on_interrupt
         self._hit_count = 0
+        self._hit_chunks.clear()
+        self._interruption_audio = None
         self._start_time = time.time()
         self._is_active = True
 
@@ -75,6 +79,11 @@ class BargeInDetector:
             capture_service = get_audio_capture_service()
             capture_service.unsubscribe("barge_in")
         log_debug("[BARGE-IN] Monitoring stopped.")
+
+    def get_interruption_audio(self) -> Optional[np.ndarray]:
+        """Returns the pre-buffered audio captured at the moment of user interruption."""
+        with self._lock:
+            return self._interruption_audio
 
     def _is_voiced(self, chunk: np.ndarray) -> bool:
         """Verifies fundamental human voice pitch periodicity (80-350Hz)."""
@@ -111,16 +120,28 @@ class BargeInDetector:
         with self._lock:
             if rms >= self.energy_threshold and self._is_voiced(chunk):
                 self._hit_count += 1
+                self._hit_chunks.append(chunk.copy())
                 if self._hit_count >= self.consecutive_frames:
                     log_chitti("[BARGE-IN] 🛑 Deliberate user interruption detected! Stopping speech playback.")
                     self._is_active = False
-                    if self._on_interrupt:
+                    self._interruption_audio = np.concatenate(self._hit_chunks) if self._hit_chunks else None
+                    cb = self._on_interrupt
+                    inter_audio = self._interruption_audio
+
+                    if cb:
                         try:
-                            self._on_interrupt()
+                            cb(inter_audio)
+                        except TypeError:
+                            try:
+                                cb()
+                            except Exception as e:
+                                log_debug(f"[BARGE-IN] Interrupt callback notice: {e}")
                         except Exception as e:
                             log_debug(f"[BARGE-IN] Interrupt callback notice: {e}")
             else:
                 self._hit_count = max(0, self._hit_count - 1)
+                if self._hit_count == 0 and len(self._hit_chunks) > 10:
+                    self._hit_chunks.clear()
 
     def process_frame(self, chunk: np.ndarray) -> bool:
         """

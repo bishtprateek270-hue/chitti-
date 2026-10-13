@@ -198,7 +198,11 @@ class MasterRouter:
         return normalize_typos(text)
 
     @classmethod
-    def classify_request(cls, user_text: str) -> MasterRouteDecision:
+    def classify_request(
+        cls,
+        user_text: str,
+        conversation_history: Optional[List[Any]] = None,
+    ) -> MasterRouteDecision:
         """
         Classifies the incoming user text into a structured MasterRouteDecision.
         """
@@ -262,7 +266,7 @@ class MasterRouter:
         # 3.5. Semantic Natural Intent Resolution (English, Hindi, Hinglish)
         try:
             from src.router.intent_engine import NaturalIntentEngine, IntentType
-            sem = NaturalIntentEngine.analyze(user_text)
+            sem = NaturalIntentEngine.analyze(user_text, conversation_history=conversation_history)
 
             if sem.intent == IntentType.OPEN_PROJECT:
                 return cls._make_decision(
@@ -310,6 +314,30 @@ class MasterRouter:
                     requires_phase6=False,
                     explanation="Complex multi-step task requiring planner and verification",
                     metadata={"task": sem.goal},
+                )
+
+            if sem.intent == IntentType.FILE_OPERATION:
+                return cls._make_decision(
+                    route=MasterRoute.FILE_OPERATION,
+                    confidence=sem.confidence,
+                    requires_memory=False,
+                    requires_computer=True,
+                    requires_phase5=True,
+                    requires_phase6=False,
+                    explanation=f"File operation request: {sem.goal}",
+                    metadata={"target": sem.target, "action": sem.parameters.get("action")},
+                )
+
+            if sem.intent == IntentType.TECHNICAL_QUERY:
+                return cls._make_decision(
+                    route=MasterRoute.TECHNICAL_KNOWLEDGE,
+                    confidence=sem.confidence,
+                    requires_memory=False,
+                    requires_computer=False,
+                    requires_phase5=False,
+                    requires_phase6=False,
+                    explanation=f"Technical query or concept explanation: {sem.goal}",
+                    metadata={"topic": sem.target, "refinement": sem.parameters.get("refinement")},
                 )
         except Exception as e:
             log_debug(f"[MASTER ROUTER] Semantic intent error: {e}")

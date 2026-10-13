@@ -70,12 +70,17 @@ class StreamingSTTEngine:
         self.silence_threshold = 0.010
         self._adaptive_floor = 0.005
 
+    def stop_recording(self):
+        """Immediately halts active recording loop."""
+        self._is_recording = False
+
     def record_until_silence(
         self,
         on_speech_start: Optional[Callable[[], None]] = None,
         on_chunk: Optional[Callable[[np.ndarray, float], None]] = None,
         timeout: Optional[float] = None,
         device_index: Optional[int] = None,
+        initial_audio: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """
         Synchronously streams and records microphone input until the user stops speaking.
@@ -94,6 +99,12 @@ class StreamingSTTEngine:
         self._pre_buffer.fill(0)
         self._is_recording = True
         speech_started = False
+
+        if initial_audio is not None and len(initial_audio) > 0:
+            self._recorded_chunks.append(initial_audio.astype(np.float32))
+            state.is_speaking = True
+            state.speech_frames = max(2, len(initial_audio) // self.chunk_size)
+            speech_started = True
 
         capture_service = get_audio_capture_service()
         if not capture_service.is_running():
@@ -181,6 +192,7 @@ class StreamingSTTEngine:
         on_speech_start: Optional[Callable[[], None]] = None,
         on_chunk: Optional[Callable[[np.ndarray, float], None]] = None,
         device_index: Optional[int] = None,
+        initial_audio: Optional[np.ndarray] = None,
     ) -> str:
         """
         Records the user's voice with real-time streaming VAD and immediately transcribes.
@@ -190,6 +202,7 @@ class StreamingSTTEngine:
             on_speech_start=on_speech_start,
             on_chunk=on_chunk,
             device_index=device_index,
+            initial_audio=initial_audio,
         )
 
         if len(audio) < int(self.sample_rate * 0.25):

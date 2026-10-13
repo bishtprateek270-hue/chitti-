@@ -20,11 +20,16 @@ class SystemState(str, enum.Enum):
     STARTING = "STARTING"
     SLEEPING = "SLEEPING"
     AWAKE = "AWAKE"
-    LISTENING = "LISTENING"
+    IDLE_LISTENING = "IDLE_LISTENING"
+    LISTENING = "LISTENING"          # Backwards-compatible alias / active listening state
+    USER_SPEAKING = "USER_SPEAKING"
+    TRANSCRIBING = "TRANSCRIBING"
     PROCESSING = "PROCESSING"
     EXECUTING = "EXECUTING"
-    SPEAKING = "SPEAKING"
+    CHITTI_SPEAKING = "CHITTI_SPEAKING"
+    SPEAKING = "SPEAKING"            # Backwards-compatible alias / active speech state
     INTERRUPTING = "INTERRUPTING"
+    ERROR_RECOVERY = "ERROR_RECOVERY"
     STOPPING = "STOPPING"
 
 
@@ -49,43 +54,115 @@ class SystemStateManager:
         SystemState.SLEEPING: {SystemState.AWAKE, SystemState.INTERRUPTING, SystemState.STOPPING},
         SystemState.AWAKE: {
             SystemState.LISTENING,
+            SystemState.IDLE_LISTENING,
+            SystemState.USER_SPEAKING,
             SystemState.PROCESSING,
             SystemState.EXECUTING,
             SystemState.SPEAKING,
+            SystemState.CHITTI_SPEAKING,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+            SystemState.ERROR_RECOVERY,
+        },
+        SystemState.IDLE_LISTENING: {
+            SystemState.USER_SPEAKING,
+            SystemState.LISTENING,
+            SystemState.TRANSCRIBING,
+            SystemState.PROCESSING,
+            SystemState.AWAKE,
             SystemState.SLEEPING,
             SystemState.INTERRUPTING,
             SystemState.STOPPING,
         },
         SystemState.LISTENING: {
+            SystemState.IDLE_LISTENING,
+            SystemState.USER_SPEAKING,
+            SystemState.TRANSCRIBING,
             SystemState.PROCESSING,
             SystemState.AWAKE,
             SystemState.SLEEPING,
             SystemState.INTERRUPTING,
             SystemState.STOPPING,
         },
-        SystemState.PROCESSING: {
-            SystemState.EXECUTING,
-            SystemState.SPEAKING,
-            SystemState.AWAKE,
-            SystemState.SLEEPING,
-            SystemState.INTERRUPTING,
-            SystemState.STOPPING,
-        },
-        SystemState.EXECUTING: {
-            SystemState.SPEAKING,
-            SystemState.AWAKE,
-            SystemState.SLEEPING,
-            SystemState.INTERRUPTING,
-            SystemState.STOPPING,
-        },
-        SystemState.SPEAKING: {
+        SystemState.USER_SPEAKING: {
+            SystemState.TRANSCRIBING,
+            SystemState.PROCESSING,
+            SystemState.IDLE_LISTENING,
             SystemState.LISTENING,
             SystemState.AWAKE,
             SystemState.SLEEPING,
             SystemState.INTERRUPTING,
             SystemState.STOPPING,
         },
-        SystemState.INTERRUPTING: {SystemState.AWAKE, SystemState.SLEEPING, SystemState.STOPPING},
+        SystemState.TRANSCRIBING: {
+            SystemState.PROCESSING,
+            SystemState.USER_SPEAKING,
+            SystemState.IDLE_LISTENING,
+            SystemState.LISTENING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+            SystemState.ERROR_RECOVERY,
+        },
+        SystemState.PROCESSING: {
+            SystemState.EXECUTING,
+            SystemState.SPEAKING,
+            SystemState.CHITTI_SPEAKING,
+            SystemState.IDLE_LISTENING,
+            SystemState.LISTENING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+            SystemState.ERROR_RECOVERY,
+        },
+        SystemState.EXECUTING: {
+            SystemState.SPEAKING,
+            SystemState.CHITTI_SPEAKING,
+            SystemState.IDLE_LISTENING,
+            SystemState.LISTENING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+            SystemState.ERROR_RECOVERY,
+        },
+        SystemState.SPEAKING: {
+            SystemState.IDLE_LISTENING,
+            SystemState.LISTENING,
+            SystemState.USER_SPEAKING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+        },
+        SystemState.CHITTI_SPEAKING: {
+            SystemState.IDLE_LISTENING,
+            SystemState.LISTENING,
+            SystemState.USER_SPEAKING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.INTERRUPTING,
+            SystemState.STOPPING,
+        },
+        SystemState.INTERRUPTING: {
+            SystemState.USER_SPEAKING,
+            SystemState.IDLE_LISTENING,
+            SystemState.LISTENING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.STOPPING,
+            SystemState.PROCESSING,
+        },
+        SystemState.ERROR_RECOVERY: {
+            SystemState.IDLE_LISTENING,
+            SystemState.LISTENING,
+            SystemState.AWAKE,
+            SystemState.SLEEPING,
+            SystemState.STOPPING,
+        },
         SystemState.STOPPING: set(),
     }
 
@@ -331,6 +408,67 @@ class SystemStateManager:
                 return False
             return self.set_state(SystemState.LISTENING)
 
+    def begin_idle_listening(self) -> bool:
+        """Transitions state to IDLE_LISTENING for hands-free turn-taking."""
+        with self._lock:
+            if self._state == SystemState.SLEEPING:
+                log_warning("[CHITTI][STATE] Rejected begin_idle_listening: System is SLEEPING.")
+                return False
+            return self.set_state(SystemState.IDLE_LISTENING)
+
+    def begin_user_speaking(self, gen_id: Optional[int] = None) -> bool:
+        """Transitions state to USER_SPEAKING when user vocal speech is detected."""
+        with self._lock:
+            if self._state == SystemState.SLEEPING:
+                log_warning("[CHITTI][STATE] Rejected begin_user_speaking: System is SLEEPING.")
+                return False
+            return self.set_state(SystemState.USER_SPEAKING)
+
+    def begin_transcribing(self, gen_id: Optional[int] = None) -> bool:
+        """Transitions state to TRANSCRIBING while converting speech to text."""
+        with self._lock:
+            if self._state == SystemState.SLEEPING:
+                return False
+            return self.set_state(SystemState.TRANSCRIBING)
+
+    def begin_error_recovery(self) -> bool:
+        """Transitions state to ERROR_RECOVERY on unexpected audio or pipeline fault."""
+        with self._lock:
+            return self.set_state(SystemState.ERROR_RECOVERY)
+
+    def start_conversation_session(self, timeout_seconds: float = 10.0):
+        """Activates continuous turn-taking conversation session with auto-expiry window."""
+        with self._lock:
+            self._conversation_session_active = True
+            self._conversation_expiry_time = time.time() + timeout_seconds
+            log_debug(f"[CHITTI][CONVERSATION] Active conversation session started ({timeout_seconds:.1f}s window).")
+
+    def refresh_conversation_session(self, timeout_seconds: float = 10.0):
+        """Refreshes conversational timeout after a successful turn."""
+        with self._lock:
+            if getattr(self, "_conversation_session_active", False):
+                self._conversation_expiry_time = time.time() + timeout_seconds
+
+    def is_in_conversation_session(self) -> bool:
+        """Returns True if the system is in an active turn-taking conversation window."""
+        with self._lock:
+            if not getattr(self, "_conversation_session_active", False):
+                return False
+            if self._state == SystemState.SLEEPING:
+                self._conversation_session_active = False
+                return False
+            if time.time() > getattr(self, "_conversation_expiry_time", 0.0):
+                self._conversation_session_active = False
+                log_debug("[CHITTI][CONVERSATION] Conversation session window expired -> returning to passive standby.")
+                return False
+            return True
+
+    def end_conversation_session(self):
+        """Closes the conversational turn-taking session."""
+        with self._lock:
+            self._conversation_session_active = False
+            self._conversation_expiry_time = 0.0
+
     def begin_processing(self, gen_id: Optional[int] = None) -> bool:
         """Transitions state to PROCESSING. Verifies generation ID and sleeping state."""
         with self._lock:
@@ -348,7 +486,7 @@ class SystemStateManager:
             return self.set_state(SystemState.EXECUTING)
 
     def begin_speaking(self, gen_id: Optional[int] = None) -> bool:
-        """Transitions state to SPEAKING. Strictly rejects if sleeping or interrupted."""
+        """Transitions state to SPEAKING / CHITTI_SPEAKING. Strictly rejects if sleeping or interrupted."""
         with self._lock:
             if not self.can_speak(gen_id):
                 log_warning(f"[CHITTI][STATE] Rejected begin_speaking: Speech disallowed for gen #{gen_id} (state={self._state.value})")
@@ -356,12 +494,26 @@ class SystemStateManager:
             return self.set_state(SystemState.SPEAKING)
 
     def finish_task(self, gen_id: Optional[int] = None) -> bool:
-        """Concludes active processing or speaking, returning to AWAKE or configured state."""
+        """Concludes active processing or speaking, returning to IDLE_LISTENING, LISTENING, or AWAKE."""
         with self._lock:
             if self._state == SystemState.SLEEPING:
                 return True
-            if self._state in (SystemState.SPEAKING, SystemState.EXECUTING, SystemState.PROCESSING, SystemState.LISTENING):
-                next_state = SystemState.LISTENING if self._operating_mode == "continuous" else SystemState.AWAKE
+            active_states = (
+                SystemState.SPEAKING,
+                SystemState.CHITTI_SPEAKING,
+                SystemState.EXECUTING,
+                SystemState.PROCESSING,
+                SystemState.LISTENING,
+                SystemState.USER_SPEAKING,
+                SystemState.TRANSCRIBING,
+            )
+            if self._state in active_states:
+                if self.is_in_conversation_session():
+                    next_state = SystemState.IDLE_LISTENING
+                elif self._operating_mode == "continuous":
+                    next_state = SystemState.LISTENING
+                else:
+                    next_state = SystemState.AWAKE
                 return self.set_state(next_state)
             return True
 

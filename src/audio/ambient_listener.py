@@ -140,7 +140,8 @@ class AmbientVoiceListener:
 
         # Transition authoritative state to AWAKE and LISTENING
         self.state_mgr.wake()
-        self.state_mgr.begin_listening()
+        self.state_mgr.start_conversation_session(timeout_seconds=10.0)
+        self.state_mgr.begin_user_speaking()
 
         if self.hud:
             self.hud.show()
@@ -173,32 +174,68 @@ class AmbientVoiceListener:
         except Exception as e:
             log_warn(f"[AMBIENT] Direct command processing notice: {e}")
         finally:
-            self._return_to_standby()
+            if self.state == AmbientState.THINKING or not self.state_mgr.is_in_conversation_session():
+                if self.state != AmbientState.SPEAKING:
+                    self._return_to_standby()
 
-    def _record_and_process_speech(self):
+    def _record_and_process_speech(self, initial_audio: Optional[np.ndarray] = None):
         """Records speech until silence, transcribes, and routes through priority handler."""
         try:
             with self._lock:
                 self.state = AmbientState.LISTENING
 
+            self.state_mgr.begin_user_speaking()
             self.wake_detector.pause()
 
             # Record and transcribe with streaming VAD
             transcribed_text = self.streaming_stt.transcribe_streaming(
                 on_speech_start=lambda: self.hud.set_progress("Hearing you...") if self.hud else None,
                 on_chunk=self._on_audio_chunk,
+                initial_audio=initial_audio,
             )
 
             if not transcribed_text or not transcribed_text.strip():
                 log_debug("[AMBIENT] No recognizable speech received.")
-                self._return_to_standby()
+                if not self.state_mgr.is_in_conversation_session():
+                    self._return_to_standby()
                 return
 
+            self.state_mgr.begin_transcribing()
             self._handle_incoming_transcript(transcribed_text)
 
         except Exception as e:
             log_warn(f"[AMBIENT] Speech processing notice: {e}")
         finally:
+            if self.state == AmbientState.THINKING or not self.state_mgr.is_in_conversation_session():
+                if self.state != AmbientState.SPEAKING:
+                    self._return_to_standby()
+
+    def _listen_for_followup_turn(self, timeout_seconds: float = 8.0):
+        """Listens for a natural follow-up turn after speech output concludes."""
+        try:
+            with self._lock:
+                self.state = AmbientState.LISTENING
+            self.state_mgr.begin_idle_listening()
+            if self.hud:
+                self.hud.set_mode(HUDMode.LISTENING)
+                self.hud.set_progress("Listening (speak naturally)...")
+
+            transcribed_text = self.streaming_stt.transcribe_streaming(
+                on_speech_start=lambda: self.hud.set_progress("Hearing you...") if self.hud else None,
+                on_chunk=self._on_audio_chunk,
+            )
+
+            if not transcribed_text or not transcribed_text.strip():
+                log_debug("[AMBIENT] Follow-up silence window expired.")
+                self.state_mgr.end_conversation_session()
+                self._return_to_standby()
+                return
+
+            self.state_mgr.begin_transcribing()
+            self._handle_incoming_transcript(transcribed_text)
+        except Exception as e:
+            log_debug(f"[AMBIENT] Follow-up turn notice: {e}")
+            self.state_mgr.end_conversation_session()
             self._return_to_standby()
 
     def _handle_incoming_transcript(self, transcript: str):
@@ -319,8 +356,14 @@ class AmbientVoiceListener:
         if self.hud:
             self.hud.set_mode(HUDMode.SPEAKING)
 
-        def interrupt_callback():
+        was_interrupted = False
+        interrupted_audio = None
+
+        def interrupt_callback(inter_audio=None):
+            nonlocal was_interrupted, interrupted_audio
             log_chitti("[AMBIENT] ✋ Speech interrupted by user barge-in!")
+            was_interrupted = True
+            interrupted_audio = inter_audio
             self.state_mgr.interrupt(reason="barge_in")
             if hasattr(self.tts, "stop"):
                 self.tts.stop()
@@ -334,9 +377,32 @@ class AmbientVoiceListener:
                 self.tts.speak(text, wait=True)
         finally:
             self.barge_in.stop_monitoring()
-            if final:
-                time.sleep(0.3)  # acoustic dampening to absorb room echo
-                state_mgr.finish_task(request_id)
+
+        if was_interrupted:
+            log_chitti("[AMBIENT] 🎙️ Seamless barge-in handoff: capturing interrupting speech turn...")
+            self.state_mgr.reset_interrupt()
+            self.state_mgr.start_conversation_session(timeout_seconds=10.0)
+            worker = threading.Thread(
+                target=self._record_and_process_speech,
+                kwargs={"initial_audio": interrupted_audio},
+                daemon=True,
+                name="AmbientBargeInWorker",
+            )
+            worker.start()
+            return
+
+        if final:
+            time.sleep(0.2)  # acoustic dampening to absorb room echo
+            state_mgr.finish_task(request_id)
+            if state_mgr.is_in_conversation_session():
+                worker = threading.Thread(
+                    target=self._listen_for_followup_turn,
+                    kwargs={"timeout_seconds": 8.0},
+                    daemon=True,
+                    name="AmbientFollowupWorker",
+                )
+                worker.start()
+            else:
                 self._return_to_standby()
 
     def go_to_sleep(self):

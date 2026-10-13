@@ -308,6 +308,7 @@ class ChittiController:
         # ---------------- PRIORITY 1: EMERGENCY STOP ----------------
         if control_res.command == ControlCommand.STOP:
             log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{control_res.matched_phrase}'")
+            self.state_manager.end_conversation_session()
             self.state_manager.interrupt(reason="user_stop")
             self.state_manager.sleep()
             if self.tts:
@@ -326,6 +327,7 @@ class ChittiController:
         # ---------------- PRIORITY 2: SLEEP COMMAND ----------------
         if control_res.command == ControlCommand.SLEEP:
             log_chitti(f"[CHITTI][CONTROL] 😴 SLEEP command received: '{control_res.matched_phrase}'")
+            self.state_manager.end_conversation_session()
             self.state_manager.sleep()
             if self.tts:
                 self.tts.stop()
@@ -344,6 +346,7 @@ class ChittiController:
         if control_res.command == ControlCommand.WAKE:
             log_chitti(f"[CHITTI][CONTROL] ⚡ WAKE command received: '{control_res.matched_phrase}'")
             self.state_manager.wake()
+            self.state_manager.start_conversation_session(timeout_seconds=10.0)
             resp = "Haan, boliye."
             print(f"\nChitti: {resp}")
             if self.hud:
@@ -364,6 +367,7 @@ class ChittiController:
         # Allocate new request generation if not already assigned
         if request_id is None:
             request_id = self.state_manager.new_request()
+        self.state_manager.start_conversation_session(timeout_seconds=10.0)
         self.state_manager.begin_processing(request_id)
 
         from src.utils.metrics import get_metrics_collector, ExecutionPath
@@ -412,9 +416,9 @@ class ChittiController:
             log_chitti(f"[RL FEEDBACK] Recorded user feedback score: {user_reward:+.1f}")
 
         # 1.5. Unified Top-Level Master Routing Layer
-        master_decision = MasterRouter.classify_request(user_text)
+        master_decision = MasterRouter.classify_request(user_text, conversation_history=self.history._messages)
         if master_decision.route == MasterRoute.UNKNOWN and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
-            alt_decision = MasterRouter.classify_request(parsed_intent.normalized_text)
+            alt_decision = MasterRouter.classify_request(parsed_intent.normalized_text, conversation_history=self.history._messages)
             if alt_decision.route != MasterRoute.UNKNOWN:
                 master_decision = alt_decision
 

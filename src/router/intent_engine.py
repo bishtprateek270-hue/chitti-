@@ -165,6 +165,89 @@ class NaturalIntentEngine:
             )
 
         # -------------------------------------------------------------
+        # 1.2. CONTEXTUAL DIRECTIVES, PIVOTS, CORRECTIONS & FOLLOW-UPS
+        # -------------------------------------------------------------
+        # Stop talking / pause directive
+        if re.search(r"(?i)\b(?:stop\s+talking(?:\s+for\s+a\s+second)?|pause(?:\s+speech)?|ruko|thoda\s+ruko|chup\s+ho\s+jao)\b", clean_lower):
+            return SemanticIntent(
+                intent=IntentType.SIMPLE_COMMAND,
+                goal="Pause or halt speech output immediately",
+                risk="low",
+                execution_path=ExecutionPath.PATH_A_SIMPLE,
+                parameters={"action": "pause"},
+                confidence=0.98,
+            )
+
+        # Pivot / Forget previous request
+        if re.search(r"(?i)\b(?:wait,?\s*forget\s+that|forget\s+that|chhodo\s+use|leave\s+that|i\s+want\s+to\s+do\s+something\s+else)\b", clean_lower):
+            return SemanticIntent(
+                intent=IntentType.CONVERSATION,
+                goal="Cancel previous context and pivot to new task",
+                risk="low",
+                execution_path=ExecutionPath.PATH_B_CONVERSATION,
+                parameters={"action": "pivot", "cancel_previous": True},
+                confidence=0.95,
+            )
+
+        # Correction / Alternative file ("No, not that one. Open the other file.")
+        if re.search(r"(?i)\b(?:no,?\s*not\s+that\s+one|ye\s+nahi|not\s+this\s+one)\b.*(?:open\s+(?:the\s+)?other\s+file|dusri\s+file\s+kholo)?", clean_lower) or re.search(r"(?i)\bopen\s+(?:the\s+)?other\s+file\b", clean_lower):
+            return SemanticIntent(
+                intent=IntentType.FILE_OPERATION,
+                goal="Open alternative file as corrected by user",
+                target="other file",
+                context_required=True,
+                risk="low",
+                execution_path=ExecutionPath.PATH_C_COMPUTER,
+                parameters={"action": "open_alternative"},
+                confidence=0.95,
+            )
+
+        # Context-dependent file opening ("Can you open that file for me?")
+        if re.search(r"(?i)\b(?:open\s+(?:that|the)\s+file|us\s+file\s+ko\s+kholo|file\s+kholo)\b", clean_lower) and not re.search(r"(?i)\b(?:project|code|editor)\b", clean_lower):
+            return SemanticIntent(
+                intent=IntentType.FILE_OPERATION,
+                goal="Open requested file from recent context",
+                target="context file",
+                context_required=True,
+                risk="low",
+                execution_path=ExecutionPath.PATH_C_COMPUTER,
+                parameters={"action": "open_file"},
+                confidence=0.92,
+            )
+
+        # Verification of previous action ("Can you check whether that actually worked?")
+        if re.search(r"(?i)\b(?:check\s+(?:whether\s+that|if\s+(?:it|that))\s+(?:actually\s+)?worked|did\s+it\s+work|kaam\s+kiya\s+kya|check\s+karo\s+hua\s+ya\s+nahi)\b", clean_lower):
+            return SemanticIntent(
+                intent=IntentType.COMPLEX_TASK,
+                goal="Verify whether the previous operation succeeded",
+                context_required=True,
+                risk="low",
+                execution_path=ExecutionPath.PATH_C_COMPUTER,
+                parameters={"action": "verify_task"},
+                confidence=0.94,
+            )
+
+        # Follow-up style refinements ("Wait, explain it more simply", "Explain it again, but make it easier", "Actually, make the answer shorter")
+        is_refinement = bool(
+            re.search(r"(?i)\b(?:explain\s+(?:it|that)\s+(?:again,?\s*but\s+)?(?:more\s+|much\s+)?(?:simply|easier|simple)|make\s+(?:the\s+answer|it)\s+(?:shorter|simpler|concise|easier)|aasan\s+bhasha\s+me(?:in)?\s+samjhao|chhota\s+karo)\b", clean_lower)
+            or re.search(r"(?i)\b(?:explain\s+it\s+again|make\s+it\s+easier)\b", clean_lower)
+        )
+        if is_refinement:
+            recent_topic = cls._extract_recent_topic(conversation_history)
+            target_topic = recent_topic or "previous topic"
+            refine_type = "shorter" if ("short" in clean_lower or "chhota" in clean_lower) else "simpler"
+            return SemanticIntent(
+                intent=IntentType.TECHNICAL_QUERY,
+                goal=f"Explain {target_topic} in a {refine_type} manner",
+                target=target_topic,
+                context_required=True,
+                risk="low",
+                execution_path=ExecutionPath.PATH_B_CONVERSATION,
+                parameters={"topic": target_topic, "refinement": refine_type, "original_query": clean},
+                confidence=0.95,
+            )
+
+        # -------------------------------------------------------------
         # 1.5. COMPLEX MULTI-STEP TASKS (PATH E)
         # -------------------------------------------------------------
         is_multi_step = bool(
@@ -191,6 +274,7 @@ class NaturalIntentEngine:
             or bool(re.search(r"(?i)\b(?:open|bring\s+up|load)\s+(?:that|my)\s+(?:project|code)\s*(?:again|also|once\s+more|phir\s+se)?\b", clean_lower))
             or bool(re.search(r"(?i)\b(?:open|bring\s+up|load)\s+(?:the\s+)?(?:project|code)\s+(?:again|also|once\s+more|phir\s+se)\b", clean_lower))
             or bool(re.search(r"(?i)\b(?:let'?s?\s+work\s+on\s+that|work\s+on\s+the|continue\s+with)\s+([a-zA-Z0-9_\-]+)?\s*(?:project|code)\b", clean_lower))
+            or bool(re.search(r"(?i)\b(?:let'?s?\s+)?continue\s+(?:the\s+|that\s+|working\s+on\s+(?:the\s+|that\s+)?)?project\b", clean_lower))
             or bool(re.search(r"(?:मेरा\s+)?(?:प्रोजेक्ट|प्रोग्राम|कोड)\s*(?:खोलो|चलाओ|दिखाओ)", raw))
         )
         if is_open_past_project:
@@ -452,3 +536,34 @@ class NaturalIntentEngine:
             log_debug(f"[INTENT ENGINE] Project resolution notice: {e}")
 
         return None, None
+
+    @classmethod
+    def _extract_recent_topic(cls, conversation_history: Optional[List[Any]]) -> Optional[str]:
+        """Extracts the subject or technical topic of the most recent user conversation turn."""
+        if not conversation_history:
+            return None
+        messages = conversation_history
+        if hasattr(conversation_history, "_messages"):
+            messages = conversation_history._messages
+        elif hasattr(conversation_history, "messages"):
+            messages = conversation_history.messages
+
+        for msg in reversed(messages):
+            content = ""
+            if isinstance(msg, dict):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+            elif hasattr(msg, "role") and getattr(msg, "role") == "user":
+                content = getattr(msg, "content", "")
+            elif isinstance(msg, str):
+                content = msg
+
+            if content:
+                topic = re.sub(
+                    r"(?i)^(?:can\s+you\s+|please\s+|explain\s+|what\s+is\s+|what\s+are\s+|tell\s+me\s+about\s+|how\s+does\s+)",
+                    "",
+                    content,
+                ).strip().rstrip(".!?")
+                if topic and len(topic) > 2 and topic.lower() not in ("hi", "hello", "thanks", "ok", "yes", "no"):
+                    return topic
+        return None
