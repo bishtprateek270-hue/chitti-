@@ -329,7 +329,7 @@ class AppDiscovery:
             return cls.resolve_application(matched_name)
 
         # Do not treat known web services as local executables if no local executable exists
-        if clean_no_ext in DEFAULT_URL_MAP:
+        if clean_no_ext in DEFAULT_URL_MAP and clean_no_ext not in DEFAULT_APP_MAP:
             return None
 
         # Fallback: if it's a simple alphanumeric name, allow standard Windows shell execution

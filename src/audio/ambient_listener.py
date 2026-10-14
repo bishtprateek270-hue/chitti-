@@ -202,8 +202,8 @@ class AmbientVoiceListener:
 
             if not transcribed_text or not transcribed_text.strip():
                 log_debug("[AMBIENT] No recognizable speech received.")
-                if not self.state_mgr.is_in_conversation_session():
-                    self._return_to_standby()
+                self.state_mgr.end_conversation_session()
+                self._return_to_standby()
                 return
 
             self.state_mgr.begin_transcribing()
@@ -364,75 +364,92 @@ class AmbientVoiceListener:
         Prevents Chitti from hearing its own speech as commands while allowing user interruptions.
         Supports streaming sentence chunks via the final parameter.
         """
-        if not self.tts or not text:
+        if not self.tts:
+            if final:
+                self.conclude_speech(request_id=request_id)
             return
 
         state_mgr = get_state_manager()
         if not state_mgr.can_speak(request_id):
             log_debug(f"[AMBIENT] Suppressed speech output: request #{request_id} is invalid or sleeping.")
+            if final:
+                self.conclude_speech(request_id=request_id)
             return
 
-        state_mgr.begin_speaking(request_id)
-        self.wake_detector.pause()
+        if text and text.strip():
+            state_mgr.begin_speaking(request_id)
+            self.wake_detector.pause()
 
-        with self._lock:
-            self.state = AmbientState.SPEAKING
+            with self._lock:
+                self.state = AmbientState.SPEAKING
 
-        if self.hud:
-            self.hud.set_mode(HUDMode.SPEAKING)
+            if self.hud:
+                self.hud.set_mode(HUDMode.SPEAKING)
 
-        was_interrupted = False
-        interrupted_audio = None
+            was_interrupted = False
+            interrupted_audio = None
 
-        def interrupt_callback(inter_audio=None):
-            nonlocal was_interrupted, interrupted_audio
-            log_chitti("[AMBIENT] ✋ Speech interrupted by user barge-in!")
-            was_interrupted = True
-            interrupted_audio = inter_audio
-            self.state_mgr.interrupt(reason="barge_in")
-            if hasattr(self.tts, "stop"):
-                self.tts.stop()
+            def interrupt_callback(inter_audio=None):
+                nonlocal was_interrupted, interrupted_audio
+                log_chitti("[AMBIENT] ✋ Speech interrupted by user barge-in!")
+                was_interrupted = True
+                interrupted_audio = inter_audio
+                self.state_mgr.interrupt(reason="barge_in")
+                if hasattr(self.tts, "stop"):
+                    self.tts.stop()
 
-        if self.barge_in_enabled:
-            self.barge_in.start_monitoring(on_interrupt=interrupt_callback)
-        try:
-            from src.audio.tts import EdgeNeuralTTS, HybridTTS, SpeechController
-            if isinstance(self.tts, (EdgeNeuralTTS, HybridTTS, SpeechController)) and request_id is not None:
-                self.tts.speak(text, wait=True, request_id=request_id)
-            else:
-                self.tts.speak(text, wait=True)
-        finally:
             if self.barge_in_enabled:
-                self.barge_in.stop_monitoring()
+                self.barge_in.start_monitoring(on_interrupt=interrupt_callback)
+            try:
+                from src.audio.tts import EdgeNeuralTTS, HybridTTS, SpeechController
+                if isinstance(self.tts, (EdgeNeuralTTS, HybridTTS, SpeechController)) and request_id is not None:
+                    self.tts.speak(text, wait=True, request_id=request_id)
+                else:
+                    self.tts.speak(text, wait=True)
+            finally:
+                if self.barge_in_enabled:
+                    self.barge_in.stop_monitoring()
 
-        if was_interrupted:
-            log_chitti("[AMBIENT] 🎙️ Seamless barge-in handoff: capturing interrupting speech turn...")
-            self.state_mgr.reset_interrupt()
-            self.state_mgr.start_conversation_session(timeout_seconds=10.0)
-            worker = threading.Thread(
-                target=self._record_and_process_speech,
-                kwargs={"initial_audio": interrupted_audio},
-                daemon=True,
-                name="AmbientBargeInWorker",
-            )
-            worker.start()
-            return
-
-        if final:
-            time.sleep(0.25)  # acoustic dampening to absorb room echo
-            from src.audio.capture_service import get_audio_capture_service
-            get_audio_capture_service().flush()
-            state_mgr.finish_task(request_id)
-            if state_mgr.is_in_conversation_session():
+            if was_interrupted:
+                log_chitti("[AMBIENT] 🎙️ Seamless barge-in handoff: capturing interrupting speech turn...")
+                self.state_mgr.reset_interrupt()
+                self.state_mgr.start_conversation_session(timeout_seconds=10.0)
                 worker = threading.Thread(
-                    target=self._listen_for_followup_turn,
-                    kwargs={"timeout_seconds": 8.0},
+                    target=self._record_and_process_speech,
+                    kwargs={"initial_audio": interrupted_audio},
                     daemon=True,
-                    name="AmbientFollowupWorker",
+                    name="AmbientBargeInWorker",
                 )
                 worker.start()
-            else:
-                self._return_to_standby()
+                return
+
+        if final:
+            self.conclude_speech(request_id=request_id)
+
+    def conclude_speech(self, request_id: Optional[int] = None):
+        """Finalizes the speech turn, flushes audio buffers, and transitions to follow-up turn or standby."""
+        with self._lock:
+            if self.state not in (AmbientState.SPEAKING, AmbientState.THINKING):
+                return
+            self.state = AmbientState.STANDBY
+
+        time.sleep(0.20)  # acoustic dampening to absorb room echo
+        from src.audio.capture_service import get_audio_capture_service
+        get_audio_capture_service().flush()
+        self.state_mgr.finish_task(request_id)
+
+        # Refresh conversation window for natural follow-up turn
+        if not self.state_mgr.is_sleeping() and not self.state_mgr.is_interrupted():
+            self.state_mgr.start_conversation_session(timeout_seconds=8.0)
+            worker = threading.Thread(
+                target=self._listen_for_followup_turn,
+                kwargs={"timeout_seconds": 8.0},
+                daemon=True,
+                name="AmbientFollowupWorker",
+            )
+            worker.start()
+        else:
+            self._return_to_standby()
 
     def go_to_sleep(self):
         """Immediately stops ongoing speech and puts ambient listener in quiet standby."""

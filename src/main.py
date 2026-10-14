@@ -219,9 +219,17 @@ class ChittiController:
             self.context_synthesizer.memory_db = self.memory.db
         self.scheduler.register_listener(lambda task: self.speak(f"Reminder: {task.title}. {task.message}"))
         self.scheduler.start()
-        self.hotkey_manager.register_hotkey(callback=self.hud.toggle)
+        def on_hotkey_toggle():
+            self.hud.toggle()
+            if self.hud.is_visible:
+                self.state_manager.wake()
+                self.state_manager.start_conversation_session(timeout_seconds=15.0)
+                if self.ambient_listener:
+                    self.ambient_listener.resume(cooldown=0.5)
+
+        self.hotkey_manager.register_hotkey(callback=on_hotkey_toggle)
         from src.ui.hotkey_listener import MOD_CONTROL, MOD_ALT, MOD_NOREPEAT, VK_C
-        self.hotkey_manager.register_hotkey(modifiers=(MOD_CONTROL | MOD_ALT | MOD_NOREPEAT), vk_code=VK_C, callback=self.hud.toggle)
+        self.hotkey_manager.register_hotkey(modifiers=(MOD_CONTROL | MOD_ALT | MOD_NOREPEAT), vk_code=VK_C, callback=on_hotkey_toggle)
         self.hotkey_manager.start()
         self.hud.start(non_blocking=True)
 
@@ -276,9 +284,13 @@ class ChittiController:
     def speak(self, text: str, request_id: Optional[int] = None, final: bool = True):
         """Speaks the response using TTS with real-time barge-in interruption and request validation."""
         if not text:
+            if final and self.ambient_listener:
+                self.ambient_listener.conclude_speech(request_id=request_id)
             return
         if not self.state_manager.can_speak(request_id):
             log_debug(f"[CHITTI][TTS] Suppressed speech for invalidated/sleeping request #{request_id}: '{text}'")
+            if final and self.ambient_listener:
+                self.ambient_listener.conclude_speech(request_id=request_id)
             return
         if self.ambient_listener:
             try:
@@ -872,6 +884,9 @@ class ChittiController:
                         first_audio_played = True
                         metrics.mark_stage(request_id, "first_audio_played")
                     self.safe_speak(sanitized_tail, request_id=request_id, final=True)
+                else:
+                    if self.ambient_listener:
+                        self.ambient_listener.conclude_speech(request_id=request_id)
 
                 response_text = "".join(full_response_parts).strip()
             else:
@@ -928,8 +943,13 @@ class ChittiController:
         if self.hud:
             self.hud.set_response(sanitized_response)
             self.hud.set_mode(HUDMode.IDLE)
+            self.hud.set_progress("")
         metrics.finish_request(request_id, success=True)
         self.state_manager.finish_task(request_id)
+        if self.ambient_listener:
+            from src.audio.ambient_listener import AmbientState
+            if getattr(self.ambient_listener, "state", None) in (AmbientState.SPEAKING, AmbientState.THINKING):
+                self.ambient_listener.conclude_speech(request_id=request_id)
 
     def trigger_vision_snapshot(self):
         """Performs an instant camera snapshot and reports what Chitti sees."""

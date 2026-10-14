@@ -94,7 +94,7 @@ class GlobalHotkeyManager:
     def simulate_hotkey_press(self, hk_id: int = 1):
         """Dispatches a hotkey trigger event with debouncing."""
         now = time.time()
-        if now - self._last_trigger_time < 0.2:
+        if now - self._last_trigger_time < 0.4:
             return
         self._last_trigger_time = now
 

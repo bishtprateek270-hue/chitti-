@@ -284,6 +284,8 @@ class FloatingHUD:
                         self._mode_dot.config(text=self.state.mode_icon, fg=self.state.mode_color)
                     if self._status_lbl and text:
                         self._status_lbl.config(text=text)
+                    if mode == HUDMode.IDLE and not text and self._progress_lbl:
+                        self._progress_lbl.config(text="")
 
                 elif msg_type == "set_progress":
                     cur, tot, desc = item[1], item[2], item[3]
@@ -298,6 +300,8 @@ class FloatingHUD:
                     self.state.last_response = resp_text
                     if self._status_lbl:
                         self._status_lbl.config(text=resp_text[:60] + "..." if len(resp_text) > 60 else resp_text)
+                    if self._progress_lbl:
+                        self._progress_lbl.config(text="")
 
                 elif msg_type == "show":
                     self.state.is_visible = True

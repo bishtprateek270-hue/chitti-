@@ -289,6 +289,51 @@ class TestAudioPipelineRobustness(unittest.TestCase):
         # Ensure no lingering subscribers
         self.assertEqual(len(capture._subscribers), initial_subs)
 
+    # ---------------------------------------------------------
+    # TEST K: STREAMING SPEECH CONCLUSION & STANDBY RESILIENCE
+    # ---------------------------------------------------------
+    def test_k_streaming_speech_conclusion_resilience(self):
+        """Verifies that concluding speech unfreezes ambient state, resumes wake detector, and is idempotent."""
+        from src.audio.ambient_listener import AmbientVoiceListener, AmbientState
+        from src.ui.hud_overlay import FloatingHUD
+        from src.ui.visualizer import HUDMode
+
+        mock_tts = MagicMock()
+        mock_wake = MagicMock()
+        mock_wake.is_running = True
+        mock_hud = MagicMock()
+
+        listener = AmbientVoiceListener(
+            command_handler=lambda text, **kwargs: None,
+            tts_engine=mock_tts,
+            wake_detector=mock_wake,
+            hud=mock_hud,
+        )
+
+        req_id = self.state_mgr.new_request()
+
+        # 1. Simulate streaming chunk with final=False
+        listener.speak_with_barge_in("This is part one of deep learning.", request_id=req_id, final=False)
+        self.assertEqual(listener.state, AmbientState.SPEAKING)
+        mock_wake.pause.assert_called()
+
+        # 2. Conclude speech (as happens when streaming finishes on punctuation)
+        listener.conclude_speech(request_id=req_id)
+        # Should transition out of SPEAKING
+        self.assertNotEqual(listener.state, AmbientState.SPEAKING)
+
+        # 3. Verify idempotency: calling conclude_speech again should not crash or corrupt state
+        listener.conclude_speech(request_id=req_id)
+        self.assertNotEqual(listener.state, AmbientState.SPEAKING)
+
+        # 4. Return to standby
+        listener._return_to_standby()
+        self.assertEqual(listener.state, AmbientState.STANDBY)
+        mock_wake.resume.assert_called()
+        mock_hud.set_mode.assert_called_with(HUDMode.IDLE)
+        mock_hud.set_progress.assert_called_with("")
+
 
 if __name__ == "__main__":
     unittest.main()
+

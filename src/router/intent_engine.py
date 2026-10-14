@@ -360,6 +360,7 @@ class NaturalIntentEngine:
 
             # Polish content and strip trailing period
             msg_content = polish_message_text(msg_content).rstrip(".!?,")
+            msg_content = re.sub(r"(?i)\s+(?:on|via|using|pe|par)\s+(?:whatsapp|telegram|slack|discord|teams|web|browser|app).*$", "", msg_content).strip() or "Hi"
             channel = "WhatsApp"  # Default desktop messaging channel
             if "email" in clean_lower or "@" in contact:
                 channel = "Email"
