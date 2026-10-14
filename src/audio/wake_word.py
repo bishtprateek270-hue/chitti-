@@ -235,7 +235,7 @@ class WakeWordDetector:
         has_voice = (
             vad_decision.is_speech
             or (vad_decision.state in (VADState.SPEECH, VADState.SPEECH_HANGOVER))
-            or (acoustic_score >= 0.60)
+            or (acoustic_score >= 0.70)
         )
         if not has_voice:
             return None
@@ -247,13 +247,19 @@ class WakeWordDetector:
 
         # 2. Strict Verification via STT Engine when available
         if self.stt_engine:
-            # Debounce STT checks to at most once per 0.35s
-            if now - self._last_stt_check_time < 0.35:
+            # Debounce STT checks to at most once per 0.85s (never flood CPU)
+            if now - self._last_stt_check_time < 0.85:
                 return None
             self._last_stt_check_time = now
 
             try:
-                snippet_text = self.stt_engine.transcribe(current_window).lower().strip()
+                # Never run expensive Whisper offline model during continuous wake word polling
+                try:
+                    snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=False)
+                except TypeError:
+                    snippet_text = self.stt_engine.transcribe(current_window)
+                snippet_text = snippet_text.lower().strip() if snippet_text else ""
+
                 if snippet_text:
                     from src.core.phrase_matcher import ControlCommand
                     phrase_res = self.phrase_matcher.classify_command(snippet_text)

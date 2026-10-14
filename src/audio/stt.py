@@ -59,6 +59,10 @@ WHISPER_HALLUCINATION_PATTERNS = [
     r"(?i)\b(?:welcome\s+to\s+(?:the\s+)?video|now\s+to\s+the\s+video|video\s+summary|cover\s+of\s+the\s+screen)\b",
     r"(?i)\b(?:official\s+version\s+of\s+the\s+screen|official\s+version|summary\s+and\s+summary)\b",
     r"(?i)\b(?:watch\s+the\s+video|in\s+this\s+video|like\s+and\s+subscribe|hit\s+the\s+bell)\b",
+    r"(?i)\b(?:i\s+will\s+(?:begin|again|get\s+it|get\s+under|run\s+again|one\s+again|one\s+get\s+under))\b",
+    r"(?i)\b(?:i'll\s+be\s+one\s+again|i\s+will\s+one\s+again)\b",
+    r"(?i)\b(?:i\s+will\s+one\s+get\s+under\.\s*first\s+time|first\s+time\s+i\s+will)\b",
+    r"(?i)\b(?:i\s+will\s+run\s+again|i\s+will\s+again|i\s+will\s+begin)\b",
     r"(?i)^\[.*\]$",  # e.g. [Music], [Applause], [Silence]
 ]
 
@@ -101,8 +105,8 @@ class GoogleSTT(STTEngine):
 
             # Scale/normalize audio to 0.75 peak for crystal-clear 16-bit PCM dynamic range
             peak = float(np.max(np.abs(audio)))
-            if peak > 0.005:
-                gain = min(15.0, 0.75 / peak)
+            if peak >= 0.020 and peak < 0.60:
+                gain = min(8.0, 0.75 / peak)
                 audio = audio * gain
 
             # Convert float32 [-1, 1] to 16-bit PCM bytes
@@ -245,17 +249,11 @@ class WhisperSTT(STTEngine):
             # Guard against silence / faint background hiss to prevent hallucinations
             peak_val = float(np.max(np.abs(audio)))
             rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-            if peak_val < 0.005 or rms_val < 0.0015:
+            if peak_val < 0.020 or rms_val < 0.005:
                 log_debug(f"[WHISPER] Audio energy too faint (peak={peak_val:.4f}, rms={rms_val:.4f}). Returning empty.")
                 return ""
 
-            # Normalize speech peak to 0.75 for clear Whisper feature extraction
-            peak_val = float(np.max(np.abs(audio)))
-            if peak_val > 0.005:
-                gain = min(15.0, 0.75 / peak_val)
-                audio = audio * gain
-
-            # Acoustic VAD check: reject stationary background noise before invoking Whisper model
+            # Acoustic VAD check on RAW unamplified audio: reject stationary background noise before invoking Whisper
             from unittest.mock import Mock
             is_mock = isinstance(getattr(self, "_model", None), Mock)
             if not is_mock and len(audio) >= 800:
@@ -270,6 +268,11 @@ class WhisperSTT(STTEngine):
                 if not has_speech_frame:
                     log_debug("[WHISPER] Audio contains no confirmed speech frames (VAD rejected). Returning empty.")
                     return ""
+
+            # ONLY after VAD confirms genuine speech, normalize speech peak if quiet
+            if peak_val >= 0.020 and peak_val < 0.50:
+                gain = min(8.0, 0.75 / peak_val)
+                audio = audio * gain
 
         if isinstance(audio, Path):
             audio = str(audio)
@@ -334,8 +337,14 @@ class HybridSTT(STTEngine):
         """Preloads local engine for instant offline fallback readiness."""
         self.whisper_stt.preload()
 
-    def transcribe(self, audio: Union[np.ndarray, str, Path], request_id: Optional[int] = None) -> str:
-        """Transcribes audio with Google Speech first, seamlessly falling back to Whisper."""
+    def transcribe(
+        self,
+        audio: Union[np.ndarray, str, Path],
+        request_id: Optional[int] = None,
+        allow_whisper_fallback: bool = True,
+        **kwargs
+    ) -> str:
+        """Transcribes audio with Google Speech first, optionally falling back to Whisper."""
         from src.utils.metrics import get_metrics_collector
         metrics = get_metrics_collector()
         metrics.mark_stage(request_id, "transcription_started")
@@ -355,8 +364,8 @@ class HybridSTT(STTEngine):
         except Exception as e:
             log_debug(f"[HYBRID STT] Google STT exception: {e}")
 
-        # 2. Local Whisper Offline Fallback
-        if not transcribed_text:
+        # 2. Local Whisper Offline Fallback (only when allowed e.g. for spoken commands)
+        if not transcribed_text and allow_whisper_fallback:
             log_debug("[HYBRID STT] Falling back to local Whisper STT engine...")
             whisper_text = self.whisper_stt.transcribe(audio)
             if whisper_text and whisper_text.strip():
