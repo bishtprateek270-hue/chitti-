@@ -59,6 +59,12 @@ class TestAudioPipelineRobustness(unittest.TestCase):
         self.state_mgr.reset_interrupt()
         self.state_mgr.wake()
 
+    def tearDown(self):
+        from src.audio.capture_service import get_audio_capture_service
+        capture = get_audio_capture_service()
+        capture.unsubscribe("barge_in")
+        capture.flush()
+
     # ---------------------------------------------------------
     # TEST A: SILENCE
     # ---------------------------------------------------------
@@ -230,9 +236,12 @@ class TestAudioPipelineRobustness(unittest.TestCase):
         barge_in.start_monitoring(on_interrupt=on_interrupt)
 
         # Baseline speaker playback at 0.08 RMS
-        for _ in range(3):
+        for _ in range(2):
             barge_in._audio_callback(generate_speech_frame(0.05, amplitude=0.08))
-            time.sleep(0.04)
+            time.sleep(0.03)
+
+        # Allow grace period (0.10s) to comfortably elapse
+        time.sleep(0.06)
 
         # Loud user voice (amplitude 0.35, well above speaker bleed)
         loud_user_frame = generate_speech_frame(0.05, pitch_hz=140.0, amplitude=0.35)
