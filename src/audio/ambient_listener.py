@@ -181,6 +181,10 @@ class AmbientVoiceListener:
     def _record_and_process_speech(self, initial_audio: Optional[np.ndarray] = None):
         """Records speech until silence, transcribes, and routes through priority handler."""
         try:
+            if initial_audio is None:
+                from src.audio.capture_service import get_audio_capture_service
+                get_audio_capture_service().flush()
+
             with self._lock:
                 self.state = AmbientState.LISTENING
 
@@ -213,6 +217,9 @@ class AmbientVoiceListener:
     def _listen_for_followup_turn(self, timeout_seconds: float = 8.0):
         """Listens for a natural follow-up turn after speech output concludes."""
         try:
+            from src.audio.capture_service import get_audio_capture_service
+            get_audio_capture_service().flush()
+
             with self._lock:
                 self.state = AmbientState.LISTENING
             self.state_mgr.begin_idle_listening()
@@ -392,7 +399,9 @@ class AmbientVoiceListener:
             return
 
         if final:
-            time.sleep(0.2)  # acoustic dampening to absorb room echo
+            time.sleep(0.25)  # acoustic dampening to absorb room echo
+            from src.audio.capture_service import get_audio_capture_service
+            get_audio_capture_service().flush()
             state_mgr.finish_task(request_id)
             if state_mgr.is_in_conversation_session():
                 worker = threading.Thread(

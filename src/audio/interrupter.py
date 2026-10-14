@@ -47,6 +47,7 @@ class BargeInDetector:
         self._hit_chunks: list = []
         self._interruption_audio: Optional[np.ndarray] = None
         self._start_time = 0.0
+        self._speaker_bleed_rms = 0.0
         self._lock = threading.Lock()
 
     def start_monitoring(
@@ -63,6 +64,7 @@ class BargeInDetector:
         self._hit_chunks.clear()
         self._interruption_audio = None
         self._start_time = time.time()
+        self._speaker_bleed_rms = 0.0
         self._is_active = True
 
         if HAS_SOUNDDEVICE:
@@ -110,15 +112,21 @@ class BargeInDetector:
         if not self._is_active:
             return
 
-        # Ignore initial speaker onset echo during grace period
-        if (time.time() - self._start_time) < self.grace_period_seconds:
-            return
-
         chunk = indata[:, 0] if indata.ndim > 1 else indata.flatten()
         rms = float(np.sqrt(np.mean(chunk**2) + 1e-12))
 
+        # During initial grace period, track assistant playback acoustic bleed baseline
+        now = time.time()
+        elapsed = now - self._start_time
+        if elapsed < self.grace_period_seconds:
+            self._speaker_bleed_rms = max(self._speaker_bleed_rms, rms)
+            return
+
+        # Adaptive threshold: deliberate barge-in must exceed speaker bleed by +4 dB (1.35x)
+        required_threshold = max(self.energy_threshold, self._speaker_bleed_rms * 1.35)
+
         with self._lock:
-            if rms >= self.energy_threshold and self._is_voiced(chunk):
+            if rms >= required_threshold and self._is_voiced(chunk):
                 self._hit_count += 1
                 self._hit_chunks.append(chunk.copy())
                 if self._hit_count >= self.consecutive_frames:

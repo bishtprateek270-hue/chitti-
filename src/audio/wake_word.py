@@ -19,6 +19,7 @@ import numpy as np
 
 from src.audio.audio_utils import get_best_input_device, resample_to_16k
 from src.audio.capture_service import get_audio_capture_service
+from src.audio.vad import VoiceActivityDetector, VADState
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
 
 try:
@@ -95,6 +96,9 @@ class WakeWordDetector:
         self._audio_buffer = np.zeros(self._buffer_size, dtype=np.float32)
         self._buffer_lock = threading.Lock()
 
+        # Multi-feature Voice Activity Detector (Phase 3)
+        self.vad = VoiceActivityDetector(sample_rate=self.sample_rate)
+
         # Background noise baseline tracking
         self._noise_floor = 0.005
         self._calibrated = False
@@ -139,6 +143,7 @@ class WakeWordDetector:
     def pause(self):
         """Pauses wake-word detection (e.g. while Chitti is actively speaking or listening)."""
         self._is_paused = True
+        self.vad.reset()
         # Drain pending queue items
         while not self._audio_queue.empty():
             try:
@@ -153,6 +158,7 @@ class WakeWordDetector:
                 self._audio_queue.get_nowait()
             except queue.Empty:
                 break
+        self.vad.reset()
         self._is_paused = False
         cd = cooldown if cooldown is not None else self.cooldown_seconds
         self._last_trigger_time = time.time() + (cd - self.cooldown_seconds)
@@ -223,19 +229,15 @@ class WakeWordDetector:
         if now - self._last_trigger_time < self.cooldown_seconds:
             return None
 
-        # 1. Compute acoustic energy
-        rms = float(np.sqrt(np.mean(chunk**2) + 1e-12))
-
-        # Dynamic noise floor adaptation (tracks ambient baseline when low)
-        if not self._calibrated:
-            self._noise_floor = min(0.010, max(0.001, rms))
-            self._calibrated = True
-        elif rms < 0.010:
-            self._noise_floor = 0.95 * self._noise_floor + 0.05 * rms
-
-        # Speech onset gate calibrated for laptop array mic and earbud headsets (RMS >= 0.0018)
-        min_voice_rms = max(0.0018, self._noise_floor * 1.15)
-        if rms < min_voice_rms:
+        # Multi-feature VAD analysis (Adaptive SNR, Voicing, ZCR, Stationarity, Hysteresis)
+        vad_decision = self.vad.process_frame(chunk)
+        acoustic_score = self._evaluate_acoustic_signature(current_window)
+        has_voice = (
+            vad_decision.is_speech
+            or (vad_decision.state in (VADState.SPEECH, VADState.SPEECH_HANGOVER))
+            or (acoustic_score >= 0.60)
+        )
+        if not has_voice:
             return None
 
         matched = False

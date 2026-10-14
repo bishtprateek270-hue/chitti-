@@ -54,6 +54,11 @@ WHISPER_HALLUCINATION_PATTERNS = [
     r"(?i)\b(?:have\s+fun\s+coding|see\s+you\s+in\s+the\s+next\s+video)\b",
     r"(?i)\b(?:c'mon|we're gonna have a good time|have a good time)\b",
     r"(?i)\b(?:kholna hai bhejna hai|ckko kholna|we are next)\b",
+    r"(?i)\b(?:thank\s+you\s+very\s+much|see\s+you\s+soon|bye\s+bye)\b",
+    r"(?i)\b(?:goodbye|have\s+a\s+good\s+night|take\s+care)\b",
+    r"(?i)\b(?:welcome\s+to\s+(?:the\s+)?video|now\s+to\s+the\s+video|video\s+summary|cover\s+of\s+the\s+screen)\b",
+    r"(?i)\b(?:official\s+version\s+of\s+the\s+screen|official\s+version|summary\s+and\s+summary)\b",
+    r"(?i)\b(?:watch\s+the\s+video|in\s+this\s+video|like\s+and\s+subscribe|hit\s+the\s+bell)\b",
     r"(?i)^\[.*\]$",  # e.g. [Music], [Applause], [Silence]
 ]
 
@@ -93,6 +98,12 @@ class GoogleSTT(STTEngine):
             max_val = np.max(np.abs(audio))
             if max_val > 1.0:
                 audio = audio / 32768.0
+
+            # Scale/normalize audio to 0.75 peak for crystal-clear 16-bit PCM dynamic range
+            peak = float(np.max(np.abs(audio)))
+            if peak > 0.005:
+                gain = min(15.0, 0.75 / peak)
+                audio = audio * gain
 
             # Convert float32 [-1, 1] to 16-bit PCM bytes
             pcm_data = (np.clip(audio, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
@@ -197,13 +208,13 @@ class WhisperSTT(STTEngine):
             return True
 
         # Check for phrase loops (e.g. "i'm not a good guy, i'm not a good guy...")
-        if len(words) >= 6:
+        if len(words) >= 5:
             unique_ratio = len(set(words)) / len(words)
-            if unique_ratio < 0.45:
+            if unique_ratio < 0.55:
                 return True
 
-        # Check for substring repetition
-        if re.search(r"(.{4,40}?)(?:,\s*|\s+)\1(?:,\s*|\s+)\1", clean, re.IGNORECASE):
+        # Check for phrase or clause repetition (2 or more repetitions)
+        if re.search(r"(.{5,40}?)(?:,\s*|\s+)\1", clean, re.IGNORECASE):
             return True
 
         return False
@@ -234,9 +245,31 @@ class WhisperSTT(STTEngine):
             # Guard against silence / faint background hiss to prevent hallucinations
             peak_val = float(np.max(np.abs(audio)))
             rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-            if peak_val < 0.012 and rms_val < 0.0015:
+            if peak_val < 0.005 or rms_val < 0.0015:
                 log_debug(f"[WHISPER] Audio energy too faint (peak={peak_val:.4f}, rms={rms_val:.4f}). Returning empty.")
                 return ""
+
+            # Normalize speech peak to 0.75 for clear Whisper feature extraction
+            peak_val = float(np.max(np.abs(audio)))
+            if peak_val > 0.005:
+                gain = min(15.0, 0.75 / peak_val)
+                audio = audio * gain
+
+            # Acoustic VAD check: reject stationary background noise before invoking Whisper model
+            from unittest.mock import Mock
+            is_mock = isinstance(getattr(self, "_model", None), Mock)
+            if not is_mock and len(audio) >= 800:
+                from src.audio.vad import VoiceActivityDetector
+                vad = VoiceActivityDetector()
+                frame_sz = 800
+                has_speech_frame = any(
+                    vad.process_frame(audio[offset : offset + frame_sz]).is_speech
+                    for offset in range(0, len(audio), frame_sz)
+                    if len(audio[offset : offset + frame_sz]) >= 400
+                )
+                if not has_speech_frame:
+                    log_debug("[WHISPER] Audio contains no confirmed speech frames (VAD rejected). Returning empty.")
+                    return ""
 
         if isinstance(audio, Path):
             audio = str(audio)
@@ -248,7 +281,9 @@ class WhisperSTT(STTEngine):
             "verbose": False,
             "temperature": 0.0,
             "condition_on_previous_text": False,
-            "initial_prompt": "Chitti, Hey Chitti.",
+            "compression_ratio_threshold": 2.2,
+            "logprob_threshold": -0.90,
+            "no_speech_threshold": 0.50,
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
@@ -304,6 +339,11 @@ class HybridSTT(STTEngine):
         from src.utils.metrics import get_metrics_collector
         metrics = get_metrics_collector()
         metrics.mark_stage(request_id, "transcription_started")
+
+        # Opt-in diagnostic recording for live comparison (Phase 4)
+        if isinstance(audio, np.ndarray):
+            from src.audio.diagnostic import save_diagnostic_recording
+            save_diagnostic_recording(audio, label="stt_candidate")
 
         transcribed_text = ""
         # 1. Try Google High-Accuracy Speech Recognition

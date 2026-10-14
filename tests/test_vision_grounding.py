@@ -35,8 +35,11 @@ from src.brain.llm import BaseLLM
 
 class MockLLM(BaseLLM):
     """Mock LLM for vision reasoning tests."""
-    def generate_response(self, messages):
+    def generate_response(self, messages, request_id=None):
         return "The active window shows Visual Studio Code with a Python SyntaxError on line 12."
+
+    def generate_response_stream(self, messages, request_id=None):
+        yield self.generate_response(messages, request_id=request_id)
 
     def check_connection(self):
         return True

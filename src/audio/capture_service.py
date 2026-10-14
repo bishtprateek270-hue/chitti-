@@ -53,6 +53,9 @@ class AudioCaptureService:
         self._last_energy = 0.0
         self._error_count = 0
         self._frames_captured = 0
+        self._overflow_count = 0
+        self._underflow_count = 0
+        self._last_frame_time = time.time()
 
     def start(self, device_index: Optional[int] = None):
         """Starts the single authoritative microphone capture service and dispatcher."""
@@ -178,6 +181,19 @@ class AudioCaptureService:
         """Returns the RMS energy of the most recent audio chunk."""
         return self._last_energy
 
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Returns runtime diagnostic metrics for microphone capture."""
+        return {
+            "is_running": self._is_running,
+            "device_index": self._device_index,
+            "sample_rate": self._stream_sample_rate,
+            "frames_captured": self._frames_captured,
+            "recent_rms": self._last_energy,
+            "overflow_count": self._overflow_count,
+            "underflow_count": self._underflow_count,
+            "subscriber_count": len(self._subscribers),
+        }
+
     def _audio_callback(self, indata, frames, time_info, status):
         """
         Fastest possible PortAudio callback.
@@ -186,6 +202,16 @@ class AudioCaptureService:
         if not self._is_running:
             return
 
+        if status:
+            if getattr(status, "input_overflow", False):
+                self._overflow_count += 1
+            if getattr(status, "input_underflow", False):
+                self._underflow_count += 1
+
+        if not np.all(np.isfinite(indata)):
+            return
+
+        self._last_frame_time = time.time()
         chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.flatten().copy()
         try:
             self._audio_queue.put_nowait(chunk)

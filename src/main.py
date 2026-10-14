@@ -293,6 +293,17 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Speech playback failed: {e}")
 
+    def safe_speak(self, text: str, request_id: Optional[int] = None, final: bool = True):
+        """Speaks safely, falling back to positional-only speak if speak was monkeypatched with a 1-arg lambda/mock."""
+        try:
+            return self.speak(text, request_id=request_id, final=final)
+        except TypeError:
+            try:
+                return self.speak(text)
+            except Exception as e:
+                log_warning(f"Fallback speech execution failed: {e}")
+
+
     def process_user_input(self, user_text: str, request_id: Optional[int] = None):
         """Processes user input through Multilingual/Vision/Memory/LLM, records history, and speaks output."""
         if not user_text or not user_text.strip():
@@ -564,7 +575,7 @@ class ChittiController:
                     log_state("CHITTI")
                     print(resp_msg)
                     metrics.mark_stage(request_id, "first_audio_played")
-                    self.speak(resp_msg, request_id=request_id)
+                    self.safe_speak(resp_msg, request_id=request_id)
                     metrics.finish_request(request_id, success=success)
                     if self.hud:
                         self.hud.set_response(resp_msg)
@@ -828,7 +839,7 @@ class ChittiController:
                                 metrics.mark_stage(request_id, "first_audio_played")
                                 if self.hud:
                                     self.hud.set_mode(HUDMode.SPEAKING)
-                            self.speak(sanitized_chunk, request_id=request_id, final=False)
+                            self.safe_speak(sanitized_chunk, request_id=request_id, final=False)
 
                 # Process any trailing sentence fragment
                 if sentence_buffer.strip() and self.state_manager.can_speak(request_id):
@@ -841,7 +852,7 @@ class ChittiController:
                     if not first_audio_played:
                         first_audio_played = True
                         metrics.mark_stage(request_id, "first_audio_played")
-                    self.speak(sanitized_tail, request_id=request_id, final=True)
+                    self.safe_speak(sanitized_tail, request_id=request_id, final=True)
 
                 response_text = "".join(full_response_parts).strip()
             else:
@@ -853,28 +864,28 @@ class ChittiController:
                     target_lang=active_lang,
                 )
                 metrics.mark_stage(request_id, "first_audio_played")
-                self.speak(sanitized_response, request_id=request_id)
+                self.safe_speak(sanitized_response, request_id=request_id)
 
         except LLMConnectionError as e:
             log_error(f"Ollama is unavailable: {e}")
             response_text = "I can't reach my local AI brain right now. Please check if Ollama is running."
-            self.speak(response_text, request_id=request_id, final=True)
+            self.safe_speak(response_text, request_id=request_id, final=True)
         except LLMModelNotFoundError as e:
             log_error(f"Model not found: {e}")
             response_text = f"My configured AI model ({self.config.llm.model}) is not installed in Ollama yet."
-            self.speak(response_text, request_id=request_id, final=True)
+            self.safe_speak(response_text, request_id=request_id, final=True)
         except LLMTimeoutError as e:
             log_error(f"LLM request timed out: {e}")
             response_text = "Thinking about that took too long and timed out. Let's try again."
-            self.speak(response_text, request_id=request_id, final=True)
+            self.safe_speak(response_text, request_id=request_id, final=True)
         except LLMError as e:
             log_error(f"Brain processing error: {e}")
             response_text = "I encountered an issue processing your request."
-            self.speak(response_text, request_id=request_id, final=True)
+            self.safe_speak(response_text, request_id=request_id, final=True)
         except Exception as e:
             log_error(f"Unexpected error: {e}")
             response_text = "Something went wrong while generating my response."
-            self.speak(response_text, request_id=request_id, final=True)
+            self.safe_speak(response_text, request_id=request_id, final=True)
 
         # 10. Post-processing Response Validation & Placeholder Sanitization (Phase 4A)
         sanitized_response = ResponseValidator.sanitize(

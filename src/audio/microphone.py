@@ -99,12 +99,15 @@ class MicrophoneManager:
         start_time = time.time()
 
         from src.audio.capture_service import get_audio_capture_service
+        from src.audio.vad import VoiceActivityDetector, VADState
 
         capture_service = get_audio_capture_service()
         if not capture_service.is_running():
             capture_service.start(device_index=device)
 
+        vad = VoiceActivityDetector(sample_rate=self.sample_rate)
         recorded_chunks: List[np.ndarray] = []
+        pre_chunks: List[np.ndarray] = []
         speech_detected = False
         silence_start_time: Optional[float] = None
         start_time = time.time()
@@ -114,17 +117,28 @@ class MicrophoneManager:
             nonlocal speech_detected, silence_start_time, is_done
             if is_done:
                 return
-            recorded_chunks.append(chunk_16k)
-            if rms > threshold:
+
+            vad_decision = vad.process_frame(chunk_16k)
+            is_active_speech = (
+                vad_decision.is_speech
+                or vad_decision.state in (VADState.SPEECH, VADState.SPEECH_HANGOVER)
+            )
+
+            if is_active_speech:
                 speech_detected = True
                 silence_start_time = None
+                recorded_chunks.append(chunk_16k)
             elif speech_detected:
+                recorded_chunks.append(chunk_16k)
                 if silence_start_time is None:
                     silence_start_time = time.time()
                 elif time.time() - silence_start_time >= silence_dur:
                     is_done = True
             else:
-                if (time.time() - start_time) >= 5.0 and not speech_detected:
+                pre_chunks.append(chunk_16k)
+                if len(pre_chunks) > 6:  # ~300ms pre-speech buffer
+                    pre_chunks.pop(0)
+                if (time.time() - start_time) >= 3.5:
                     is_done = True
 
         capture_service.subscribe("microphone_manager", mic_callback)
@@ -139,8 +153,9 @@ class MicrophoneManager:
             is_done = True
             capture_service.unsubscribe("microphone_manager")
 
-        if not recorded_chunks:
+        if not speech_detected or not recorded_chunks:
             return np.zeros(0, dtype=np.float32)
 
-        audio_data = np.concatenate(recorded_chunks, axis=0)
+        all_audio = pre_chunks + recorded_chunks
+        audio_data = np.concatenate(all_audio, axis=0)
         return audio_data

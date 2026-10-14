@@ -14,17 +14,27 @@ except ImportError:
     sd = None
     HAS_SOUNDDEVICE = False
 
+import math
+
+try:
+    from scipy.signal import resample_poly
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+
 _CACHED_INPUT_DEVICE: Optional[int] = None
 _CACHED_SAMPLE_RATE: int = 16000
 
 
 def resample_to_16k(audio: np.ndarray, orig_sr: int) -> np.ndarray:
     """
-    Resamples 1D float32 audio array from orig_sr to 16000Hz using fast linear interpolation.
+    Resamples 1D float32 audio array from orig_sr to 16000Hz.
+    Uses high-quality polyphase FIR filtering (scipy.signal.resample_poly) with
+    anti-aliasing low-pass filter to eliminate distortion, falling back to np.interp.
     """
     if audio is None or len(audio) == 0:
         return np.array([], dtype=np.float32)
-    
+
     if audio.dtype != np.float32:
         audio = audio.astype(np.float32)
 
@@ -32,6 +42,17 @@ def resample_to_16k(audio: np.ndarray, orig_sr: int) -> np.ndarray:
         return audio
 
     target_sr = 16000
+    if HAS_SCIPY:
+        try:
+            g = math.gcd(int(target_sr), int(orig_sr))
+            up = int(target_sr // g)
+            down = int(orig_sr // g)
+            resampled = resample_poly(audio, up, down).astype(np.float32)
+            return resampled
+        except Exception:
+            pass
+
+    # Fallback to linear interpolation if scipy is unavailable or fails
     num_target_samples = int(len(audio) * float(target_sr) / float(orig_sr))
     if num_target_samples <= 0:
         return np.array([], dtype=np.float32)
@@ -72,7 +93,9 @@ def get_best_input_device(preferred_index: Optional[int] = None, force_refresh: 
                 d = sd.query_devices(default_idx)
                 if d.get("max_input_channels", 0) > 0:
                     native_sr = int(d.get("default_samplerate", 44100))
-                    for rate in [native_sr, 44100, 48000, 16000]:
+                    # Try 16000Hz directly first to avoid resampling if hardware supports it
+                    rates_to_test = [16000] if 16000 == native_sr else [16000, native_sr, 44100, 48000]
+                    for rate in rates_to_test:
                         try:
                             test_samples = int(rate * 0.04)
                             data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=default_idx)
@@ -100,7 +123,8 @@ def get_best_input_device(preferred_index: Optional[int] = None, force_refresh: 
                 candidates.append((idx, native_sr, d.get("name", "")))
 
         for dev_idx, native_sr, d_name in candidates:
-            for rate in [native_sr, 44100, 48000, 16000]:
+            rates_to_test = [16000] if 16000 == native_sr else [16000, native_sr, 44100, 48000]
+            for rate in rates_to_test:
                 try:
                     test_samples = int(rate * 0.04)
                     data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=dev_idx)

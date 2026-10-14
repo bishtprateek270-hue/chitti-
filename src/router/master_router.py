@@ -263,6 +263,33 @@ class MasterRouter:
                 explanation="User querying personal identity, memories, creator, or relationships",
             )
 
+        # 3.1. High-Priority Screen Vision Grounding & Screen Reasoning
+        if any(re.search(pat, clean) for pat in cls.VISION_TASK_PATTERNS):
+            return cls._make_decision(
+                route=MasterRoute.VISION_TASK,
+                confidence=0.98,
+                requires_memory=False,
+                requires_computer=True,
+                requires_phase5=True,
+                requires_phase6=False,
+                explanation="Real-time screen vision, active window analysis, or on-screen error diagnosis",
+            )
+
+        # 3.2. High-Priority General World Knowledge Query ("what is the capital of France", "where is Mount Everest", "how many continents")
+        if (
+            re.search(r"(?i)^(?:what\s+is\s+the\s+capital|where\s+is|when\s+was|how\s+many\s+continents|which\s+is\s+the\s+(?:highest|longest|largest|biggest)|why\s+is\s+the\s+sky)\b", clean)
+            or re.search(r"(?i)\b(?:capital\s+of|highest\s+mountain|continents|president\s+of|prime\s+minister\s+of)\b", clean)
+        ):
+            return cls._make_decision(
+                route=MasterRoute.GENERAL_KNOWLEDGE,
+                confidence=0.93,
+                requires_memory=False,
+                requires_computer=False,
+                requires_phase5=False,
+                requires_phase6=False,
+                explanation="General world knowledge or factual inquiry",
+            )
+
         # 3.5. Semantic Natural Intent Resolution (English, Hindi, Hinglish)
         try:
             from src.router.intent_engine import NaturalIntentEngine, IntentType

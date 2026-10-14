@@ -83,6 +83,8 @@ class PhraseMatcher:
         "go to standby",
     ]
     SLEEP_PHRASES_HI = [
+        "so jao",
+        "so ja",
         "chitti so ja",
         "so ja chitti",
         "chitti so jao",
