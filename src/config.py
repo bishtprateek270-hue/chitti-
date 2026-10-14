@@ -104,6 +104,9 @@ class AudioConfig:
     max_record_seconds: int = field(
         default_factory=lambda: int(os.getenv("AUDIO_MAX_RECORD_SECONDS", "30"))
     )
+    barge_in_enabled: bool = field(
+        default_factory=lambda: os.getenv("BARGE_IN_ENABLED", "false").lower() in ("true", "1", "yes")
+    )
 
 
 @dataclass

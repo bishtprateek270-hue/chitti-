@@ -55,6 +55,8 @@ class AmbientVoiceListener:
 
         self.wake_detector = wake_detector or WakeWordDetector(stt_engine=stt_engine)
         self.streaming_stt = streaming_stt or StreamingSTTEngine(stt_engine=stt_engine)
+        cfg = get_config()
+        self.barge_in_enabled = getattr(cfg.audio, "barge_in_enabled", False)
         self.barge_in = BargeInDetector()
 
         self.state_mgr = get_state_manager()
@@ -375,7 +377,8 @@ class AmbientVoiceListener:
             if hasattr(self.tts, "stop"):
                 self.tts.stop()
 
-        self.barge_in.start_monitoring(on_interrupt=interrupt_callback)
+        if self.barge_in_enabled:
+            self.barge_in.start_monitoring(on_interrupt=interrupt_callback)
         try:
             from src.audio.tts import EdgeNeuralTTS, HybridTTS, SpeechController
             if isinstance(self.tts, (EdgeNeuralTTS, HybridTTS, SpeechController)) and request_id is not None:
@@ -383,7 +386,8 @@ class AmbientVoiceListener:
             else:
                 self.tts.speak(text, wait=True)
         finally:
-            self.barge_in.stop_monitoring()
+            if self.barge_in_enabled:
+                self.barge_in.stop_monitoring()
 
         if was_interrupted:
             log_chitti("[AMBIENT] 🎙️ Seamless barge-in handoff: capturing interrupting speech turn...")

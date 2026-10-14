@@ -122,6 +122,10 @@ class BargeInDetector:
             self._speaker_bleed_rms = max(self._speaker_bleed_rms, rms)
             return
 
+        # Dynamically adapt baseline if speaker bleed increases during playback
+        if rms > self._speaker_bleed_rms:
+            self._speaker_bleed_rms = 0.85 * self._speaker_bleed_rms + 0.15 * rms
+
         # Adaptive threshold: deliberate barge-in must exceed speaker bleed by +4 dB (1.35x)
         required_threshold = max(self.energy_threshold, self._speaker_bleed_rms * 1.35)
 
