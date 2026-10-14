@@ -229,24 +229,27 @@ class WakeWordDetector:
         if now - self._last_trigger_time < self.cooldown_seconds:
             return None
 
-        # Multi-feature VAD analysis (Adaptive SNR, Voicing, ZCR, Stationarity, Hysteresis)
+        # 1. Multi-feature VAD analysis (Adaptive SNR, Voicing, ZCR, Stationarity, Hysteresis)
         vad_decision = self.vad.process_frame(chunk)
-        acoustic_score = self._evaluate_acoustic_signature(current_window)
-        has_voice = (
+        is_speech = (
             vad_decision.is_speech
-            or (vad_decision.state in (VADState.SPEECH, VADState.SPEECH_HANGOVER))
-            or (acoustic_score >= 0.70)
+            or vad_decision.state in (VADState.SPEECH, VADState.SPEECH_HANGOVER)
         )
-        if not has_voice:
+
+        # 2. Evaluate acoustic signature
+        acoustic_score = self._evaluate_acoustic_signature(current_window)
+
+        # Drop immediately if neither VAD speech nor acoustic score matches
+        if not is_speech and acoustic_score < 0.65:
             return None
 
         matched = False
         matched_kw = "Hey Chitti"
         extracted_command = None
-        confidence = 0.0
+        confidence = float(acoustic_score)
 
-        # 2. Strict Verification via STT Engine when available
-        if self.stt_engine:
+        # 3. Strict Verification via STT Engine when available
+        if self.stt_engine is not None:
             # Debounce STT checks to at most once per 0.85s (never flood CPU)
             if now - self._last_stt_check_time < 0.85:
                 return None
@@ -288,16 +291,17 @@ class WakeWordDetector:
                                 if len(after_kw) >= 2:
                                     extracted_command = after_kw
                                 break
+                        # If STT recognized intelligible speech but it was NOT a wake phrase:
+                        if not matched:
+                            return None
             except Exception:
                 pass
 
-        # 3. Acoustic Signature verification (Used when STT is not provided / standalone tests)
-        else:
-            acoustic_score = self._evaluate_acoustic_signature(current_window)
-            if acoustic_score >= 0.70:
-                matched = True
-                confidence = float(acoustic_score)
-                matched_kw = "Hey Chitti" if acoustic_score > 0.80 else "Chitti"
+        # 4. Acoustic Signature trigger (Used when STT is offline / returns empty / not provided)
+        if not matched and acoustic_score >= 0.65 and is_speech:
+            matched = True
+            confidence = float(acoustic_score)
+            matched_kw = "Hey Chitti" if acoustic_score > 0.75 else "Chitti"
 
         if not matched:
             return None

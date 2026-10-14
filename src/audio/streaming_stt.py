@@ -196,8 +196,8 @@ class StreamingSTTEngine:
                     if elapsed >= max_sec:
                         log_debug(f"[STREAMING STT] Max recording timeout reached ({max_sec}s).")
                         break
-                    # Timeout if user never spoke after 2.5s
-                    if not state.is_speaking and elapsed >= 2.5:
+                    # Timeout if user never spoke after 4.0s
+                    if not state.is_speaking and elapsed >= 4.0:
                         log_debug("[STREAMING STT] No speech detected within initial window.")
                         break
         except Exception as e:
@@ -208,7 +208,7 @@ class StreamingSTTEngine:
 
         # Assemble full audio: pre-speech buffer + recorded speech chunks (trimmed)
         with self._lock:
-            if not self._recorded_chunks or state.speech_frames < min_speech_frames or voiced_frames_count < 1:
+            if not self._recorded_chunks or state.speech_frames < min_speech_frames:
                 return np.array([], dtype=np.float32)
 
             # Trim trailing silence frames beyond 4 frames (200ms padding) to prevent STT degradation
