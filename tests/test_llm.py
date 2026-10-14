@@ -73,3 +73,32 @@ def test_ollama_check_connection():
 
     with patch("requests.get", side_effect=Exception("Failed")):
         assert llm.check_connection() is False
+
+
+def test_ollama_ensure_running_success():
+    cfg = LLMConfig(base_url="http://localhost:11434", model="llama3.2")
+    llm = OllamaLLM(cfg)
+
+    # First check fails, then subprocess starts, then second check succeeds
+    with patch.object(llm, "check_connection", side_effect=[False, True]), \
+         patch("shutil.which", return_value="C:\\fake\\ollama.exe"), \
+         patch("subprocess.Popen", return_value=MagicMock()) as mock_popen:
+        assert llm.ensure_running(wait_timeout=2.0) is True
+        mock_popen.assert_called_once()
+
+
+def test_ollama_self_heal_retry():
+    cfg = LLMConfig(base_url="http://localhost:11434", model="llama3.2")
+    llm = OllamaLLM(cfg)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"message": {"content": "Healed response"}}
+
+    # First post raises ConnectionError, then ensure_running succeeds, then second post succeeds
+    with patch("requests.post", side_effect=[requests.exceptions.ConnectionError("Refused"), mock_resp]), \
+         patch.object(llm, "ensure_running", return_value=True) as mock_heal:
+        result = llm.generate_response([{"role": "user", "content": "Hello"}])
+        assert result == "Healed response"
+        mock_heal.assert_called_once()
+

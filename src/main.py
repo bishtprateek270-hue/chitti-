@@ -174,6 +174,10 @@ class ChittiController:
         # 6. Initialize LLM (Ollama)
         log_chitti(f"Connecting to AI brain at {self.config.llm.base_url} (model: {self.config.llm.model})...")
         self.llm = get_llm(self.config.llm)
+        if not self.llm.check_connection():
+            if hasattr(self.llm, "ensure_running"):
+                self.llm.ensure_running(wait_timeout=8.0)
+
         if self.llm.check_connection():
             available = self.llm.list_available_models()
             log_chitti(f"Ollama connected successfully. Available models: {available if available else 'None'}")

@@ -4,12 +4,18 @@ Provides an abstract base interface and an Ollama implementation for local LLM i
 """
 
 import json
+import os
+import sys
+import time
+import shutil
+import subprocess
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 import requests
 
 from src.config import LLMConfig, get_config
 from src.brain.personality import ConversationHistory
+from src.utils.logging import log_info, log_warning, log_error, log_chitti
 
 
 class LLMError(Exception):
@@ -67,6 +73,8 @@ class BaseLLM(ABC):
 class OllamaLLM(BaseLLM):
     """Ollama local inference provider with streaming and keep-alive optimization."""
 
+    _auto_start_proc: Optional[subprocess.Popen] = None
+
     def __init__(self, config: Optional[LLMConfig] = None):
         cfg = config or get_config().llm
         self.base_url = cfg.base_url.rstrip("/")
@@ -82,6 +90,62 @@ class OllamaLLM(BaseLLM):
             return resp.status_code == 200
         except Exception:
             return False
+
+    def ensure_running(self, wait_timeout: float = 8.0) -> bool:
+        """
+        Verifies if Ollama is running. If not and base_url is localhost,
+        attempts to auto-start `ollama serve` in the background and waits for reachability.
+        """
+        if self.check_connection():
+            return True
+
+        is_local = "localhost" in self.base_url or "127.0.0.1" in self.base_url
+        if not is_local:
+            return False
+
+        ollama_bin = shutil.which("ollama")
+        if not ollama_bin:
+            candidates = [
+                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+                r"C:\Program Files\Ollama\ollama.exe",
+                r"C:\Program Files (x86)\Ollama\ollama.exe",
+            ]
+            for cand in candidates:
+                if os.path.isfile(cand):
+                    ollama_bin = cand
+                    break
+
+        if not ollama_bin:
+            log_warning("Ollama executable was not found on PATH or standard install directories.")
+            return False
+
+        log_chitti("Ollama server is not running. Launching local Ollama service in background...")
+
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
+
+        try:
+            proc = subprocess.Popen(
+                [ollama_bin, "serve"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+            )
+            OllamaLLM._auto_start_proc = proc
+        except Exception as e:
+            log_error(f"Failed to auto-start Ollama service: {e}")
+            return False
+
+        start_t = time.time()
+        while time.time() - start_t < wait_timeout:
+            time.sleep(0.5)
+            if self.check_connection():
+                log_info("[CHITTI][BRAIN] Ollama background service connected successfully.")
+                return True
+
+        return False
 
     def list_available_models(self) -> List[str]:
         """Retrieves list of model names currently available in Ollama."""
@@ -132,9 +196,21 @@ class OllamaLLM(BaseLLM):
                 timeout=self.timeout
             )
         except requests.exceptions.ConnectionError as e:
-            raise LLMConnectionError(
-                f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?"
-            ) from e
+            if self.ensure_running(wait_timeout=6.0):
+                try:
+                    response = requests.post(
+                        self.chat_endpoint,
+                        json=payload,
+                        timeout=self.timeout
+                    )
+                except requests.exceptions.ConnectionError as e2:
+                    raise LLMConnectionError(
+                        f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?"
+                    ) from e2
+            else:
+                raise LLMConnectionError(
+                    f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?"
+                ) from e
         except requests.exceptions.Timeout as e:
             raise LLMTimeoutError(
                 f"Ollama inference timed out after {self.timeout} seconds."
@@ -204,9 +280,22 @@ class OllamaLLM(BaseLLM):
                 timeout=self.timeout
             )
         except requests.exceptions.ConnectionError as e:
-            raise LLMConnectionError(
-                f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?"
-            ) from e
+            if self.ensure_running(wait_timeout=6.0):
+                try:
+                    response = requests.post(
+                        self.chat_endpoint,
+                        json=payload,
+                        stream=True,
+                        timeout=self.timeout
+                    )
+                except requests.exceptions.ConnectionError as e2:
+                    raise LLMConnectionError(
+                        f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?"
+                    ) from e2
+            else:
+                raise LLMConnectionError(
+                    f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?"
+                ) from e
         except requests.exceptions.Timeout as e:
             raise LLMTimeoutError(
                 f"Ollama inference timed out after {self.timeout} seconds."

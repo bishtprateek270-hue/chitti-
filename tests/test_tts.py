@@ -34,3 +34,17 @@ def test_pyttsx3_speak_mock():
         tts.speak("Hello from Chitti", wait=True)
         mock_engine.say.assert_called_with("Hello from Chitti")
         mock_engine.runAndWait.assert_called_once()
+
+
+def test_edge_neural_tts_fallback_delegation():
+    from src.audio.tts import EdgeNeuralTTS
+
+    mock_fallback = MagicMock()
+    tts = EdgeNeuralTTS(TTSConfig(), fallback_engine=mock_fallback)
+
+    # Simulate synthesis failure (e.g. 403 or network issue)
+    with patch.object(tts, "_synthesize_async", side_effect=Exception("403 Forbidden")):
+        tts.speak("Testing fallback speech", wait=True)
+        mock_fallback.speak.assert_called_once()
+        assert "Testing fallback speech" in mock_fallback.speak.call_args[0][0]
+

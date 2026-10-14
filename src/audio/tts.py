@@ -102,8 +102,9 @@ class EdgeNeuralTTS(TTSEngine):
     DEFAULT_HINGLISH_VOICE = "en-IN-NeerjaNeural"   # Female, clear Indian English & Hinglish
     DEFAULT_MALE_VOICE = "hi-IN-MadhurNeural"       # Male, natural Hindi/Hinglish
 
-    def __init__(self, config: Optional[TTSConfig] = None):
+    def __init__(self, config: Optional[TTSConfig] = None, fallback_engine: Optional[TTSEngine] = None):
         self.config = config or get_config().tts
+        self.fallback_engine = fallback_engine
         self.voice_id = self.config.voice_id or self.DEFAULT_HINDI_VOICE
         self.volume = self.config.volume
         self.rate = self.config.rate
@@ -239,7 +240,13 @@ class EdgeNeuralTTS(TTSEngine):
 
             except Exception as e:
                 if not self._cancel_requested.is_set() and gen_id == self._current_gen_id:
-                    log_warning(f"[TTS] Neural speech synthesis failed: {e}")
+                    log_warning(f"[TTS] Neural speech synthesis failed: {e}. Attempting fallback to local TTS.")
+                    if self.fallback_engine:
+                        try:
+                            self.fallback_engine.speak(clean_text, wait=wait, request_id=request_id)
+                            return
+                        except Exception as fb_err:
+                            log_warning(f"[TTS] Fallback TTS playback also failed: {fb_err}")
                     raise TTSError(f"Edge Neural TTS failed: {e}") from e
             finally:
                 if temp_file and os.path.exists(temp_file):
@@ -399,8 +406,8 @@ class HybridTTS(TTSEngine):
 
     def __init__(self, config: Optional[TTSConfig] = None):
         self.config = config or get_config().tts
-        self.edge_tts = EdgeNeuralTTS(config=self.config) if HAS_EDGE_TTS else None
         self.fallback_tts = Pyttsx3TTS(config=self.config)
+        self.edge_tts = EdgeNeuralTTS(config=self.config, fallback_engine=self.fallback_tts) if HAS_EDGE_TTS else None
 
     def is_speaking(self) -> bool:
         if self.edge_tts and self.edge_tts.is_speaking():
