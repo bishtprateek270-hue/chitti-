@@ -92,8 +92,10 @@ class AutonomousPerceptionEngine:
         log_debug("[PERCEPTION] Autonomous perception engine stopped.")
 
     def pause(self):
-        """Pauses perception (e.g. while Chitti is actively speaking or executing agent actions)."""
+        """Pauses perception and immediately releases camera device for other apps."""
         self._is_paused = True
+        if self.vision and self.vision.camera:
+            self.vision.camera.release()
 
     def resume(self):
         """Resumes perception monitoring."""

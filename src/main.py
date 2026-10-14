@@ -330,6 +330,10 @@ class ChittiController:
                 self.tts.stop()
             if self.agent:
                 self.agent.cancel_active_task()
+            if self.perception_engine:
+                self.perception_engine.pause()
+            if self.vision and self.vision.camera:
+                self.vision.camera.release()
             if self.ambient_listener:
                 self.ambient_listener.go_to_sleep()
             if self.hud:
@@ -337,6 +341,17 @@ class ChittiController:
                 self.hud.set_progress("")
                 self.hud.hide()
             print("\nChitti: [Stopped & Silent Standby - Say 'Hey Chitti' to wake]")
+            return
+
+        # ---------------- PRIORITY 1B: CAMERA RELEASE COMMAND ----------------
+        import re
+        if re.search(r"(?i)\b(?:release\s+camera|camera\s+off|turn\s+off\s+camera|free\s+camera|stop\s+camera|close\s+camera)\b", user_text):
+            if self.perception_engine:
+                self.perception_engine.stop()
+            if self.vision and self.vision.camera:
+                self.vision.camera.release()
+            log_chitti("[VISION] 📷 Camera device released and freed for other applications.")
+            self.safe_speak("I have released the camera so your browser and other applications can use it.")
             return
 
         # ---------------- PRIORITY 2: SLEEP COMMAND ----------------

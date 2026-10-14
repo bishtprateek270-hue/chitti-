@@ -88,24 +88,22 @@ class Camera:
             log_debug(f"Camera index {self.device_index} successfully opened.")
             return True
 
-    def capture_frame(self) -> np.ndarray:
-        """Captures a single BGR frame from the camera."""
+    def capture_frame(self, auto_release: Optional[bool] = None) -> np.ndarray:
+        """Captures a single BGR frame from the camera. Releases camera after capture if auto_release is True or if opened on-demand."""
         with self._lock:
-            # 1. Try reading from existing active stream
-            if self._is_opened and self._cap is not None and self._cap.isOpened():
-                try:
-                    ret, frame = self._cap.read()
-                    if ret and frame is not None and frame.size > 0:
-                        return frame
-                except Exception:
-                    pass
+            was_already_opened = self._is_opened and self._cap is not None and self._cap.isOpened()
+            if not was_already_opened:
+                self.open()
 
-            # 2. Fresh open if stream was idle or not initialized
-            self.release()
-            self.open()
             ret, frame = self._cap.read()
             if not ret or frame is None:
+                self.release()
                 raise CameraError("Failed to read frame from camera stream.")
+
+            should_release = auto_release if auto_release is not None else (not was_already_opened)
+            if should_release:
+                self.release()
+
             return frame
 
     def release(self):

@@ -177,7 +177,7 @@ class VisionConfig:
         default_factory=lambda: os.getenv("FACES_DB_PATH", "data/vision/faces.db")
     )
     autonomous_perception: bool = field(
-        default_factory=lambda: os.getenv("AUTONOMOUS_VISION_ENABLED", "true").lower() in ("true", "1", "yes")
+        default_factory=lambda: os.getenv("AUTONOMOUS_VISION_ENABLED", "false").lower() in ("true", "1", "yes")
     )
     perception_fps: float = field(
         default_factory=lambda: float(os.getenv("PERCEPTION_FPS", "2.0"))

@@ -219,6 +219,10 @@ class AmbientVoiceListener:
     def _listen_for_followup_turn(self, timeout_seconds: float = 8.0):
         """Listens for a natural follow-up turn after speech output concludes."""
         try:
+            if self.state_mgr.is_sleeping() or self.state_mgr.is_interrupted() or not self.state_mgr.is_in_conversation_session():
+                self._return_to_standby()
+                return
+
             from src.audio.capture_service import get_audio_capture_service
             get_audio_capture_service().flush()
 
@@ -234,14 +238,20 @@ class AmbientVoiceListener:
                 on_chunk=self._on_audio_chunk,
             )
 
-            if not transcribed_text or not transcribed_text.strip():
-                log_debug("[AMBIENT] Follow-up silence window expired.")
+            if self.state_mgr.is_sleeping() or self.state_mgr.is_interrupted() or not self.state_mgr.is_in_conversation_session():
+                self.state_mgr.end_conversation_session()
+                self._return_to_standby()
+                return
+
+            clean_text = (transcribed_text or "").strip()
+            if not clean_text or len(clean_text) < 3 or clean_text.lower() in ("you", "thank you", "subtitles", "share", "bye", "..."):
+                log_debug(f"[AMBIENT] Follow-up silence/noise window expired ('{clean_text}').")
                 self.state_mgr.end_conversation_session()
                 self._return_to_standby()
                 return
 
             self.state_mgr.begin_transcribing()
-            self._handle_incoming_transcript(transcribed_text)
+            self._handle_incoming_transcript(clean_text)
         except Exception as e:
             log_debug(f"[AMBIENT] Follow-up turn notice: {e}")
             self.state_mgr.end_conversation_session()
@@ -266,7 +276,10 @@ class AmbientVoiceListener:
                 self.tts.stop()
             self.barge_in.stop_monitoring()
             self.state_mgr.interrupt(reason="user_stop")
+            self.state_mgr.end_conversation_session()
             self.state_mgr.sleep()
+            from src.audio.capture_service import get_audio_capture_service
+            get_audio_capture_service().flush()
             with self._lock:
                 self.state = AmbientState.STANDBY
             if self.hud:
@@ -282,7 +295,10 @@ class AmbientVoiceListener:
             if self.tts and hasattr(self.tts, "stop"):
                 self.tts.stop()
             self.barge_in.stop_monitoring()
+            self.state_mgr.end_conversation_session()
             self.state_mgr.sleep()
+            from src.audio.capture_service import get_audio_capture_service
+            get_audio_capture_service().flush()
             with self._lock:
                 self.state = AmbientState.STANDBY
             if self.hud:
@@ -421,10 +437,13 @@ class AmbientVoiceListener:
     def go_to_sleep(self):
         """Immediately stops ongoing speech and puts ambient listener in quiet standby."""
         log_chitti("[AMBIENT] 😴 Entering quiet standby mode. Say 'Hey Chitti' or press Alt+Space to wake.")
+        self.state_mgr.end_conversation_session()
         self.state_mgr.sleep()
         if self.tts and hasattr(self.tts, "stop"):
             self.tts.stop()
         self.barge_in.stop_monitoring()
+        from src.audio.capture_service import get_audio_capture_service
+        get_audio_capture_service().flush()
         with self._lock:
             self.state = AmbientState.STANDBY
         if self.hud:
