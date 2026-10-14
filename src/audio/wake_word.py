@@ -48,15 +48,12 @@ class WakeWordDetector:
     """
 
     DEFAULT_KEYWORDS = [
-        # English
-        "hey chitti", "chitti wake up", "wake up chitti", "ok chitti", "hello chitti", "chitti",
-        # Hindi
-        "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti sun", "chitti suno",
-        "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "जाग जा चिट्टी", "चिट्टी",
-        # Hinglish
+        # English (explicit compound wake phrases only)
+        "hello chitti", "chitti hello", "wake up chitti", "chitti wake up", "hey chitti", "ok chitti", "hi chitti",
+        # Hindi & Hinglish
+        "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno",
+        "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "जाग जा चिट्टी",
         "hey chitti suno", "chitti active ho ja", "chitti active ho jao", "active ho ja chitti",
-        # Phonetic & Accent variations
-        "chitty", "cheeti"
     ]
 
     def __init__(
@@ -273,10 +270,12 @@ class WakeWordDetector:
                         return None
 
                     if phrase_res.command == ControlCommand.WAKE:
-                        matched = True
-                        matched_kw = phrase_res.matched_phrase.title()
-                        confidence = phrase_res.confidence
-                        extracted_command = phrase_res.extracted_tail
+                        # Reject standalone single-word triggers ('chitti') in continuous background listening
+                        if phrase_res.matched_phrase.lower() not in ("chitti", "chitty", "cheeti", "चिट्टी"):
+                            matched = True
+                            matched_kw = phrase_res.matched_phrase.title()
+                            confidence = phrase_res.confidence
+                            extracted_command = phrase_res.extracted_tail
                     else:
                         import re
                         for kw in self.keywords:
@@ -291,17 +290,19 @@ class WakeWordDetector:
                                 if len(after_kw) >= 2:
                                     extracted_command = after_kw
                                 break
-                        # If STT recognized intelligible speech but it was NOT a wake phrase:
-                        if not matched:
-                            return None
             except Exception:
                 pass
 
-        # 4. Acoustic Signature trigger (Used when STT is offline / returns empty / not provided)
-        if not matched and acoustic_score >= 0.65 and is_speech:
+            # CRITICAL: When STT engine is active, strict speech recognition is required!
+            # Never fall back to acoustic frequency heuristics when STT did not recognize an explicit wake phrase.
+            if not matched:
+                return None
+
+        # 4. Acoustic Signature trigger (ONLY used in test environments when STT engine is None)
+        if self.stt_engine is None and not matched and acoustic_score >= 0.75 and is_speech:
             matched = True
             confidence = float(acoustic_score)
-            matched_kw = "Hey Chitti" if acoustic_score > 0.75 else "Chitti"
+            matched_kw = "Hey Chitti" if acoustic_score > 0.80 else "Chitti"
 
         if not matched:
             return None

@@ -41,9 +41,14 @@ class PhraseMatcher:
 
     # 1. Wake phrases (as specified in Project requirements)
     WAKE_PHRASES_EN = [
-        "chitti wake up",
+        "hello chitti",
+        "chitti hello",
         "wake up chitti",
+        "chitti wake up",
         "hey chitti",
+        "ok chitti",
+        "hi chitti",
+        "chitti hi",
         "chitti",
         "chitti are you there",
         "are you there chitti",

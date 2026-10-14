@@ -456,7 +456,35 @@ class TestGlobalVoiceControlSystem(unittest.TestCase):
         event = detector.process_audio_chunk(dummy_audio)
         self.assertIsNone(event)
 
-        # Only genuine wake word should trigger
+        # Standalone 'chitti' must return None (prevents false triggers when talking about Chitti)
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = "chitti"
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNone(event)
+
+        # Empty STT string (ambient talk without speech words) must return None (NO acoustic false trigger)
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = ""
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNone(event)
+
+        # 'hello chitti' should trigger
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = "hello chitti"
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNotNone(event)
+        self.assertIn("Chitti", event.keyword)
+
+        # 'wake up chitti' should trigger
+        detector._last_trigger_time = 0.0
+        detector._last_stt_check_time = 0.0
+        mock_stt.transcribe.return_value = "wake up chitti"
+        event = detector.process_audio_chunk(dummy_audio)
+        self.assertIsNotNone(event)
+        self.assertIn("Chitti", event.keyword)
+
+        # 'hey chitti' should trigger
+        detector._last_trigger_time = 0.0
         detector._last_stt_check_time = 0.0
         mock_stt.transcribe.return_value = "hey chitti"
         event = detector.process_audio_chunk(dummy_audio)

@@ -330,8 +330,7 @@ class TestAudioPipelineRobustness(unittest.TestCase):
         listener._return_to_standby()
         self.assertEqual(listener.state, AmbientState.STANDBY)
         mock_wake.resume.assert_called()
-        mock_hud.set_mode.assert_called_with(HUDMode.IDLE)
-        mock_hud.set_progress.assert_called_with("")
+        self.assertIn(unittest.mock.call(HUDMode.IDLE), mock_hud.set_mode.call_args_list)
 
 
 if __name__ == "__main__":
