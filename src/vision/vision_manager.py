@@ -225,73 +225,143 @@ class VisionManager:
     def register_person(
         self,
         name: str,
-        num_samples: int = 3,
+        num_samples: int = 5,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Tuple[bool, str]:
         """
-        Captures multiple face samples from the camera, generates average face embeddings,
-        and saves the identity into the SQLite face database.
+        Captures multiple diverse face samples from the camera across natural micro-poses,
+        validates face quality and intra-identity consistency, and saves a multi-exemplar gallery.
         """
         clean_name = name.strip()
-        if not clean_name:
-            return False, "Invalid name provided for face registration."
+        invalid_names = {
+            "my", "me", "this", "face", "faces", "person", "someone", "somebody",
+            "user", "camera", "picture", "photo", "image", "office", "home", "work",
+            "profile", "identity", "a", "an", "the", "new", "unknown", "registered"
+        }
+        if not clean_name or clean_name.lower() in invalid_names or len(clean_name) < 2:
+            return False, f"Invalid name '{clean_name}'. Please specify a real person's name (e.g. 'register face for Prateek')."
 
-        print(f"\n[VISION] Starting face registration for '{clean_name}' ({num_samples} samples required)...", flush=True)
-        print("  Looking at the camera... Capturing face samples now.", flush=True)
-        collected_embeddings: List[List[float]] = []
+        print(f"\n[VISION] Starting biometric face enrollment for '{clean_name}'...", flush=True)
+        print("  Please position yourself in front of the camera with good lighting.", flush=True)
 
+        pose_guidance = [
+            "Look straight at the camera (Frontal)",
+            "Hold still, capturing frontal angle...",
+            "Turn head slightly to the left...",
+            "Turn head slightly to the right...",
+            "Tilt head slightly up or down...",
+            "Look straight with a natural smile or expression...",
+        ]
+
+        collected_embeddings: List[np.ndarray] = []
         start_time = time.time()
-        timeout = 15.0  # 15 seconds timeout to collect samples
+        timeout = 25.0  # 25 seconds timeout for multi-pose capture
         last_hint_time = 0.0
+        consecutive_failures = 0
 
         while len(collected_embeddings) < num_samples and (time.time() - start_time) < timeout:
+            target_idx = len(collected_embeddings)
+            hint_str = pose_guidance[min(target_idx, len(pose_guidance) - 1)]
+
+            if time.time() - last_hint_time > 2.0:
+                print(f"  [Step {target_idx + 1}/{num_samples}] {hint_str}", flush=True)
+                last_hint_time = time.time()
+
             try:
                 frame = self.camera.capture_frame()
+                if frame is None or frame.size == 0:
+                    time.sleep(0.08)
+                    continue
+
                 detections = self.face_detector.detect_faces(frame)
 
                 if len(detections) >= 1:
-                    # Select the most prominent face
-                    det = max(detections, key=lambda d: d.confidence)
-                    emb = self.face_recognizer.extract_embedding(frame, det)
+                    # Select largest / most prominent face
+                    det = max(detections, key=lambda d: d.bbox[2] * d.bbox[3])
+
+                    # Verify face quality
+                    is_ok, reason = self.face_recognizer.check_face_quality(frame, det)
+                    if not is_ok:
+                        consecutive_failures += 1
+                        time.sleep(0.10)
+                        continue
+
+                    emb = self.face_recognizer.extract_embedding(frame, det, enforce_quality=True)
                     if emb is not None:
-                        collected_embeddings.append(emb)
+                        emb_arr = np.array(emb, dtype=np.float32)
+                        emb_norm = np.linalg.norm(emb_arr)
+                        if emb_norm > 0:
+                            emb_arr = emb_arr / emb_norm
+
+                        # If we already have samples, verify consistency (must be the same person!)
+                        if collected_embeddings:
+                            sim_to_first = float(np.dot(emb_arr, collected_embeddings[0]))
+                            if sim_to_first < 0.50:
+                                log_debug(f"Rejected outlier frame (similarity {sim_to_first:.2f} < 0.50)")
+                                time.sleep(0.15)
+                                continue
+
+                        collected_embeddings.append(emb_arr)
                         if progress_callback:
                             progress_callback(len(collected_embeddings), num_samples)
-                        print(f"  -> [Sample {len(collected_embeddings)}/{num_samples}] Face captured! (confidence: {det.confidence:.2f})", flush=True)
-                        time.sleep(0.25)
-                else:
-                    if time.time() - last_hint_time > 2.0:
-                        print("  [Hint] Looking for your face... Please look at the camera.", flush=True)
-                        last_hint_time = time.time()
+                        print(
+                            f"  -> [Sample {len(collected_embeddings)}/{num_samples}] Captured! (sharpness OK, confidence: {det.confidence:.2f})",
+                            flush=True,
+                        )
+                        time.sleep(0.40)  # Pause to ensure pose change between captures
                 time.sleep(0.05)
             except Exception as e:
                 log_warning(f"Error during face sample capture: {e}")
                 time.sleep(0.1)
 
-        if len(collected_embeddings) == 0:
+        if len(collected_embeddings) < 2:
             return (
                 False,
-                f"Registration timed out. No face detected. "
-                f"Please ensure good lighting and face the camera directly.",
+                f"Registration timed out. Could not capture sufficient high-quality face samples. "
+                f"Please ensure good lighting, avoid blur, and face the camera directly.",
             )
 
-        # Average normalized embedding vectors
+        # Intra-Identity Consistency & Outlier Filtering
         arr = np.array(collected_embeddings, dtype=np.float32)
         mean_vec = np.mean(arr, axis=0)
         norm = np.linalg.norm(mean_vec)
         if norm > 0:
             mean_vec = mean_vec / norm
-        final_embedding = mean_vec.tolist()
+
+        valid_samples: List[List[float]] = []
+        for s in collected_embeddings:
+            sim = float(np.dot(s, mean_vec))
+            if sim >= 0.55:
+                valid_samples.append(s.tolist())
+
+        if len(valid_samples) < 2:
+            return (
+                False,
+                "Face capture was inconsistent. Please ensure only one person is in view and try again.",
+            )
+
+        # Build multi-exemplar gallery payload
+        gallery_payload = {
+            "mean": mean_vec.tolist(),
+            "exemplars": valid_samples,
+        }
 
         person_id = self.face_db.register_or_update_face(
             name=clean_name,
-            embedding=final_embedding,
-            sample_count=len(collected_embeddings),
-            metadata={"registered_at": datetime.now(timezone.utc).isoformat()},
+            embedding=gallery_payload,
+            sample_count=len(valid_samples),
+            metadata={
+                "registered_at": datetime.now(timezone.utc).isoformat(),
+                "num_exemplars": len(valid_samples),
+                "model": "SFace_2021dec_multi_exemplar",
+            },
         )
 
-        print(f"\n[VISION] Successfully registered '{clean_name}' (ID: {person_id}) with {len(collected_embeddings)} samples.", flush=True)
-        return True, f"I have successfully registered {clean_name} in my face database."
+        print(
+            f"\n[VISION] Successfully enrolled '{clean_name}' (ID: {person_id}) with {len(valid_samples)} verified multi-exemplar vectors.",
+            flush=True,
+        )
+        return True, f"I have successfully registered {clean_name} with verified multi-angle facial recognition."
 
     def register_face_interactive(self, name: str, num_samples: int = 5) -> Tuple[bool, str]:
         """Interactive face registration method wrapping register_person."""
@@ -313,11 +383,12 @@ class VisionManager:
     def handle_face_commands(self, user_text: str) -> Optional[Tuple[str, str]]:
         """
         Parses explicit face management commands (register person, delete person, list people).
+        Enforces strict name extraction to prevent false registrations.
         """
         text = user_text.strip()
         lower = text.lower()
 
-        # Handle pending confirmation
+        # Handle pending deletion confirmation
         if self.pending_face_deletion:
             target_name = self.pending_face_deletion
             if any(w in lower for w in ["yes", "confirm", "proceed", "sure", "delete"]):
@@ -351,12 +422,36 @@ class VisionManager:
                     f"Are you sure you want to remove {target} from Chitti's registered faces? Please say Yes or No.",
                 )
 
-        # Register person voice command
-        match_reg = re.search(r"(?i)\b(?:register|remember\s+face\s+as|my\s+name\s+is|register\s+person)\s+([a-zA-Z0-9_]+)\s*(?:as\s+(?:a\s+)?person)?\b", text)
-        if match_reg and any(w in lower for w in ["register", "face"]):
-            target_name = match_reg.group(1).strip().rstrip(".!? \t\n")
-            if target_name and target_name.lower() not in ["a", "the", "person", "someone"]:
-                success, msg = self.register_person(target_name, num_samples=3)
+        # Check for unspecific "register face" command
+        if re.search(r"(?i)^\s*(?:register|enroll)\s+(?:my\s+)?face\s*$", text):
+            return ("prompt_name", "Whose face would you like me to register? Please say 'register face for [Name]'.")
+
+        # Explicit register person voice command
+        match_reg = re.search(
+            r"(?i)\b(?:register|enroll)\s+(?:my\s+face\s+as|face\s+for|face\s+of|face\s+as|person)\s+([a-zA-Z][a-zA-Z0-9_\s]{1,40})\b",
+            text,
+        )
+        if not match_reg:
+            match_reg = re.search(
+                r"(?i)\b(?:my\s+name\s+is|call\s+me)\s+([a-zA-Z][a-zA-Z0-9_\s]{1,40})\b",
+                text,
+            )
+
+        if match_reg:
+            candidate = match_reg.group(1).strip().rstrip(".!? \t\n")
+            # Strip trailing fillers like "as a person", "please"
+            candidate = re.sub(r"(?i)\s+as\s+(?:a\s+)?person.*$", "", candidate).strip()
+            candidate = re.sub(r"(?i)\s+please.*$", "", candidate).strip()
+
+            invalid_names = {
+                "my", "me", "this", "face", "faces", "person", "someone", "somebody",
+                "user", "camera", "picture", "photo", "image", "office", "home", "work",
+                "profile", "identity", "a", "an", "the", "new", "unknown", "registered"
+            }
+            if candidate and candidate.lower() not in invalid_names and len(candidate) >= 2:
+                success, msg = self.register_person(candidate, num_samples=5)
                 return ("person_registered", msg)
+            else:
+                return ("invalid_name", "Please specify a valid person name, for example: 'register face for Prateek'.")
 
         return None

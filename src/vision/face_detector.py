@@ -22,7 +22,7 @@ class FaceDetector:
     def __init__(
         self,
         model_path: Optional[str] = None,
-        score_threshold: float = 0.45,
+        score_threshold: float = 0.55,
         nms_threshold: float = 0.3,
         top_k: int = 5000,
     ):
@@ -91,11 +91,17 @@ class FaceDetector:
                 if faces is not None:
                     for face in faces:
                         # YuNet format: [x, y, w, h, x_re, y_re, x_le, y_le, x_nt, y_nt, x_rc, y_rc, x_lc, y_lc, score]
+                        confidence = float(face[-1])
+                        if confidence < self.score_threshold:
+                            continue
+
                         bbox_x = max(0, int(face[0]))
                         bbox_y = max(0, int(face[1]))
                         bbox_w = max(1, int(face[2]))
                         bbox_h = max(1, int(face[3]))
-                        confidence = float(face[-1])
+
+                        if bbox_w < 40 or bbox_h < 40:
+                            continue
 
                         landmarks = [
                             (float(face[4]), float(face[5])),   # Right eye

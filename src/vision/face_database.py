@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 from src.utils.logging import log_debug, log_warning
 
@@ -70,15 +70,30 @@ class FaceDatabase:
                 """)
                 conn.commit()
                 log_debug(f"Face database initialized at {self.db_path}")
+        self.remove_invalid_system_names()
+
+    def remove_invalid_system_names(self) -> int:
+        """Removes accidental system entries like 'office', 'my', 'test prateek', 'face', 'person'."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM registered_faces WHERE LOWER(TRIM(name)) IN ('office', 'my', 'test prateek', 'face', 'person', 'someone', 'somebody', 'me', 'camera')"
+                )
+                conn.commit()
+                deleted = cursor.rowcount
+                if deleted > 0:
+                    log_debug(f"Removed {deleted} invalid system entries from face database.")
+                return deleted
 
     def register_or_update_face(
         self,
         name: str,
-        embedding: List[float],
+        embedding: Union[List[float], Dict[str, Any], List[List[float]]],
         sample_count: int = 1,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """Registers a new person or updates their stored face embedding vector."""
+        """Registers a new person or updates their stored face embedding vector/gallery."""
         clean_name = name.strip()
         now = get_utc_now_iso()
         emb_json = json.dumps(embedding)
@@ -133,7 +148,7 @@ class FaceDatabase:
                     "metadata": json.loads(row["metadata"] or "{}"),
                 }
 
-    def get_all_registered_faces(self) -> List[Tuple[int, str, List[float]]]:
+    def get_all_registered_faces(self) -> List[Tuple[int, str, Any]]:
         """Returns list of (person_id, name, embedding) for all registered individuals."""
         with self._lock:
             with self._get_connection() as conn:

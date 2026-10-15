@@ -89,3 +89,32 @@ def test_format_vision_context_for_llm():
     assert "Unknown person" in context
     assert "laptop: 1" in context
     assert "bottle: 1" in context
+
+
+def test_handle_face_commands_sanitization():
+    manager = VisionManager(camera=MagicMock(), face_detector=MagicMock(), face_recognizer=MagicMock(), object_detector=MagicMock())
+    manager.register_person = MagicMock(return_value=(True, "Registered"))
+
+    # 1. Unspecific 'register face' prompts for name
+    cmd, msg = manager.handle_face_commands("register face")
+    assert cmd == "prompt_name"
+
+    cmd, msg = manager.handle_face_commands("register my face")
+    assert cmd == "prompt_name"
+
+    # 2. Blocklisted / invalid names are rejected
+    cmd, msg = manager.handle_face_commands("register person my")
+    assert cmd == "invalid_name"
+
+    cmd, msg = manager.handle_face_commands("register face as office")
+    assert cmd == "invalid_name"
+
+    # 3. Valid name registers person
+    cmd, msg = manager.handle_face_commands("register face for Prateek")
+    assert cmd == "person_registered"
+    manager.register_person.assert_called_with("Prateek", num_samples=5)
+
+    # 4. 'My name is Rahul' registers Rahul
+    cmd, msg = manager.handle_face_commands("My name is Rahul")
+    assert cmd == "person_registered"
+    manager.register_person.assert_called_with("Rahul", num_samples=5)

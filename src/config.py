@@ -165,7 +165,7 @@ class VisionConfig:
         default_factory=lambda: os.getenv("FACE_RECOGNITION_MODEL_PATH", "models/vision/face_recognition_sface_2021dec.onnx")
     )
     face_recognition_threshold: float = field(
-        default_factory=lambda: float(os.getenv("FACE_RECOGNITION_THRESHOLD", "0.60"))
+        default_factory=lambda: float(os.getenv("FACE_RECOGNITION_THRESHOLD", "0.68"))
     )
     object_detection_model: str = field(
         default_factory=lambda: os.getenv("OBJECT_DETECTION_MODEL", "models/vision/yolov8n.pt")

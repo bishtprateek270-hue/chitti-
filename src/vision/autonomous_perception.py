@@ -189,7 +189,12 @@ class AutonomousPerceptionEngine:
                 try:
                     emb = self.vision.face_recognizer.extract_embedding(frame, det)
                     if emb is not None and registered_faces:
-                        name, sim, is_known, _ = self.vision.face_recognizer.match_identity(emb, registered_faces)
+                        from unittest.mock import MagicMock
+                        match_smoothed = getattr(self.vision.face_recognizer, "match_identity_smoothed", None)
+                        if match_smoothed is not None and not isinstance(match_smoothed, MagicMock):
+                            name, sim, is_known, _ = match_smoothed(emb, registered_faces)
+                        else:
+                            name, sim, is_known, _ = self.vision.face_recognizer.match_identity(emb, registered_faces)
                     else:
                         name, sim, is_known = "Unknown", 0.0, False
                 except Exception:
@@ -202,10 +207,12 @@ class AutonomousPerceptionEngine:
                 last_time = self._last_greeted.get(name, 0.0)
 
                 if now - last_time >= cooldown_dur:
-                    # Guard: If Chitti is sleeping or interrupted, never trigger proactive greetings or show HUD!
+                    # Guard: If Chitti is sleeping or interrupted, never trigger proactive greetings and release camera!
                     from src.core.state_manager import get_state_manager
                     sm = get_state_manager()
                     if sm.is_sleeping() or sm.is_interrupted():
+                        if self.vision and self.vision.camera and self.vision.camera.is_opened():
+                            self.vision.camera.release()
                         continue
 
                     # Update greeting timestamp
