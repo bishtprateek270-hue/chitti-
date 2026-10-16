@@ -1189,24 +1189,42 @@ class ChittiController:
                 log_error(f"Unhandled error in main loop: {e}")
 
 
+def kill_existing_chitti_instances(exclude_current: bool = True) -> int:
+    """
+    Terminates any background Chitti processes (python.exe or pythonw.exe)
+    using psutil to release audio devices, cameras, and mutexes cleanly.
+    """
+    killed_count = 0
+    current_pid = os.getpid() if exclude_current else None
+    try:
+        import psutil
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if current_pid and proc.info['pid'] == current_pid:
+                    continue
+                cmdline_list = proc.info.get('cmdline') or []
+                cmdline_str = " ".join(cmdline_list).lower()
+                name_str = (proc.info.get('name') or "").lower()
+                if "python" in name_str and ("src.main" in cmdline_str or "main.py" in cmdline_str):
+                    log_chitti(f"Terminating conflicting Chitti instance (PID {proc.info['pid']})...")
+                    proc.kill()
+                    killed_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception as e:
+        log_debug(f"Process cleanup notice: {e}")
+    return killed_count
+
+
 def main():
     """Application entry point with Single-Instance Mutex lock."""
     # Check for restart or kill flags to clean up background processes
     if any(arg in sys.argv for arg in ("--restart", "--kill", "--force")):
-        if sys.platform == "win32":
-            import subprocess
-            try:
-                subprocess.run(
-                    ["powershell", "-Command", "Get-Process pythonw -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*src*main*' -or $_.CommandLine -like '*main.py*' } | Stop-Process -Force"],
-                    capture_output=True,
-                    check=False,
-                )
-            except Exception:
-                pass
-            time.sleep(0.5)
+        killed = kill_existing_chitti_instances(exclude_current=True)
         if "--kill" in sys.argv:
-            print("[OK] Stopped any background Chitti instances.")
+            print(f"[OK] Stopped {killed} background Chitti instance(s).")
             return
+        time.sleep(0.6)
 
     # Win32 Single-Instance Mutex (Prevents duplicate processes & acoustic echo loops)
     mutex = None

@@ -75,6 +75,9 @@ class TestGlobalVoiceControlSystem(unittest.TestCase):
             "Chitti, wake up",
             "Hey Chitti, suno",
             "Chitti, active ho ja",
+            "chitii",
+            "hey chitii",
+            "hello chitii",
         ]
 
         for phrase in wake_variants:
@@ -146,12 +149,14 @@ class TestGlobalVoiceControlSystem(unittest.TestCase):
         hindi_stop_phrases = [
             "Ruk ja",
             "Ruko",
+            "Ruk jao",
             "Bas kar",
             "Bas karo",
             "Chup ho ja",
             "Band kar",
             "Chitti ruk ja",
             "Chitti bas kar",
+            "chitii ruk ja",
         ]
 
         for phrase in hindi_stop_phrases:
@@ -172,7 +177,9 @@ class TestGlobalVoiceControlSystem(unittest.TestCase):
         """Test E: User says 'Chitti, stop', 'Ruk ja Chitti', 'Chitti, ab band kar'."""
         hinglish_stop_phrases = [
             "Chitti, stop",
+            "chitii stop",
             "Ruk ja Chitti",
+            "ruk ja chitii",
             "Chitti bas kar",
             "Chitti, ab band kar",
         ]

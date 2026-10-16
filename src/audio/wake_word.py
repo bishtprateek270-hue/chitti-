@@ -51,12 +51,15 @@ class WakeWordDetector:
         # English wake words
         "chitti", "hey chitti", "hello chitti", "ok chitti", "hi chitti",
         "wake up chitti", "chitti wake up", "chitti are you there",
+        # Phonetic & Accent variations (explicitly handling chitii, chiti, chitty)
+        "chitii", "hey chitii", "hello chitii", "hi chitii", "ok chitii", "wake up chitii", "chitii wake up",
+        "chiti", "hey chiti", "hello chiti", "hi chiti", "ok chiti", "wake up chiti", "chiti wake up",
+        "chitty", "hey chitty", "hello chitty", "cheeti",
         # Hindi & Hinglish
         "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno", "chitti sun",
         "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "चिट्टी",
-        "hey chitti suno", "chitti active ho ja", "chitti active ho jao", "active ho ja chitti",
-        # Phonetic & Accent variations
-        "chitty", "cheeti",
+        "chitii suno", "chitii sun", "chiti suno", "chiti sun",
+        "hey chitti suno", "hey chitii suno", "chitti active ho ja", "chitti active ho jao", "active ho ja chitti",
     ]
 
     def __init__(
