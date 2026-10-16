@@ -438,8 +438,9 @@ class AmbientVoiceListener:
         get_audio_capture_service().flush()
         self.state_mgr.finish_task(request_id)
 
-        # Refresh conversation window for natural follow-up turn
-        if not self.state_mgr.is_sleeping() and not self.state_mgr.is_interrupted():
+        # Only listen for follow-up turns in continuous mode.
+        # In wake-word mode, immediately return to standby so Chitti ONLY listens when addressed as 'Chitti'.
+        if not self.state_mgr.is_sleeping() and not self.state_mgr.is_interrupted() and self.state_mgr.operating_mode == "continuous":
             self.state_mgr.start_conversation_session(timeout_seconds=8.0)
             worker = threading.Thread(
                 target=self._listen_for_followup_turn,
@@ -449,6 +450,7 @@ class AmbientVoiceListener:
             )
             worker.start()
         else:
+            self.state_mgr.end_conversation_session()
             self._return_to_standby()
 
     def go_to_sleep(self):

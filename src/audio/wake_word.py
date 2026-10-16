@@ -48,12 +48,15 @@ class WakeWordDetector:
     """
 
     DEFAULT_KEYWORDS = [
-        # English (explicit compound wake phrases only)
-        "hello chitti", "chitti hello", "wake up chitti", "chitti wake up", "hey chitti", "ok chitti", "hi chitti",
+        # English wake words
+        "chitti", "hey chitti", "hello chitti", "ok chitti", "hi chitti",
+        "wake up chitti", "chitti wake up", "chitti are you there",
         # Hindi & Hinglish
-        "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno",
-        "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "जाग जा चिट्टी",
+        "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno", "chitti sun",
+        "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "चिट्टी",
         "hey chitti suno", "chitti active ho ja", "chitti active ho jao", "active ho ja chitti",
+        # Phonetic & Accent variations
+        "chitty", "cheeti",
     ]
 
     def __init__(
@@ -270,12 +273,10 @@ class WakeWordDetector:
                         return None
 
                     if phrase_res.command == ControlCommand.WAKE:
-                        # Reject standalone single-word triggers ('chitti') in continuous background listening
-                        if phrase_res.matched_phrase.lower() not in ("chitti", "chitty", "cheeti", "चिट्टी"):
-                            matched = True
-                            matched_kw = phrase_res.matched_phrase.title()
-                            confidence = phrase_res.confidence
-                            extracted_command = phrase_res.extracted_tail
+                        matched = True
+                        matched_kw = phrase_res.matched_phrase.title()
+                        confidence = phrase_res.confidence
+                        extracted_command = phrase_res.extracted_tail
                     else:
                         import re
                         for kw in self.keywords:
