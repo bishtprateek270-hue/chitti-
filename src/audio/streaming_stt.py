@@ -223,7 +223,9 @@ class StreamingSTTEngine:
 
             recorded_body = np.concatenate(chunks_to_use)
             full_audio = np.concatenate([self._pre_buffer, recorded_body])
-            return full_audio
+            if full_audio.ndim > 1:
+                full_audio = full_audio[:, 0].flatten() if full_audio.shape[1] > 1 else full_audio.flatten()
+            return full_audio.astype(np.float32)
 
     def transcribe_streaming(
         self,

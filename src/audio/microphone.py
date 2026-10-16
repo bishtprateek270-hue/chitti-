@@ -158,4 +158,6 @@ class MicrophoneManager:
 
         all_audio = pre_chunks + recorded_chunks
         audio_data = np.concatenate(all_audio, axis=0)
-        return audio_data
+        if audio_data.ndim > 1:
+            audio_data = audio_data[:, 0].flatten() if audio_data.shape[1] > 1 else audio_data.flatten()
+        return audio_data.astype(np.float32)

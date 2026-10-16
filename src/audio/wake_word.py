@@ -223,8 +223,11 @@ class WakeWordDetector:
 
         # Update sliding ring buffer (16kHz)
         with self._buffer_lock:
-            self._audio_buffer = np.roll(self._audio_buffer, -len(chunk))
-            self._audio_buffer[-len(chunk):] = chunk
+            if len(chunk) >= self._buffer_size:
+                self._audio_buffer = chunk[-self._buffer_size:].copy()
+            else:
+                self._audio_buffer = np.roll(self._audio_buffer, -len(chunk))
+                self._audio_buffer[-len(chunk):] = chunk
             current_window = self._audio_buffer.copy()
 
         # Check cooldown
@@ -253,17 +256,16 @@ class WakeWordDetector:
 
         # 3. Strict Verification via STT Engine when available
         if self.stt_engine is not None:
-            # Debounce STT checks to at most once per 0.85s (never flood CPU)
-            if now - self._last_stt_check_time < 0.85:
+            # Debounce STT checks to at most once per 0.70s (never flood CPU)
+            if now - self._last_stt_check_time < 0.70:
                 return None
             self._last_stt_check_time = now
 
             try:
-                # Never run expensive Whisper offline model during continuous wake word polling
-                try:
-                    snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=False)
-                except TypeError:
-                    snippet_text = self.stt_engine.transcribe(current_window)
+                # Transcribe with Google STT first (zero-latency <0.3s).
+                # If Google yields nothing but acoustic signature is strong, allow Whisper fallback.
+                allow_whisper = (acoustic_score >= 0.72)
+                snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=allow_whisper)
                 snippet_text = snippet_text.lower().strip() if snippet_text else ""
 
                 if snippet_text:

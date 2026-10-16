@@ -95,7 +95,12 @@ class GoogleSTT(STTEngine):
             if audio.size == 0 or np.max(np.abs(audio)) < 1e-4:
                 return None
 
-            # Ensure float32 normalized in [-1.0, 1.0]
+            # Ensure 1D float32 normalized in [-1.0, 1.0]
+            if audio.ndim > 1:
+                audio = audio[:, 0].flatten() if audio.shape[1] > 1 else audio.flatten()
+            else:
+                audio = audio.flatten()
+
             if audio.dtype != np.float32:
                 audio = audio.astype(np.float32)
 
@@ -116,7 +121,7 @@ class GoogleSTT(STTEngine):
         return None
 
     def transcribe(self, audio: Union[np.ndarray, str, Path]) -> str:
-        """Transcribes speech using Google's Cloud Speech Recognition."""
+        """Transcribes speech using Google's Cloud Speech Recognition with zero latency."""
         if not self._recognizer:
             return ""
 
@@ -124,25 +129,18 @@ class GoogleSTT(STTEngine):
         if not audio_data:
             return ""
 
-        # Primary transcription language attempt
-        langs_to_try = [self.language, "en-IN", "en-US", "hi-IN"] if self.language else ["en-IN", "en-US", "hi-IN"]
-        seen_langs = []
-
-        for lang in langs_to_try:
-            if lang in seen_langs:
-                continue
-            seen_langs.append(lang)
-            try:
-                text = self._recognizer.recognize_google(audio_data, language=lang)
-                if text and text.strip():
-                    log_debug(f"[GOOGLE STT] Recognized ({lang}): '{text.strip()}'")
-                    return text.strip()
-            except sr.UnknownValueError:
-                # Speech was unintelligible in this specific language, try next
-                continue
-            except (sr.RequestError, Exception) as e:
-                log_debug(f"[GOOGLE STT] Cloud request failed: {e}")
-                break
+        # Single fast pass with Indian English / Hinglish model (0.3s)
+        target_lang = self.language or "en-IN"
+        try:
+            text = self._recognizer.recognize_google(audio_data, language=target_lang)
+            if text and text.strip():
+                log_debug(f"[GOOGLE STT] Recognized ({target_lang}): '{text.strip()}'")
+                return text.strip()
+        except sr.UnknownValueError:
+            return ""
+        except (sr.RequestError, Exception) as e:
+            log_debug(f"[GOOGLE STT] Cloud request notice: {e}")
+            return ""
 
         return ""
 
@@ -238,7 +236,12 @@ class WhisperSTT(STTEngine):
         if isinstance(audio, np.ndarray):
             if audio.size == 0 or np.max(np.abs(audio)) < 1e-4:
                 return ""
-            # Ensure float32 dtype
+            # Ensure 1D float32 array to prevent 50GB-90GB PyTorch STFT DefaultCPUAllocator crash
+            if audio.ndim > 1:
+                audio = audio[:, 0].flatten() if audio.shape[1] > 1 else audio.flatten()
+            else:
+                audio = audio.flatten()
+
             if audio.dtype != np.float32:
                 audio = audio.astype(np.float32)
             # Rescale if needed (if in int16 range)
@@ -349,8 +352,15 @@ class HybridSTT(STTEngine):
         metrics = get_metrics_collector()
         metrics.mark_stage(request_id, "transcription_started")
 
-        # Opt-in diagnostic recording for live comparison (Phase 4)
+        # Ensure 1D float32 array
         if isinstance(audio, np.ndarray):
+            if audio.ndim > 1:
+                audio = audio[:, 0].flatten() if audio.shape[1] > 1 else audio.flatten()
+            else:
+                audio = audio.flatten()
+            if audio.dtype != np.float32:
+                audio = audio.astype(np.float32)
+
             from src.audio.diagnostic import save_diagnostic_recording
             save_diagnostic_recording(audio, label="stt_candidate")
 
