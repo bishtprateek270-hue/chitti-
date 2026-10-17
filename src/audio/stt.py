@@ -110,8 +110,8 @@ class GoogleSTT(STTEngine):
 
             # Scale/normalize audio to 0.75 peak for crystal-clear 16-bit PCM dynamic range
             peak = float(np.max(np.abs(audio)))
-            if peak >= 0.020 and peak < 0.60:
-                gain = min(8.0, 0.75 / peak)
+            if peak >= 0.002 and peak < 0.65:
+                gain = min(25.0, 0.75 / peak)
                 audio = audio * gain
 
             # Convert float32 [-1, 1] to 16-bit PCM bytes
@@ -252,7 +252,7 @@ class WhisperSTT(STTEngine):
             # Guard against silence / faint background hiss to prevent hallucinations
             peak_val = float(np.max(np.abs(audio)))
             rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-            if peak_val < 0.020 or rms_val < 0.005:
+            if peak_val < 0.003 or rms_val < 0.0008:
                 log_debug(f"[WHISPER] Audio energy too faint (peak={peak_val:.4f}, rms={rms_val:.4f}). Returning empty.")
                 return ""
 
@@ -273,8 +273,8 @@ class WhisperSTT(STTEngine):
                     return ""
 
             # ONLY after VAD confirms genuine speech, normalize speech peak if quiet
-            if peak_val >= 0.020 and peak_val < 0.50:
-                gain = min(8.0, 0.75 / peak_val)
+            if peak_val >= 0.003 and peak_val < 0.65:
+                gain = min(20.0, 0.75 / peak_val)
                 audio = audio * gain
 
         if isinstance(audio, Path):

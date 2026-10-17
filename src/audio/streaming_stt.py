@@ -47,7 +47,7 @@ class StreamingSTTEngine:
         config: Optional[AudioConfig] = None,
         pre_speech_seconds: float = 0.50,
         silence_cutoff_seconds: float = 0.85,
-        min_speech_seconds: float = 0.30,
+        min_speech_seconds: float = 0.15,
         max_record_seconds: float = 7.0,
     ):
         self.config = config or get_config().audio
@@ -71,16 +71,16 @@ class StreamingSTTEngine:
         self.vad = VoiceActivityDetector(
             sample_rate=self.sample_rate,
             frame_duration=0.05,
-            snr_onset_ratio=1.75,
-            snr_hangover_ratio=1.30,
-            min_voice_rms=0.005,
+            snr_onset_ratio=1.35,
+            snr_hangover_ratio=1.15,
+            min_voice_rms=0.0015,
             onset_consecutive_frames=2,
             hangover_consecutive_frames=int(silence_cutoff_seconds / 0.05),
         )
 
         # Legacy backward-compatible attributes
-        self.silence_threshold = 0.010
-        self._adaptive_floor = 0.005
+        self.silence_threshold = 0.005
+        self._adaptive_floor = 0.002
 
     def stop_recording(self):
         """Immediately halts active recording loop."""
@@ -245,14 +245,19 @@ class StreamingSTTEngine:
             initial_audio=initial_audio,
         )
 
-        if len(audio) < int(self.sample_rate * 0.25):
+        if len(audio) < int(self.sample_rate * 0.15):
             return ""
 
         peak_amp = float(np.max(np.abs(audio)))
         rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-        if peak_amp < 0.005 or rms_val < 0.002:
-            log_debug(f"[STREAMING STT] Audio energy too faint (peak={peak_amp:.3f}, rms={rms_val:.3f}). Discarded as silence.")
+        if peak_amp < 0.0015 or rms_val < 0.0006:
+            log_debug(f"[STREAMING STT] Audio energy too faint (peak={peak_amp:.4f}, rms={rms_val:.4f}). Discarded as silence.")
             return ""
+
+        # Pre-normalize audio to standard vocal level (0.75 peak) to ensure crystal-clear transcription
+        if peak_amp >= 0.0015 and peak_amp < 0.65:
+            gain = min(20.0, 0.75 / peak_amp)
+            audio = audio * gain
 
         log_info(f"[STREAMING STT] Transcribing {len(audio)/self.sample_rate:.2f}s audio stream...")
         text = self.stt_engine.transcribe(audio)

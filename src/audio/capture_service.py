@@ -223,15 +223,41 @@ class AudioCaptureService:
             except Exception:
                 pass
 
+    def _restart_stream(self):
+        """Restarts the hardware InputStream if stalled or disconnected."""
+        try:
+            if self._stream is not None:
+                try:
+                    self._stream.stop()
+                    self._stream.close()
+                except Exception:
+                    pass
+                self._stream = None
+            self.flush()
+            success = self._open_stream()
+            if success:
+                self._last_frame_time = time.time()
+                log_info("[VOICE] Microphone stream successfully revived by watchdog.")
+        except Exception as e:
+            log_debug(f"[VOICE] Watchdog restart notice: {e}")
+
     def _dispatcher_loop(self):
         """
         Background worker thread: consumes raw chunks, resamples to 16kHz mono,
         calculates RMS energy, and dispatches to registered subscribers.
+        Includes an automatic watchdog to revive stalled hardware streams.
         """
         while self._is_running:
             try:
                 raw_chunk = self._audio_queue.get(timeout=0.1)
             except queue.Empty:
+                # Watchdog: if running and have subscribers, check if hardware stream stalled (> 3.5s without frames)
+                if self._stream is not None and (time.time() - self._last_frame_time > 3.5):
+                    with self._subscribers_lock:
+                        has_active_subs = len(self._subscribers) > 0
+                    if has_active_subs:
+                        log_warn("[VOICE] Hardware audio stream stalled (>3.5s). Reviving microphone...")
+                        self._restart_stream()
                 continue
 
             self._frames_captured += 1

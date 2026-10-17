@@ -198,17 +198,20 @@ class WakeWordDetector:
             if self._is_paused:
                 continue
 
-            if self._stream_sample_rate != self.sample_rate:
-                chunk_16k = resample_to_16k(chunk, self._stream_sample_rate)
-            else:
-                chunk_16k = chunk
+            try:
+                if self._stream_sample_rate != self.sample_rate:
+                    chunk_16k = resample_to_16k(chunk, self._stream_sample_rate)
+                else:
+                    chunk_16k = chunk
 
-            event = self.process_audio_chunk(chunk_16k)
-            if event and self._callback:
-                try:
-                    self._callback(event)
-                except Exception as e:
-                    log_warn(f"[WAKE WORD] Callback error: {e}")
+                event = self.process_audio_chunk(chunk_16k)
+                if event and self._callback:
+                    try:
+                        self._callback(event)
+                    except Exception as e:
+                        log_warn(f"[WAKE WORD] Callback error: {e}")
+            except Exception as e:
+                log_debug(f"[WAKE WORD] Worker loop notice: {e}")
 
     def process_audio_chunk(self, chunk: np.ndarray) -> Optional[WakeWordEvent]:
         """
@@ -249,7 +252,7 @@ class WakeWordDetector:
         acoustic_score = self._evaluate_acoustic_signature(current_window)
 
         # Drop immediately if neither VAD speech nor acoustic score matches
-        if not is_speech and acoustic_score < 0.50:
+        if not is_speech and acoustic_score < 0.35:
             return None
 
         matched = False
@@ -275,9 +278,15 @@ class WakeWordDetector:
                     from src.core.phrase_matcher import ControlCommand
                     phrase_res = self.phrase_matcher.classify_command(snippet_text)
 
-                    # CRITICAL: Stop or Sleep commands MUST NEVER trigger a wake event!
+                    # CRITICAL: Stop or Sleep commands MUST put Chitti to sleep and never trigger wake
                     if phrase_res.command in (ControlCommand.STOP, ControlCommand.SLEEP):
-                        log_debug(f"[WAKE WORD] Suppressed wake event on '{phrase_res.command.value}' command: '{snippet_text}'")
+                        from src.core.state_manager import get_state_manager
+                        sm = get_state_manager()
+                        if not sm.is_sleeping():
+                            sm.sleep()
+                            log_chitti(f"[WAKE WORD] 🛑 Recognized '{phrase_res.command.value}' command: '{snippet_text}'. Enforcing SLEEP.")
+                        else:
+                            log_debug(f"[WAKE WORD] Suppressed wake event on '{phrase_res.command.value}' command: '{snippet_text}'")
                         return None
 
                     if phrase_res.command == ControlCommand.WAKE:
@@ -335,7 +344,7 @@ class WakeWordDetector:
 
         # Absolute energy floor: reject low-level hiss / hum / silence immediately
         rms_total = float(np.sqrt(np.mean(audio**2) + 1e-12))
-        if rms_total < 0.0015:
+        if rms_total < 0.0008:
             return 0.0
 
         # 1. Human vocal pitch periodicity check (80Hz - 350Hz)
@@ -377,7 +386,7 @@ class WakeWordDetector:
         p_max = max(energies)
         p_min = min(energies)
 
-        if p_max < 0.0004:
+        if p_max < 0.00015:
             return 0.0
 
         score = 0.0

@@ -47,9 +47,9 @@ class AdaptiveNoiseEstimator:
         self,
         initial_floor: float = 0.002,
         min_floor: float = 0.0004,
-        max_floor: float = 0.060,
+        max_floor: float = 0.020,
         downward_alpha: float = 0.20,
-        upward_alpha: float = 0.015,
+        upward_alpha: float = 0.003,
     ):
         self.noise_floor = float(initial_floor)
         self.min_floor = float(min_floor)
