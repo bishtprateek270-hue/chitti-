@@ -55,6 +55,7 @@ class WakeWordDetector:
         "chitii", "hey chitii", "hello chitii", "hi chitii", "ok chitii", "wake up chitii", "chitii wake up",
         "chiti", "hey chiti", "hello chiti", "hi chiti", "ok chiti", "wake up chiti", "chiti wake up",
         "chitty", "hey chitty", "hello chitty", "cheeti",
+        "chatti", "hey chatti", "hello chatti", "chatty", "hey chatty", "hey city", "hello city",
         # Hindi & Hinglish
         "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno", "chitti sun",
         "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "चिट्टी",
@@ -246,7 +247,7 @@ class WakeWordDetector:
         acoustic_score = self._evaluate_acoustic_signature(current_window)
 
         # Drop immediately if neither VAD speech nor acoustic score matches
-        if not is_speech and acoustic_score < 0.65:
+        if not is_speech and acoustic_score < 0.50:
             return None
 
         matched = False
@@ -256,15 +257,15 @@ class WakeWordDetector:
 
         # 3. Strict Verification via STT Engine when available
         if self.stt_engine is not None:
-            # Debounce STT checks to at most once per 0.70s (never flood CPU)
-            if now - self._last_stt_check_time < 0.70:
+            # Debounce STT checks to at most once per 0.50s
+            if now - self._last_stt_check_time < 0.50:
                 return None
             self._last_stt_check_time = now
 
             try:
-                # Transcribe with Google STT first (zero-latency <0.3s).
-                # If Google yields nothing but acoustic signature is strong, allow Whisper fallback.
-                allow_whisper = (acoustic_score >= 0.72)
+                # Transcribe with Google STT first (<0.3s).
+                # If Google yields nothing but speech is active, allow Whisper fallback.
+                allow_whisper = (acoustic_score >= 0.60 or is_speech)
                 snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=allow_whisper)
                 snippet_text = snippet_text.lower().strip() if snippet_text else ""
 
@@ -300,12 +301,11 @@ class WakeWordDetector:
                 pass
 
             # CRITICAL: When STT engine is active, strict speech recognition is required!
-            # Never fall back to acoustic frequency heuristics when STT did not recognize an explicit wake phrase.
             if not matched:
                 return None
 
         # 4. Acoustic Signature trigger (ONLY used in test environments when STT engine is None)
-        if self.stt_engine is None and not matched and acoustic_score >= 0.75 and is_speech:
+        if self.stt_engine is None and not matched and acoustic_score >= 0.70 and is_speech:
             matched = True
             confidence = float(acoustic_score)
             matched_kw = "Hey Chitti" if acoustic_score > 0.80 else "Chitti"
@@ -331,6 +331,11 @@ class WakeWordDetector:
         if len(audio) < int(self.sample_rate * 0.3):
             return 0.0
 
+        # Absolute energy floor: reject low-level hiss / hum / silence immediately
+        rms_total = float(np.sqrt(np.mean(audio**2) + 1e-12))
+        if rms_total < 0.0015:
+            return 0.0
+
         # 1. Human vocal pitch periodicity check (80Hz - 350Hz)
         min_lag = int(self.sample_rate / 350)  # ~45 samples
         max_lag = int(self.sample_rate / 80)   # ~200 samples
@@ -351,7 +356,7 @@ class WakeWordDetector:
 
         seg = seg - np.mean(seg)
         norm = np.sum(seg**2)
-        if norm < 1e-6:
+        if norm < 1e-5:
             return 0.0
 
         corr = np.correlate(seg, seg, mode="full")[len(seg) - 1 :] / norm
@@ -370,6 +375,9 @@ class WakeWordDetector:
         p_max = max(energies)
         p_min = min(energies)
 
+        if p_max < 0.0004:
+            return 0.0
+
         score = 0.0
         if pitch_corr > 0.35:
             score += 0.30
@@ -379,5 +387,4 @@ class WakeWordDetector:
             score += 0.25
         if p_min < p_max * 0.75:
             score += 0.25
-
         return score

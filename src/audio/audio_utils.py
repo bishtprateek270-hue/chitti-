@@ -86,29 +86,49 @@ def get_best_input_device(preferred_index: Optional[int] = None, force_refresh: 
         return None, 16000
 
     try:
-        # 1. Prioritize Windows system default input device (user's chosen mic / connected earbuds)
+        # 1. On Windows, prioritize DirectSound 'Primary Sound Capture Driver' (full AGC, mic boost & dynamic routing)
+        devices = sd.query_devices()
+        directsound_primary = None
+        for idx, d in enumerate(devices):
+            if d.get("max_input_channels", 0) > 0:
+                name = d.get("name", "").lower()
+                hostapi_idx = d.get("hostapi", -1)
+                try:
+                    api_name = sd.query_hostapis(hostapi_idx).get("name", "").lower()
+                except Exception:
+                    api_name = ""
+                if "directsound" in api_name and "primary sound capture" in name:
+                    directsound_primary = idx
+                    break
+
+        indices_to_try = [directsound_primary] if directsound_primary is not None else []
         try:
             default_idx = int(sd.default.device[0])
-            if default_idx >= 0:
-                d = sd.query_devices(default_idx)
+            if default_idx >= 0 and default_idx not in indices_to_try:
+                indices_to_try.append(default_idx)
+        except Exception:
+            pass
+
+        for dev_idx in indices_to_try:
+            try:
+                d = sd.query_devices(dev_idx)
                 if d.get("max_input_channels", 0) > 0:
                     native_sr = int(d.get("default_samplerate", 44100))
-                    # Try 16000Hz directly first to avoid resampling if hardware supports it
                     rates_to_test = [16000] if 16000 == native_sr else [16000, native_sr, 44100, 48000]
                     for rate in rates_to_test:
                         try:
                             test_samples = int(rate * 0.04)
-                            data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=default_idx)
+                            data = sd.rec(test_samples, samplerate=rate, channels=1, dtype="float32", device=dev_idx)
                             sd.wait()
                             rms = float(np.sqrt(np.mean(data**2)))
                             if np.isfinite(rms):
-                                _CACHED_INPUT_DEVICE = default_idx
+                                _CACHED_INPUT_DEVICE = dev_idx
                                 _CACHED_SAMPLE_RATE = rate
-                                return default_idx, rate
+                                return dev_idx, rate
                         except Exception:
                             continue
-        except Exception:
-            pass
+            except Exception:
+                continue
 
         # 2. Search all physical input devices (skipping virtual mappers & stereo mix)
         devices = sd.query_devices()

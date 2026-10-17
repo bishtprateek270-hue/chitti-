@@ -45,11 +45,11 @@ class AdaptiveNoiseEstimator:
 
     def __init__(
         self,
-        initial_floor: float = 0.010,
-        min_floor: float = 0.0015,
-        max_floor: float = 0.080,
-        downward_alpha: float = 0.15,
-        upward_alpha: float = 0.020,
+        initial_floor: float = 0.002,
+        min_floor: float = 0.0004,
+        max_floor: float = 0.060,
+        downward_alpha: float = 0.20,
+        upward_alpha: float = 0.015,
     ):
         self.noise_floor = float(initial_floor)
         self.min_floor = float(min_floor)
@@ -86,7 +86,7 @@ class AdaptiveNoiseEstimator:
         self.noise_floor = float(np.clip(self.noise_floor, self.min_floor, self.max_floor))
         return self.noise_floor
 
-    def reset(self, initial_floor: float = 0.010):
+    def reset(self, initial_floor: float = 0.002):
         """Resets the noise baseline."""
         self.noise_floor = float(initial_floor)
         self.frame_count = 0
@@ -108,12 +108,12 @@ class VoiceActivityDetector:
         self,
         sample_rate: int = 16000,
         frame_duration: float = 0.05,  # 50ms chunks (800 samples @ 16kHz)
-        snr_onset_ratio: float = 1.85,  # +5.3 dB above ambient noise floor
-        snr_hangover_ratio: float = 1.30,  # +2.3 dB above ambient noise floor
-        min_voice_rms: float = 0.005,  # Minimum absolute speech threshold
+        snr_onset_ratio: float = 1.45,  # +3.2 dB above ambient noise floor
+        snr_hangover_ratio: float = 1.15,  # +1.2 dB above ambient noise floor
+        min_voice_rms: float = 0.0015,  # Minimum absolute speech threshold
         onset_consecutive_frames: int = 2,  # 100ms of confirmed speech to trigger
         hangover_consecutive_frames: int = 14,  # 700ms of silence before ending speech
-        min_voicing_score: float = 0.28,  # Minimum pitch autocorrelation peak
+        min_voicing_score: float = 0.32,  # Minimum pitch autocorrelation peak (rejects motor rumble)
     ):
         self.sample_rate = sample_rate
         self.frame_duration = frame_duration
@@ -126,7 +126,7 @@ class VoiceActivityDetector:
         self.hangover_consecutive_frames = hangover_consecutive_frames
         self.min_voicing_score = min_voicing_score
 
-        self.noise_estimator = AdaptiveNoiseEstimator(initial_floor=0.010)
+        self.noise_estimator = AdaptiveNoiseEstimator(initial_floor=0.002, min_floor=0.0004)
         self.state = VADState.SILENCE
 
         self._consecutive_speech_frames = 0
