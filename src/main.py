@@ -547,16 +547,56 @@ class ChittiController:
                 self.hud.set_mode(HUDMode.IDLE)
             return
 
-        # 2.3. Check for Real-Time Screen Vision vs Camera Vision
+        # 2.2. Check for Face Management & Biometric Commands (e.g. "Register my face", "Who is registered?", "Delete face")
+        if self.vision is not None:
+            try:
+                face_cmd_result = self.vision.handle_face_commands(user_text)
+                if face_cmd_result is None and parsed_intent.normalized_text and parsed_intent.normalized_text != user_text:
+                    face_cmd_result = self.vision.handle_face_commands(parsed_intent.normalized_text)
+
+                if face_cmd_result is not None:
+                    action_tag, response_text = face_cmd_result
+                    self.history.add_user_message(user_text)
+                    self.history.add_assistant_message(response_text)
+                    if self.memory is not None:
+                        self.memory.auto_capture_interaction(user_text, response_text, lang=active_lang)
+
+                    log_state("CHITTI")
+                    print(response_text)
+                    self.speak(response_text)
+                    metrics.finish_request(request_id, success=True)
+                    if self.hud:
+                        self.hud.set_response(response_text)
+                        self.hud.set_mode(HUDMode.IDLE)
+                    return
+            except Exception as e:
+                log_warning(f"Face command processing notice: {e}")
+
+        # 2.3. Check for Real-Time Screen Vision vs Computer Action Commands
         import re
         is_camera_query = (
-            bool(re.search(r"(?i)\b(?:camera|webcam|chehra|face|person|insan|who\s+is\s+(?:in\s+)?front|front\s+of\s+(?:you|u)|look\s+at\s+me|who\s+am\s+i|saamne|pehchante)\b", user_text))
+            bool(re.search(r"(?i)\b(?:camera|webcam|chehra|face|person|insan|who\s+is\s+(?:in\s+)?front|front\s+of\s+(?:you|u)|look\s+at\s+me|who\s+am\s+i|saamne|pehchante|register|enroll)\b", user_text))
             or (self.vision is not None and self.vision.is_vision_query(user_text))
         )
+        is_agent_confirmation_pending = (
+            self.agent is not None and (
+                (self.agent.active_task_state is not None and self.agent.active_task_state.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION))
+                or self.agent.pending_destructive_action is not None
+            )
+        )
+        is_computer_action = bool(
+            master_decision.requires_computer
+            or master_decision.requires_phase5
+            or master_decision.requires_phase6
+            or master_decision.route in (MasterRoute.FILE_OPERATION, MasterRoute.COMPUTER_TASK, MasterRoute.BROWSER_TASK, MasterRoute.SYSTEM_TASK, MasterRoute.PROJECT_CREATION)
+            or is_agent_confirmation_pending
+        )
         is_screen_query = (
-            bool(re.search(r"(?i)\b(?:screen|desktop|active\s+window|display|screen\s+info|document|code|readme|roadmap|error\s+on\s+screen)\b", user_text))
-            or bool(re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|screen\s+(?:pe|p|par)?\s*(?:kya|dekho|error))\b", user_text))
-        ) and not is_camera_query
+            bool(re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+(?:my\s+)?screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+(?:the\s+)?error\s+on\s+screen|screen\s+info|diagnose\s+screen|read\s+my\s+screen)\b", user_text))
+            or bool(re.search(r"(?i)\b(?:screen\s+(?:pe|p|par)?\s*(?:kya|dekho|error)|meri\s+screen\s+dekho)\b", user_text))
+            or bool(re.search(r"(?i)\b(?:summarize\s+(?:this|the|open)\s+(?:document|doc|pdf|notes|paper|readme|roadmap))\b", user_text))
+            or (master_decision.route == MasterRoute.VISION_TASK and not is_camera_query)
+        ) and not is_camera_query and not is_computer_action
 
         if is_screen_query and self.vision_grounding is not None:
             try:
@@ -584,13 +624,7 @@ class ChittiController:
                 log_warning(f"Screen vision grounding failed: {e}")
 
         # 2.5. Check for Actionable Laptop Agent Actions (Phase 5 / Phase 6)
-        is_agent_confirmation_pending = (
-            self.agent is not None and (
-                (self.agent.active_task_state is not None and self.agent.active_task_state.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION))
-                or self.agent.pending_destructive_action is not None
-            )
-        )
-        if self.agent is not None and (master_decision.requires_computer or master_decision.requires_phase5 or master_decision.requires_phase6 or is_agent_confirmation_pending):
+        if self.agent is not None and is_computer_action:
             try:
                 metrics.mark_stage(request_id, "tool_execution_started")
                 agent_result = self.agent.handle_command(user_text, lang=active_lang)
@@ -614,27 +648,6 @@ class ChittiController:
                     return
             except Exception as e:
                 log_warning(f"Laptop agent command execution notice: {e}")
-
-        # 3. Check for Face Management Commands (e.g. "Who is registered?", "Remove Prateek from face recognition")
-        if self.vision is not None:
-            try:
-                face_cmd_result = self.vision.handle_face_commands(user_text)
-                if face_cmd_result is None and parsed_intent.normalized_text != user_text:
-                    face_cmd_result = self.vision.handle_face_commands(parsed_intent.normalized_text)
-
-                if face_cmd_result is not None:
-                    action_tag, response_text = face_cmd_result
-                    self.history.add_user_message(user_text)
-                    self.history.add_assistant_message(response_text)
-                    if self.memory is not None:
-                        self.memory.auto_capture_interaction(user_text, response_text, lang=active_lang)
-
-                    log_state("CHITTI")
-                    print(response_text)
-                    self.speak(response_text)
-                    return
-            except Exception as e:
-                log_warning(f"Face command processing failed: {e}")
 
         # 4. Check for Direct Identity / Creator / Occupation Query (Phase 4A)
         if self.memory is not None and master_decision.route in (MasterRoute.PERSONAL_MEMORY, MasterRoute.SELF_IDENTITY):

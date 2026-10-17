@@ -174,6 +174,12 @@ class MasterRouter:
         r"(?i)\b(?:who\s+is\s+(?:in\s+)?front\s+of\s+(?:you|u)|who\s+is\s+(?:standing|sitting)\s+in\s+front|who\s+is\s+(?:there|this|that)|front\s+of\s+(?:you|u))\b",
         r"(?i)\b(?:look\s+at\s+me|who\s+am\s+i\s*(?:\(vision\)|through\s+camera)?|do\s+you\s+recognize\s+me|identify\s+(?:the\s+)?person|what\s+do\s+you\s+see\s+(?:in\s+front|in\s+camera))\b",
         r"(?i)\b(?:saamne\s+koun\s+hai|camera\s+me\s+dekho|mujhe\s+pehchante\s+ho|koun\s+baitha\s+hai)\b",
+        # Face Registration & Identity Management
+        r"(?i)\b(?:register|enroll)\s+(?:my\s+)?face\b",
+        r"(?i)\b(?:register|enroll)\s+face\s+(?:for|of|as)\s+[a-zA-Z0-9_\s]+\b",
+        r"(?i)\b(?:face\s+registration|mera\s+face\s+register|chehra\s+register)\b",
+        r"(?i)\b(?:who\s+is\s+registered|list\s+registered\s+(?:faces|people)|show\s+registered\s+faces)\b",
+        r"(?i)\b(?:remove|delete|forget)\s+.*from\s+(?:face\s+recognition|registered\s+faces)\b",
     ]
 
     # 9. Next-Gen Roadmap Inquiries

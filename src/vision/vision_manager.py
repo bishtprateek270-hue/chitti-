@@ -81,6 +81,7 @@ class VisionManager:
         )
 
         self.pending_face_deletion: Optional[str] = None
+        self.pending_face_registration: bool = False
 
     @staticmethod
     def is_vision_query(user_text: str) -> bool:
@@ -422,11 +423,39 @@ class VisionManager:
                     f"Are you sure you want to remove {target} from Chitti's registered faces? Please say Yes or No.",
                 )
 
-        # Check for unspecific "register face" command
-        if re.search(r"(?i)^\s*(?:register|enroll)\s+(?:my\s+)?face\s*$", text):
+        # Handle pending face registration follow-up
+        is_explicit_cmd = bool(
+            re.search(r"(?i)\b(?:register|enroll|remove|delete|forget|who\s+is|list|show)\b", text)
+        )
+        if self.pending_face_registration and not is_explicit_cmd:
+            if any(w in lower for w in ["no", "cancel", "stop", "abort", "don't"]):
+                self.pending_face_registration = False
+                return ("cancelled", "Face registration cancelled.")
+
+            clean_candidate = re.sub(r"(?i)^(?:my\s+name\s+is|it'?s|i\s+am|call\s+me|name\s+is|for)\s+", "", text).strip()
+            clean_candidate = re.sub(r"(?i)\s+(?:please|bhai|sir)$", "", clean_candidate).strip()
+            self.pending_face_registration = False
+            invalid_names = {
+                "my", "me", "this", "face", "faces", "person", "someone", "somebody",
+                "user", "camera", "picture", "photo", "image", "office", "home", "work",
+                "profile", "identity", "a", "an", "the", "new", "unknown", "registered"
+            }
+            if clean_candidate and clean_candidate.lower() not in invalid_names and len(clean_candidate) >= 2:
+                success, msg = self.register_person(clean_candidate, num_samples=5)
+                return ("person_registered", msg)
+            else:
+                return ("invalid_name", "Please specify a valid person name, for example: 'register face for Prateek'.")
+
+        # Check for unspecific / prompt "register face" command
+        if (
+            re.search(r"(?i)^\s*(?:can\s+you\s+|please\s+)?(?:register|enroll)\s+(?:my\s+)?face\s*(?:please)?\s*$", text)
+            or re.search(r"(?i)\b(?:mera\s+face|mera\s+chehra)\s+(?:register|enroll|add|karo)\b", text)
+            or re.search(r"(?i)\b(?:face\s+registration|chehra\s+register)\b", text)
+        ) and not re.search(r"(?i)\b(?:register|enroll)\s+(?:my\s+face\s+as|face\s+for|face\s+of|face\s+as|person)\s+[a-zA-Z]", text):
+            self.pending_face_registration = True
             return ("prompt_name", "Whose face would you like me to register? Please say 'register face for [Name]'.")
 
-        # Explicit register person voice command
+        # Explicit register person voice command (e.g. "register face for Aryan", "register my face as Bisht")
         match_reg = re.search(
             r"(?i)\b(?:register|enroll)\s+(?:my\s+face\s+as|face\s+for|face\s+of|face\s+as|person)\s+([a-zA-Z][a-zA-Z0-9_\s]{1,40})\b",
             text,

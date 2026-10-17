@@ -5,6 +5,7 @@ Executes validated Windows desktop actions deterministically and returns structu
 
 import os
 import sys
+import re
 import subprocess
 import webbrowser
 import platform
@@ -174,28 +175,63 @@ class ActionExecutor:
     def _open_folder(cls, action: StructuredAction) -> ActionResult:
         target = action.parameters.get("target", "Desktop")
         resolved_path = action.parameters.get("resolved_path")
+        raw_cmd = (action.raw_input or "").lower()
+
+        open_in_vscode = bool(
+            action.parameters.get("app") in ("code", "vscode")
+            or "vs code" in target.lower()
+            or "vscode" in target.lower()
+            or "in code" in raw_cmd
+            or "in vs code" in raw_cmd
+            or "in vscode" in raw_cmd
+        )
+
+        clean_display_target = re.sub(r"(?i)\s+(?:in\s+)?(?:vs\s*code|vscode|code)$", "", target).strip()
+        if not clean_display_target:
+            clean_display_target = target
 
         if not resolved_path:
             from src.agent.registry import FolderDiscovery
-            resolved_path = FolderDiscovery.resolve_folder_path(target)
+            resolved_path = FolderDiscovery.resolve_folder_path(clean_display_target)
+
+        if not resolved_path or not resolved_path.exists():
+            candidates = [
+                Path.home() / "OneDrive" / "Desktop" / clean_display_target,
+                Path.home() / "Desktop" / clean_display_target,
+                Path.home() / "Documents" / clean_display_target,
+                Path.home() / "Downloads" / clean_display_target,
+            ]
+            for c in candidates:
+                if c.exists() and c.is_dir():
+                    resolved_path = c
+                    break
 
         if not resolved_path or not resolved_path.exists():
             resolved_path = Path.home()
 
+        msg = f"Opened the {clean_display_target} folder."
         try:
-            if platform.system() == "Windows":
+            if open_in_vscode:
+                subprocess.Popen(["code", str(resolved_path)], shell=True)
+                msg = f"Opened {clean_display_target} folder in VS Code."
+            elif platform.system() == "Windows":
                 os.startfile(str(resolved_path))
             else:
                 subprocess.Popen(["xdg-open", str(resolved_path)])
         except Exception as e:
             log_debug(f"Folder opening error: {e}")
+            if open_in_vscode and platform.system() == "Windows":
+                try:
+                    os.startfile(str(resolved_path))
+                except Exception:
+                    pass
 
-        log_chitti(f"[AGENT] Execution: SUCCESS | Opened folder: {resolved_path}")
+        log_chitti(f"[AGENT] Execution: SUCCESS | {msg} (Path: {resolved_path})")
         return ActionResult(
             success=True,
             action=ActionType.OPEN_FOLDER,
-            target=target,
-            message=f"Opened the {target} folder.",
+            target=clean_display_target,
+            message=msg,
             data={"path": str(resolved_path)},
         )
 
