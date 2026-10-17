@@ -51,7 +51,9 @@ class WakeWordDetector:
         # English wake words
         "chitti", "hey chitti", "hello chitti", "ok chitti", "hi chitti",
         "wake up chitti", "chitti wake up", "chitti are you there",
-        # Phonetic & Accent variations (explicitly handling chitii, chiti, chitty)
+        # Phonetic & Accent variations (explicitly handling chitthi, chitii, chiti, chitty)
+        "chitthi", "he chitthi", "hey chitthi", "hello chitthi", "hi chitthi", "ok chitthi", "play chitthi", "wake up chitthi", "chitthi wake up",
+        "he chitti", "play chitti",
         "chitii", "hey chitii", "hello chitii", "hi chitii", "ok chitii", "wake up chitii", "chitii wake up",
         "chiti", "hey chiti", "hello chiti", "hi chiti", "ok chiti", "wake up chiti", "chiti wake up",
         "chitty", "hey chitty", "hello chitty", "cheeti",
