@@ -1246,6 +1246,16 @@ def kill_existing_chitti_instances(exclude_current: bool = True) -> int:
 
 def main():
     """Application entry point with Single-Instance Mutex lock."""
+    if any(arg in sys.argv for arg in ("--help", "-h")):
+        print("""
+Chitti AI Companion - Usage:
+  python -m src.main              Run Chitti interactive console / background service
+  python -m src.main --restart    Terminate any running background instance and launch fresh
+  python -m src.main --kill       Stop all running Chitti processes cleanly
+  python -m src.main --daemon     Run as a silent background daemon
+""")
+        return
+
     # Check for restart or kill flags to clean up background processes
     if any(arg in sys.argv for arg in ("--restart", "--kill", "--force")):
         killed = kill_existing_chitti_instances(exclude_current=True)

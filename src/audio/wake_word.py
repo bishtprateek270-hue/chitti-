@@ -268,10 +268,10 @@ class WakeWordDetector:
             self._last_stt_check_time = now
 
             try:
-                # Transcribe with Google STT first (<0.3s).
-                # If Google yields nothing but speech is active, allow Whisper fallback.
-                allow_whisper = (acoustic_score >= 0.60 or is_speech)
-                snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=allow_whisper)
+                # Passive wake-word detection MUST be near-instantaneous (<300ms) with zero background lag.
+                # NEVER invoke heavy Whisper STT during continuous passive background scanning;
+                # Whisper fallback is reserved for active command listening once woken up.
+                snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=False)
                 snippet_text = snippet_text.lower().strip() if snippet_text else ""
 
                 if snippet_text:
