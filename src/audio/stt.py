@@ -293,6 +293,9 @@ class WhisperSTT(STTEngine):
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
+        else:
+            # Default to English to prevent Whisper language classification hallucinating Korean/Welsh on ambient noise
+            options["language"] = "en"
 
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 
-def enable_autostart(silent: bool = True, delay_seconds: int = 15):
+def enable_autostart(silent: bool = True, delay_seconds: int = 25):
     """Adds Chitti to the Windows Startup folder with boot-time stabilization."""
     if sys.platform != "win32":
         print("[ERROR] Autostart configuration is only supported on Windows.")

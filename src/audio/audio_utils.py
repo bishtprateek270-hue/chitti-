@@ -79,6 +79,10 @@ def get_best_input_device(preferred_index: Optional[int] = None, force_refresh: 
                 pass
         return preferred_index, 16000
 
+    if force_refresh:
+        _CACHED_INPUT_DEVICE = None
+        _CACHED_SAMPLE_RATE = 16000
+
     if not force_refresh and _CACHED_INPUT_DEVICE is not None:
         return _CACHED_INPUT_DEVICE, _CACHED_SAMPLE_RATE
 

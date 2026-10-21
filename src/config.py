@@ -52,10 +52,10 @@ class STTConfig:
         default_factory=lambda: os.getenv("STT_MODEL", "base")
     )
     requested_device: str = field(
-        default_factory=lambda: os.getenv("STT_DEVICE", "cpu")
+        default_factory=lambda: os.getenv("STT_DEVICE", "auto")
     )
     language: Optional[str] = field(
-        default_factory=lambda: (os.getenv("STT_LANGUAGE", "").strip() or None)
+        default_factory=lambda: (os.getenv("STT_LANGUAGE", "en").strip() or "en")
     )
 
     @property

@@ -48,6 +48,20 @@ def setup_logger(name: str = "chitti", level: str = "INFO") -> logging.Logger:
         handler.setLevel(numeric_level)
         handler.setFormatter(CustomFormatter())
         logger.addHandler(handler)
+
+        # File handler for persistent background daemon diagnostics
+        try:
+            from logging.handlers import RotatingFileHandler
+            log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            log_file = os.path.join(log_dir, "chitti_daemon.log")
+            file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=2, encoding="utf-8")
+            file_handler.setLevel(numeric_level)
+            file_formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+            file_handler.setFormatter(file_formatter)
+            logger.addHandler(file_handler)
+        except Exception:
+            pass
+
         logger.propagate = False
     else:
         logger.setLevel(numeric_level)

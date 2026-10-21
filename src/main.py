@@ -10,6 +10,21 @@ import io
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+# Prevent Intel OpenMP / MKL / Torch from creating 16 busy-wait spinlock threads that eat 600% CPU
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
+os.environ.setdefault("KMP_BLOCKTIME", "1")
+os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+
+try:
+    import torch
+    torch.set_num_threads(2)
+except Exception:
+    pass
+
 # Ensure sys.stdout and sys.stderr are not None when run under pythonw.exe
 if sys.stdout is None:
     sys.stdout = io.StringIO()

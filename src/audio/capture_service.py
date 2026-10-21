@@ -56,6 +56,7 @@ class AudioCaptureService:
         self._overflow_count = 0
         self._underflow_count = 0
         self._last_frame_time = time.time()
+        self._last_restart_attempt = 0.0
 
     def start(self, device_index: Optional[int] = None):
         """Starts the single authoritative microphone capture service and dispatcher."""
@@ -234,6 +235,9 @@ class AudioCaptureService:
                     pass
                 self._stream = None
             self.flush()
+            # Force hardware rediscovery to catch Windows audio endpoints initialized after logon
+            from src.audio.audio_utils import get_best_input_device
+            get_best_input_device(preferred_index=self._device_index, force_refresh=True)
             success = self._open_stream()
             if success:
                 self._last_frame_time = time.time()
@@ -251,12 +255,14 @@ class AudioCaptureService:
             try:
                 raw_chunk = self._audio_queue.get(timeout=0.1)
             except queue.Empty:
-                # Watchdog: if running and have subscribers, check if hardware stream stalled (> 3.5s without frames)
-                if self._stream is not None and (time.time() - self._last_frame_time > 3.5):
-                    with self._subscribers_lock:
-                        has_active_subs = len(self._subscribers) > 0
-                    if has_active_subs:
-                        log_warn("[VOICE] Hardware audio stream stalled (>3.5s). Reviving microphone...")
+                now = time.time()
+                # Watchdog: if running and have subscribers, check if hardware stream is dead or stalled
+                with self._subscribers_lock:
+                    has_active_subs = len(self._subscribers) > 0
+                if has_active_subs and (self._stream is None or (now - self._last_frame_time > 3.0)):
+                    if now - self._last_restart_attempt >= 2.5:
+                        self._last_restart_attempt = now
+                        log_warn("[VOICE] Hardware audio stream not active or stalled. Reviving microphone...")
                         self._restart_stream()
                 continue
 
