@@ -4,6 +4,7 @@ Provides real browser automation, YouTube video resolution & playback, search, a
 """
 
 import os
+import platform
 import re
 import subprocess
 import time
@@ -12,6 +13,8 @@ import urllib.request
 import webbrowser
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+
+import psutil
 
 from src.agent.registry import AppDiscovery, DEFAULT_URL_MAP
 from src.utils.logging import log_debug, log_info, log_warn
@@ -28,6 +31,8 @@ class BrowserState:
 
 class BrowserController:
     """Provides real browser control and YouTube playback on Windows."""
+
+    _shared_state = BrowserState()
 
     # Common Indian / Global artist phonetic normalizations
     ARTIST_NORMALIZATIONS = {
@@ -50,25 +55,75 @@ class BrowserController:
     }
 
     def __init__(self):
-        self.state = BrowserState()
+        self.state = self._shared_state
+
+    @classmethod
+    def resolve_browser_executable(cls, preferred: Optional[str] = None) -> Optional[str]:
+        """
+        Resolves the best available browser executable on Windows.
+        Prioritizes actively running browsers (Brave, Chrome, Edge, Firefox) so tabs open
+        in the user's active window, followed by installed executables.
+        """
+        # 1. If explicit preference requested
+        if preferred:
+            exe = AppDiscovery.resolve_app(preferred)
+            if exe and os.path.exists(exe):
+                return exe
+
+        # 2. Check actively running browser processes to reuse the user's current session
+        browser_proc_names = {
+            "brave.exe": "brave",
+            "chrome.exe": "chrome",
+            "msedge.exe": "msedge",
+            "firefox.exe": "firefox",
+        }
+        for proc in psutil.process_iter(["name", "exe"]):
+            try:
+                pname = (proc.info["name"] or "").lower()
+                if pname in browser_proc_names:
+                    pexe = proc.info.get("exe")
+                    if pexe and os.path.exists(pexe):
+                        return pexe
+                    resolved = AppDiscovery.resolve_app(browser_proc_names[pname])
+                    if resolved and os.path.exists(resolved):
+                        return resolved
+            except Exception:
+                continue
+
+        # 3. Check installed browsers in order of preference
+        for b_name in ("brave", "chrome", "msedge", "edge", "firefox"):
+            exe = AppDiscovery.resolve_app(b_name)
+            if exe and os.path.exists(exe):
+                return exe
+
+        return None
 
     @classmethod
     def normalize_artist_query(cls, raw_query: str) -> str:
         """Normalizes user query by stripping stop words and resolving known artist names."""
         clean = raw_query.strip()
-        # Remove common phrasing stop words: "a", "an", "the", "song", "songs", "music", "track", "gaana", "play", "chalao", "karo"
-        clean = re.sub(r"(?i)\b(?:play\s+a|play\s+an|play\s+the|play|a|an|the|song|songs|music|track|gaana|chalao|karo|baja\s+do|ka\s+gaana)\b", " ", clean)
+        # Remove common phrasing and command prefixes
+        clean = re.sub(
+            r"(?i)\b(?:open\s+youtube|open\s+yt|go\s+to\s+youtube|go\s+to\s+yt|on\s+youtube|on\s+yt|youtube|yt|and|aur|\&|play\s+a|play\s+an|play\s+the|play|open|kholo|chala\s+do|chalao|karo|baja\s+do|ka\s+gaana|song|songs|music|track|gaana|a|an|the|me|mein|par|pe)\b",
+            " ",
+            clean,
+        )
         clean = re.sub(r"\s+", " ", clean).strip()
+
+        # If user simply requested "a song" or generic music, default to Trending Songs
+        generic_terms = {"", "a", "an", "the", "song", "songs", "music", "track", "gaana", "top", "trending", "some", "any"}
+        if clean.lower() in generic_terms:
+            return "Trending Songs"
 
         lower = clean.lower()
         for key, normalized in cls.ARTIST_NORMALIZATIONS.items():
             if key in lower:
                 return normalized
 
-        return clean.title() if clean else "Top Songs"
+        return clean.title() if clean else "Trending Songs"
 
     def open_url(self, url: str, browser: Optional[str] = None, site_name: Optional[str] = None) -> bool:
-        """Opens a URL in the user's default browser or specified executable."""
+        """Opens a URL visibly in the user's running or default desktop browser."""
         target_url = url.strip()
         if not target_url.startswith(("http://", "https://", "file:///")):
             if target_url.startswith("file:/"):
@@ -79,24 +134,38 @@ class BrowserController:
                 target_url = f"https://{target_url}"
 
         try:
-            if browser:
-                browser_exe = AppDiscovery.resolve_app(browser)
-                if browser_exe:
-                    subprocess.Popen([browser_exe, target_url])
-                    self.state.current_url = target_url
-                    self.state.browser_name = browser
-                    self.state.is_open = True
-                    log_info(f"[BROWSER] Opened {target_url} in {browser}")
-                    return True
+            # 1. Direct browser executable invocation via subprocess
+            # This guarantees that Windows opens an interactive desktop window/tab
+            browser_exe = self.resolve_browser_executable(preferred=browser)
+            if browser_exe:
+                subprocess.Popen([browser_exe, target_url])
+                self.state.current_url = target_url
+                self.state.browser_name = os.path.basename(browser_exe)
+                self.state.is_open = True
+                log_info(f"[BROWSER] Successfully launched URL in {self.state.browser_name}: {target_url}")
+                return True
 
+            # 2. Windows shell 'start "" "<url>"' fallback
+            if platform.system() == "Windows":
+                subprocess.Popen(f'start "" "{target_url}"', shell=True)
+                self.state.current_url = target_url
+                self.state.is_open = True
+                log_info(f"[BROWSER] Launched URL via Windows start command: {target_url}")
+                return True
+
+            # 3. Standard Python webbrowser fallback
             webbrowser.open(target_url, new=2)
             self.state.current_url = target_url
             self.state.is_open = True
-            log_info(f"[BROWSER] Opened URL: {target_url}")
+            log_info(f"[BROWSER] Opened URL via webbrowser: {target_url}")
             return True
         except Exception as e:
             log_warn(f"[BROWSER] Failed to open URL {target_url}: {e}")
-            return False
+            try:
+                webbrowser.open(target_url, new=2)
+                return True
+            except Exception:
+                return False
 
     def verify_page_loaded(self, url: str, expected_keywords: Optional[List[str]] = None) -> Tuple[bool, str]:
         """Verifies that the target page loaded without browser error pages (e.g. Connection Refused)."""
@@ -118,7 +187,8 @@ class BrowserController:
     def fetch_top_youtube_video_id(self, search_query: str) -> Optional[str]:
         """Queries YouTube search to extract the first valid video ID for direct playback."""
         try:
-            encoded_query = urllib.parse.quote(f"{search_query} song")
+            query_term = f"{search_query} song" if "song" not in search_query.lower() else search_query
+            encoded_query = urllib.parse.quote(query_term)
             url = f"https://www.youtube.com/results?search_query={encoded_query}"
             req = urllib.request.Request(
                 url,
@@ -143,10 +213,10 @@ class BrowserController:
         artist = self.normalize_artist_query(query)
         log_info(f"[BROWSER] Resolving YouTube video for artist/query: '{artist}'")
 
-        # 1. Attempt to fetch top video ID for direct playback
+        # 1. Attempt to fetch top video ID for direct playback with autoplay
         video_id = self.fetch_top_youtube_video_id(artist)
         if video_id:
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            video_url = f"https://www.youtube.com/watch?v={video_id}&autoplay=1"
             log_info(f"[BROWSER] Direct YouTube video resolved: {video_url} (ID: {video_id})")
             ok = self.open_url(video_url)
             self.state.active_video_id = video_id
@@ -160,7 +230,7 @@ class BrowserController:
                 "playback_verified": ok,
             }
 
-        # 2. Fallback: Open YouTube search results with autoplay parameter
+        # 2. Fallback: Open YouTube search results
         encoded_query = urllib.parse.quote(f"{artist} songs")
         search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
         log_info(f"[BROWSER] Opening YouTube search results: {search_url}")
@@ -178,3 +248,4 @@ class BrowserController:
     def get_browser_state(self) -> BrowserState:
         """Returns the current state of the browser controller."""
         return self.state
+

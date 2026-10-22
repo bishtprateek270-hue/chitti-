@@ -371,17 +371,19 @@ class ActionIntentAnalyzer:
         # 3. YOUTUBE & MEDIA PLAYBACK
         # -------------------------------------------------------------
         is_media = bool(
-            re.search(r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|youtube\s+(?:pe|par).*chalao|gaana\s+chalao|search\s+youtube\s+for)\b", clean) or
-            ("youtube" in lower and any(w in lower for w in ["play", "search", "song", "gaana", "music"]))
+            re.search(r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|play\s+.*on\s+yt|youtube\s+(?:pe|par).*chalao|yt\s+(?:pe|par).*chalao|gaana\s+chalao|search\s+youtube\s+for|search\s+yt\s+for)\b", clean) or
+            ("youtube" in lower and any(w in lower for w in ["play", "search", "song", "gaana", "music"])) or
+            ("yt" in lower and any(w in lower for w in ["play", "search", "song", "gaana", "music"]))
         )
         if is_media:
-            m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+youtube\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+youtube|youtube\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|search\s+youtube\s+for\s+(.*)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
+            m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+(?:youtube|yt)\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+(?:youtube|yt)|(?:youtube|yt)\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|search\s+(?:youtube|yt)\s+for\s+(.*)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
             if m_yt:
                 query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or m_yt.group(6) or "").strip()
             else:
-                query = re.sub(r"(?i)\b(?:youtube|play|song|music|gaana|search|for|chalao|karo)\b", "", clean).strip()
+                query = re.sub(r"(?i)\b(?:youtube|yt|play|song|music|gaana|search|for|chalao|karo)\b", "", clean).strip()
 
-            query = query or "Trending Songs"
+            if not query or query.lower() in ("a", "an", "the", "some", "any", "top", "trending", "song", "songs", "gaana", "music"):
+                query = "Trending Songs"
             return ActionIntent(
                 intent=ActionIntentType.PLAY_MEDIA,
                 goal=f"Play '{query}' on YouTube",

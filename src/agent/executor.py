@@ -116,15 +116,15 @@ class ActionExecutor:
                     message=f"{target} has been opened.",
                 )
             except Exception as e2:
-                # Ultimate fallback: check if target is a web resource / service
                 from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
                 clean_t = target.strip()
                 if ResourceDiscovery.is_url(clean_t) or clean_t.lower() in DEFAULT_URL_MAP:
                     url = ResourceDiscovery.to_url(clean_t)
-                    webbrowser.open(url)
-                    log_chitti(f"[AGENT] Execution: SUCCESS | Opened URL fallback: {url}")
+                    from src.agent.computer.browser import BrowserController
+                    ok = BrowserController().open_url(url, site_name=clean_t)
+                    log_chitti(f"[AGENT] Execution: {'SUCCESS' if ok else 'FAILED'} | Opened URL fallback: {url}")
                     return ActionResult(
-                        success=True,
+                        success=ok,
                         action=ActionType.OPEN_URL,
                         target=url,
                         message=f"Opened {target} in your browser.",
@@ -273,10 +273,11 @@ class ActionExecutor:
         url = action.parameters["url"]
         site_name = action.parameters.get("site_name", url)
 
-        webbrowser.open(url)
-        log_chitti(f"[AGENT] Execution: SUCCESS | Opened URL: {url}")
+        from src.agent.computer.browser import BrowserController
+        ok = BrowserController().open_url(url, site_name=site_name)
+        log_chitti(f"[AGENT] Execution: {'SUCCESS' if ok else 'FAILED'} | Opened URL: {url}")
         return ActionResult(
-            success=True,
+            success=ok,
             action=ActionType.OPEN_URL,
             target=url,
             message=f"Opened {site_name} in your browser.",

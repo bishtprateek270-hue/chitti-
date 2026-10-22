@@ -378,16 +378,15 @@ class ComputerUseEngine:
         try:
             if act_name == "OPEN_URL":
                 url = params.get("url", "https://google.com")
-                import webbrowser
-                webbrowser.open(url)
+                from src.agent.computer.browser import BrowserController
+                BrowserController().open_url(url)
                 self.controller.wait(0.3)
                 return ComputerActionResult(action_type=act, success=True, message=f"Opened {url}")
 
             elif act_name == "SEARCH_WEB":
                 query = params.get("query", "")
-                url = params.get("url", f"https://www.google.com/search?q={query}")
-                import webbrowser
-                webbrowser.open(url)
+                from src.agent.computer.browser import BrowserController
+                BrowserController().search_web(query)
                 self.controller.wait(0.3)
                 return ComputerActionResult(action_type=act, success=True, message=f"Searched web for '{query}'")
 

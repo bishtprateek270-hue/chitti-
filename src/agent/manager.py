@@ -403,14 +403,22 @@ class LaptopAgentManager:
             return f"Email has been sent to {rec}."
 
         # 3. YouTube / Media playback
-        elif has_played_media or ("youtube" in lower and any(kw in lower for kw in ["play", "song", "gaana", "music", "track"])):
-            norm_artist = BrowserController.normalize_artist_query(raw_input)
-            if not norm_artist or norm_artist == "Top Songs":
-                norm_artist = "Sonu Nigam" if "sonu" in lower else ("Shreya Ghoshal" if "shreya" in lower else "requested")
+        elif has_played_media or (("youtube" in lower or "yt" in lower) and any(kw in lower for kw in ["play", "song", "gaana", "music", "track"])):
+            norm_artist = ""
+            for step in task_state.steps:
+                if step.action_type in ("PLAY_YOUTUBE", "VERIFY_PLAYBACK"):
+                    q = step.parameters.get("query") or ""
+                    if q and q not in ("Trending Songs", "Top Songs", "Trending", "a"):
+                        norm_artist = q
+                        break
+            if not norm_artist:
+                norm_artist = BrowserController.normalize_artist_query(raw_input)
+            if not norm_artist or norm_artist in ("Trending Songs", "Top Songs", "Trending", "a"):
+                norm_artist = "Sonu Nigam" if "sonu" in lower else ("Shreya Ghoshal" if "shreya" in lower else "trending")
             if lang == "hi":
-                return f"YouTube खोल दिया गया है, {norm_artist} का गाना चुना गया है और प्लेबैक सत्यापित हो चुका है।"
+                return f"YouTube खोल दिया गया है, {norm_artist} का गाना चुना गया है और प्लेबैक शुरू हो गया है।"
             elif lang in ("hinglish", "mixed"):
-                return f"YouTube open karke {norm_artist} ka song select kar diya hai aur playback verify ho gaya hai."
+                return f"YouTube open karke {norm_artist} ka song play kar diya hai aur playback start ho gaya hai."
             return f"Done. I opened YouTube, selected a {norm_artist} song, and verified playback started."
 
         # 4. Pure Browser URL / Web Service opening (e.g. "open whatsapp", "open gmail", "open telegram")

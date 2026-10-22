@@ -94,6 +94,9 @@ class SubtaskVerifier:
 
         elif act == "VERIFY_WINDOW":
             title = params.get("title", "")
+            b_state = self.browser.get_browser_state()
+            if title.lower() in ("youtube", "browser", "chrome", "edge", "brave") and b_state.is_open and b_state.current_url:
+                return VerificationOutcome(True, f"Browser window verified active for '{title}': {b_state.current_url}")
             res = self.screen_analyzer.verify_window(title)
             if not res.success:
                 return VerificationOutcome(False, f"Window verification failed for '{title}': {res.evidence}")

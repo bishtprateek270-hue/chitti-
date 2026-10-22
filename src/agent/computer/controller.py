@@ -4,6 +4,7 @@ Provides high-level programmatic control over mouse, keyboard, clipboard, screen
 """
 
 import os
+import platform
 import re
 import sys
 import time
@@ -388,6 +389,57 @@ class ComputerController:
     def list_windows(self) -> List[WindowInfo]:
         """Lists all open, visible top-level windows with their coordinates."""
         windows: List[WindowInfo] = []
+
+        # 1. Native Windows OpenInputDesktop EnumDesktopWindows (works across background/session threads)
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                from ctypes import wintypes
+                user32 = ctypes.windll.user32
+                hDesk = user32.OpenInputDesktop(0, False, 0x0100)
+                if hDesk:
+                    EnumProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+                    fg_hwnd = user32.GetForegroundWindow()
+
+                    class RECT(ctypes.Structure):
+                        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+                    def _cb(hwnd, lParam):
+                        try:
+                            if user32.IsWindowVisible(hwnd):
+                                length = user32.GetWindowTextLengthW(hwnd)
+                                if length > 0:
+                                    buf = ctypes.create_unicode_buffer(length + 1)
+                                    user32.GetWindowTextW(hwnd, buf, length + 1)
+                                    title = buf.value.strip()
+                                    if title:
+                                        r = RECT()
+                                        user32.GetWindowRect(hwnd, ctypes.byref(r))
+                                        w = r.right - r.left
+                                        h = r.bottom - r.top
+                                        if w > 0 and h > 0:
+                                            windows.append(WindowInfo(
+                                                title=title,
+                                                handle=hwnd,
+                                                left=r.left,
+                                                top=r.top,
+                                                width=w,
+                                                height=h,
+                                                is_active=(hwnd == fg_hwnd),
+                                                is_minimized=(user32.IsIconic(hwnd) != 0),
+                                            ))
+                        except Exception:
+                            pass
+                        return True
+
+                    user32.EnumDesktopWindows(hDesk, EnumProc(_cb), 0)
+                    user32.CloseDesktop(hDesk)
+                    if windows:
+                        return windows
+            except Exception as e:
+                log_debug(f"OpenInputDesktop EnumDesktopWindows notice: {e}")
+
+        # 2. PyGetWindow fallback
         if HAS_PYGETWINDOW and gw:
             try:
                 all_wins = gw.getAllWindows()
@@ -403,11 +455,12 @@ class ComputerController:
                             is_active=w.isActive if hasattr(w, "isActive") else False,
                             is_minimized=w.isMinimized if hasattr(w, "isMinimized") else False,
                         ))
-                return windows
+                if windows:
+                    return windows
             except Exception as e:
                 log_debug(f"PyGetWindow list failed: {e}")
 
-        # Fallback to win32gui
+        # 3. Fallback to win32gui
         if HAS_WIN32:
             def enum_cb(hwnd, results):
                 try:

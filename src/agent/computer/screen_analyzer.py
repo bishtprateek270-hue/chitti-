@@ -73,17 +73,17 @@ class ScreenAnalyzer:
         "notepad": ["notepad.exe", "notepad"],
         "calculator": ["calculator.exe", "calculatorapp.exe", "calc.exe"],
         "terminal": ["powershell.exe", "cmd.exe", "windowsterminal.exe", "wt.exe"],
-        "youtube": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "youtube"],
+        "youtube": ["youtube"],
         "browser": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
         "web": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
-        "whatsapp web": ["whatsapp", "whatsapp web", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
-        "whatsapp": ["whatsapp", "whatsapp web", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
-        "gmail / webmail": ["gmail", "inbox", "mail.google.com", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
-        "gmail": ["gmail", "inbox", "mail.google.com", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
-        "webmail": ["gmail", "inbox", "mail.google.com", "chrome.exe", "msedge.exe", "brave.exe", "firefox.exe"],
-        "telegram": ["telegram", "telegram.exe", "chrome.exe", "brave.exe"],
-        "slack": ["slack", "slack.exe", "chrome.exe", "brave.exe"],
-        "discord": ["discord", "discord.exe", "chrome.exe", "brave.exe"],
+        "whatsapp web": ["whatsapp", "whatsapp web"],
+        "whatsapp": ["whatsapp", "whatsapp.exe"],
+        "gmail / webmail": ["gmail", "inbox", "mail.google.com"],
+        "gmail": ["gmail", "inbox", "mail.google.com"],
+        "webmail": ["gmail", "inbox", "mail.google.com"],
+        "telegram": ["telegram", "telegram.exe"],
+        "slack": ["slack", "slack.exe"],
+        "discord": ["discord", "discord.exe"],
     }
 
 
@@ -116,7 +116,25 @@ class ScreenAnalyzer:
                     target=title_query,
                 )
 
-        # 2. Check running processes as secondary verification
+        # 2. For website targets (e.g. YouTube), verify via browser controller state
+        if query in ("youtube", "whatsapp web", "gmail", "gmail / webmail", "webmail"):
+            from src.agent.computer.browser import BrowserController
+            b_state = BrowserController().get_browser_state()
+            site_key = "youtube" if query == "youtube" else ("whatsapp" if "whatsapp" in query else "google.com")
+            if b_state.is_open and b_state.current_url and site_key in b_state.current_url.lower():
+                log_info(f"[VERIFY] Active browser state verified for '{title_query}': {b_state.current_url}")
+                return VerificationResult(
+                    success=True,
+                    evidence=f"Browser tab actively open at '{b_state.current_url}'.",
+                    target=title_query,
+                )
+            return VerificationResult(
+                success=False,
+                evidence=f"No window or active tab for '{title_query}' was found.",
+                target=title_query,
+            )
+
+        # 3. Check running processes as secondary verification for native desktop apps
         expected_aliases = self.APP_PROCESS_ALIASES.get(query, [query])
         for proc in psutil.process_iter(['name']):
             try:

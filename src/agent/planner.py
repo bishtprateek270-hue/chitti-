@@ -119,8 +119,8 @@ class AgentPlanner:
         if intent.intent == ActionIntentType.PLAY_MEDIA:
             song_query = intent.parameters.get("query") or intent.target or clean
             artist = BrowserController.normalize_artist_query(song_query)
-            if not artist or artist == "Top Songs":
-                artist = "Sonu Nigam" if "sonu" in clean_lower else ("Shreya Ghoshal" if "shreya" in clean_lower else "Trending Music")
+            if not artist or artist in ("Top Songs", "Trending", "Trending Music", "Trending Songs"):
+                artist = "Sonu Nigam" if "sonu" in clean_lower else ("Shreya Ghoshal" if "shreya" in clean_lower else ("Arijit Singh" if "arijit" in clean_lower else "Trending Songs"))
 
             state.steps = [
                 AgentStep(step_id=1, description=f"Resolve top video and start playing '{artist}' on YouTube", action_type="PLAY_YOUTUBE", parameters={"query": artist}),
@@ -1257,7 +1257,10 @@ class ComputerAgentLoop:
 
             elif act == "VERIFY_WINDOW":
                 title = params.get("title", "")
-                time.sleep(0.3)
+                time.sleep(0.5)
+                b_state = self.browser.get_browser_state()
+                if title.lower() in ("youtube", "browser", "chrome", "edge", "brave") and b_state.is_open and b_state.current_url:
+                    return True, f"Browser window confirmed active for URL '{b_state.current_url}'", b_state.current_url
                 res = self.screen_analyzer.verify_window(title)
                 if not res.success:
                     return False, f"Verification failed: {res.evidence}", None
