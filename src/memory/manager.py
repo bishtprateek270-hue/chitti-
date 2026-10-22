@@ -275,10 +275,12 @@ class MemoryManager:
 
     def get_user_occupation(self) -> Optional[str]:
         """Retrieves stored occupation / profession from memory database."""
-        for rec in self.db.list_all_memories():
+        all_recs = self.db.list_all_memories()
+        for rec in all_recs:
             if rec.metadata and rec.metadata.get("key") == "occupation" and rec.metadata.get("value"):
                 return rec.metadata.get("value")
-            m = re.search(r"(?i)\buser\s+is\s+an?\s+([A-Za-z0-9_\-\s]+?)(?:\.|$)", rec.content)
+        for rec in all_recs:
+            m = re.search(r"(?i)\buser\s+is\s+an?\s+([A-Za-z0-9_\-\.\s]+?)(?:\.|$)", rec.content)
             if m:
                 return m.group(1).strip()
         return None
@@ -465,6 +467,96 @@ class MemoryManager:
                 else:
                     return "I don't have your profession stored in my memory yet."
 
+        # 7. User Projects Queries
+        project_patterns = [
+            r"(?i)\b(?:what\s+projects?\s+(?:have\s+i|did\s+i|i\s+have)\s+(?:made|built|developed|created|worked\s+on)|tell\s+me\s+about\s+my\s+projects?|what\s+are\s+my\s+projects?|list\s+(?:all\s+)?my\s+projects?|my\s+projects?|what\s+is\s+in\s+my\s+portfolio|projects\s+on\s+my\s+github|projects\s+in\s+my\s+portfolio|projects\s+i\s+have\s+made|what\s+did\s+i\s+make)\b",
+            r"(?i)\b(?:mere\s+projects?\s+(?:kaunse\s+hai|batao|kya\s+hai|ke\s+baare\s+me(?:in)?\s+batao)|maine\s+kaunse\s+projects?\s+banaye\s+hai|mere\s+projects?)\b",
+            r"(?:मेरे\s+प्रोजेक्ट्स?\s+कौन\s+से\s+हैं|मेरे\s+प्रोजेक्ट्स?\s+के\s+बारे\s+में\s+बताओ)",
+        ]
+        if any(re.search(pat, lower) for pat in project_patterns):
+            project_mems = [m for m in self.db.list_all_memories() if m.memory_type == "project" and "Project " in m.content]
+            if project_mems:
+                lines = []
+                for pm in sorted(project_mems, key=lambda x: x.id):
+                    text = pm.content.strip().rstrip(".")
+                    if ". Stack:" in text:
+                        text = text.split(". Stack:")[0]
+                    if ". Live:" in text:
+                        text = text.split(". Live:")[0]
+                    if " | GitHub:" in text:
+                        text = text.split(" | GitHub:")[0]
+                    lines.append(text)
+
+                if lang == "hi":
+                    return "आपने ये प्रमुख प्रोजेक्ट्स बनाए हैं जो आपके पोर्टफोलियो और गिटहब पर उपलब्ध हैं:\n• " + "\n• ".join(lines)
+                elif lang in ("hinglish", "mixed"):
+                    return "Aapne yeh sabhi flagship projects banaye hain jo aapke Portfolio aur GitHub par hain:\n• " + "\n• ".join(lines)
+                else:
+                    return "Here are your major projects available across your GitHub and portfolio:\n• " + "\n• ".join(lines)
+
+        # 7.1. Portfolio & GitHub Links Queries
+        links_patterns = [
+            r"(?i)\b(?:what\s+is\s+my\s+portfolio(?:\s+link|\s+url|\s+website)?|where\s+is\s+my\s+portfolio|my\s+portfolio\s+link|what\s+is\s+my\s+github(?:\s+link|\s+url|\s+profile)?|where\s+is\s+my\s+github|my\s+github\s+link|show\s+my\s+portfolio|show\s+my\s+github|my\s+portfolio|my\s+github)\b",
+            r"(?i)\b(?:mera\s+portfolio\s+kya\s+hai|mera\s+github\s+link|mera\s+portfolio\s+link|mera\s+portfolio|mera\s+github)\b",
+        ]
+        if any(re.search(pat, lower) for pat in links_patterns):
+            portfolio_url = "https://bishtprateek270-hue.github.io/Portfolio/"
+            github_url = "https://github.com/bishtprateek270-hue"
+            linkedin_url = "https://linkedin.com/in/prateek-singh-bisht"
+            if "github" in lower:
+                return f"Your GitHub profile is: {github_url}"
+            if "portfolio" in lower:
+                return f"Your live portfolio website is: {portfolio_url}"
+            return f"Here are your profile links:\n• Portfolio: {portfolio_url}\n• GitHub: {github_url}\n• LinkedIn: {linkedin_url}"
+
+        # 7.2. Tech Stack & Skills Queries
+        skills_patterns = [
+            r"(?i)\b(?:what\s+is\s+my\s+(?:tech\s+stack|technical\s+stack|skills?)|what\s+are\s+my\s+skills?|what\s+technologies\s+do\s+i\s+(?:know|use)|my\s+tech\s+stack|my\s+skills?)\b",
+            r"(?i)\b(?:mera\s+tech\s+stack\s+kya\s+hai|meri\s+skills?\s+kya\s+hai|mujhe\s+kaunsi\s+technologies\s+aati\s+hai)\b",
+        ]
+        if any(re.search(pat, lower) for pat in skills_patterns):
+            skill_mems = [m for m in self.db.list_all_memories() if m.memory_type == "skill"]
+            if skill_mems:
+                lines = [m.content.strip().rstrip(".") for m in skill_mems]
+                if lang in ("hi", "hinglish", "mixed"):
+                    return "Yeh aapka technical stack hai:\n• " + "\n• ".join(lines)
+                else:
+                    return "Here is your technical stack across AI, Backend, Frontend, and 3D/DevOps:\n• " + "\n• ".join(lines)
+
+        # 7.3. Hackathons & Achievements Queries
+        achieve_patterns = [
+            r"(?i)\b(?:what\s+(?:hackathons?|achievements?|awards?|certifications?)\s+(?:have\s+i|did\s+i)\s+(?:won|done|participated)|tell\s+me\s+about\s+my\s+(?:hackathons?|achievements?|certifications?)|my\s+hackathons?|my\s+achievements?)\b",
+            r"(?i)\b(?:meri\s+achievements?\s+kya\s+hai|maine\s+kaunse\s+hackathons?\s+kiye\s+hai|mere\s+awards?)\b",
+        ]
+        if any(re.search(pat, lower) for pat in achieve_patterns):
+            ach_mems = [m for m in self.db.list_all_memories() if m.memory_type == "achievement"]
+            if ach_mems:
+                lines = [m.content.strip().rstrip(".") for m in ach_mems]
+                if lang in ("hi", "hinglish", "mixed"):
+                    return "Aapke milestones, hackathons aur certifications:\n• " + "\n• ".join(lines)
+                else:
+                    return "Here are your key milestones, hackathons, and certifications:\n• " + "\n• ".join(lines)
+
+        # 7.4. Work Experience & Internship Queries
+        exp_patterns = [
+            r"(?i)\b(?:where\s+did\s+i\s+(?:intern|work)|what\s+is\s+my\s+work\s+experience|tell\s+me\s+about\s+my\s+internship|my\s+internship|my\s+work\s+experience)\b",
+            r"(?i)\b(?:meri\s+internship\s+kaha(?:n)?\s+(?:thi|hui)|mera\s+work\s+experience)\b",
+        ]
+        if any(re.search(pat, lower) for pat in exp_patterns):
+            exp_mems = [m for m in self.db.list_all_memories() if m.memory_type == "experience"]
+            if exp_mems:
+                return exp_mems[0].content
+
+        # 7.5. Academic Record & Grades Queries
+        academic_patterns = [
+            r"(?i)\b(?:what\s+is\s+my\s+(?:cgpa|sgpa|academic\s+record|grades?|marks)|how\s+much\s+(?:cgpa|sgpa)\s+did\s+i\s+get|my\s+academic\s+record|my\s+cgpa)\b",
+            r"(?i)\b(?:mera\s+cgpa\s+kya\s+hai|mere\s+marks\s+kitne\s+hai|mera\s+academic\s+record)\b",
+        ]
+        if any(re.search(pat, lower) for pat in academic_patterns):
+            for rec in self.db.list_all_memories():
+                if rec.metadata and rec.metadata.get("key") == "academic_record":
+                    return rec.content
+
         # 8. General Identity & Memory Summary ("What do you know about me?", "Tell me about me", etc.)
         know_me_patterns = [
             r"(?i)\b(?:what\s+do\s+(?:you|u)\s+(?:know|remember)\s+about\s+me|tell\s+me\s+(?:everything\s+)?about\s+me|what\s+do\s+(?:you|u)\s+have\s+on\s+me|list\s+(?:all\s+)?my\s+memories|my\s+memories)\b",
@@ -485,16 +577,15 @@ class MemoryManager:
             occ = self.get_user_occupation()
             if occ:
                 facts.append(f"Profession: {occ}")
-            proj = self.get_project_name()
-            if proj:
-                facts.append(f"Project: {proj}")
+            facts.append("Portfolio: https://bishtprateek270-hue.github.io/Portfolio/")
+            facts.append("GitHub: https://github.com/bishtprateek270-hue (14 projects including Chitti, 3D-ULPIN, KarigarAI, DocForensics AI, DoseBand, ChurnOps)")
 
-            # Also include up to 5 highest-importance stored memories
+            # Also include high-importance memories
             all_mems = self.db.list_all_memories()
             sorted_mems = sorted(all_mems, key=lambda m: m.importance, reverse=True)
             for m in sorted_mems:
                 c = m.content.strip().rstrip(".")
-                if c and not any(c.lower() in f.lower() for f in facts) and len(facts) < 7:
+                if c and not any(c.lower() in f.lower() for f in facts) and len(facts) < 10:
                     facts.append(c)
 
             if facts:

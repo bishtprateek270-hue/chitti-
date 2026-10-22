@@ -89,12 +89,15 @@ class MasterRouter:
         r"(?i)\b(?:what\s+do\s+(?:you|u)\s+know\s+about\s+me|tell\s+me\s+about\s+me|what\s+is\s+my\s+name|who\s+(?:am\s+i|i\s+am))\b",
         r"(?i)\b(?:do\s+(?:you|u)\s+know\s+(?:who\s+(?:i\s+am|am\s+i)|me)|do\s+(?:you|u)\s+remember\s+me|what\s+do\s+(?:you|u)\s+remember\s+about\s+me|list\s+my\s+memories|my\s+memories)\b",
         r"(?i)\b(?:who\s+(?:created|made|built|developed)\s+(?:you|u)|who\s+is\s+your\s+creator|who\s+developed\s+you)\b",
-        r"(?i)\b(?:what\s+is\s+my\s+(?:college|university|job|profession|work|branch|degree|goal|hobby|favorite\s+\w+|preferred\s+\w+))\b",
-        r"(?i)\b(?:tell\s+me\s+about\s+my\s+(?:college|university|friends|family|projects|work|sister|brother|best\s+friend|hobbies))\b",
+        r"(?i)\b(?:what\s+is\s+my\s+(?:college|university|job|profession|work|branch|degree|goal|hobby|favorite\s+\w+|preferred\s+\w+|portfolio|github|tech\s+stack|skills?|cgpa|sgpa|academic\s+record))\b",
+        r"(?i)\b(?:tell\s+me\s+about\s+my\s+(?:college|university|friends|family|projects|work|sister|brother|best\s+friend|hobbies|internship|hackathons?|achievements?|certifications?))\b",
+        r"(?i)\b(?:what\s+projects?\s+(?:have\s+i|did\s+i|i\s+have)\s+(?:made|built|developed|created|worked\s+on)|what\s+are\s+my\s+projects?|list\s+(?:all\s+)?my\s+projects?|my\s+projects?|projects\s+on\s+my\s+github|projects\s+in\s+my\s+portfolio|what\s+is\s+in\s+my\s+portfolio)\b",
         r"(?i)\b(?:who\s+is\s+(?:my\s+)?(?:best\s+friend|friend|sister|brother|father|mother|teammate|coworker|partner|girlfriend|boyfriend|wife|husband))\b",
+        r"(?i)\b(?:where\s+did\s+i\s+(?:intern|work)|my\s+internship|my\s+work\s+experience|what\s+is\s+my\s+portfolio|what\s+is\s+my\s+github|my\s+portfolio\s+link|my\s+github\s+link|show\s+my\s+portfolio|show\s+my\s+github)\b",
         r"(?i)\b(?:mera\s+naam\s+kya\s+hai|mujhe\s+jaante\s+ho|mere\s+baare\s+me(?:in)?\s+kya\s+jaante\s+ho|tumhe\s+kisne\s+banaya|main\s+kaun\s+hoon)\b",
-        r"(?i)\b(?:mera|meri|mere)\s+(?:preferred|favourite|favorite|college|naam|dost|project|goal|degree|language|programming\s+language)\b.*(?:kya\s+hai|kya\s+tha|batao|yaad\s+hai)",
-        r"(?:तुम्हें\s+मेरे\s+बारे\s+में\s+क्या\s+याद\s+है|मेरा\s+नाम\s+क्या\s+है|तुम्हें\s+किसने\s+बनाया)",
+        r"(?i)\b(?:mere\s+projects?|mere\s+projects?\s+batao|maine\s+kaunse\s+projects?\s+banaye|mera\s+portfolio|mera\s+github|meri\s+skills?|mera\s+tech\s+stack|meri\s+internship|mere\s+hackathons?)\b",
+        r"(?i)\b(?:mera|meri|mere)\s+(?:preferred|favourite|favorite|college|naam|dost|project|projects|goal|degree|language|programming\s+language)\b.*(?:kya\s+hai|kya\s+tha|batao|yaad\s+hai)",
+        r"(?:तुम्हें\s+मेरे\s+बारे\s+में\s+क्या\s+याद\s+है|मेरा\s+नाम\s+क्या\s+है|तुम्हें\s+किसने\s+बनाया|मेरे\s+प्रोजेक्ट्स?)",
     ]
 
     # 3. Explicit Memory Modification / Store & Proactive Reminders
