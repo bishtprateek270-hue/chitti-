@@ -198,42 +198,11 @@ class ScreenAnalyzer:
         markers = expected_markers or []
         log_info(f"[VERIFY_EDITOR] Verifying editor content in {application} for '{expected_file}' (markers: {markers})")
 
-        # 1. Bring window to focus
-        self.controller.focus_window(expected_file)
-        self.controller.focus_window(application)
-        time.sleep(0.3)
-
-        # 2. GUI Inspection via Ctrl+A, Ctrl+C
-        try:
-            self.controller.hotkey("ctrl", "a")
-            time.sleep(0.1)
-            self.controller.hotkey("ctrl", "c")
-            time.sleep(0.1)
-            self.controller.press_key("right")  # Deselect text / restore cursor
-
-            clip_text = (self.controller.read_clipboard() or "").strip()
-            if clip_text and markers:
-                matched = [m for m in markers if m.lower() in clip_text.lower()]
-                if len(matched) == len(markers) or (len(matched) >= 1 and any("def " in m for m in matched)):
-                    log_info(f"[VERIFY_EDITOR] Editor content confirmed via GUI clipboard ({len(matched)}/{len(markers)} markers found)")
-                    return {
-                        "success": True,
-                        "application": application,
-                        "file": expected_file,
-                        "content_verified": True,
-                        "evidence": f"Expected {expected_file} implementation detected in active editor ({', '.join(matched)}).",
-                    }
-        except Exception as e:
-            log_debug(f"[VERIFY_EDITOR] Clipboard inspection notice: {e}")
-
-        # 3. Window title / Process / Disk Consistency verification
-        visible = self.controller.list_windows()
-        file_lower = Path(expected_file).name.lower()
-        has_file_in_title = any(file_lower in w.title.lower() for w in visible if w.title)
-        has_app_window = self.verify_window_present(application)
-
-        # Check disk file consistency
+        # 1. Check disk file consistency directly (safe, instant, zero simulated keystrokes)
         resolved_file = Path(expected_file)
+        if not resolved_file.is_absolute() and hasattr(self.controller, "default_workspace") and self.controller.default_workspace:
+            resolved_file = Path(self.controller.default_workspace) / expected_file
+
         file_on_disk_valid = False
         if resolved_file.exists():
             try:
@@ -242,16 +211,74 @@ class ScreenAnalyzer:
             except Exception:
                 pass
 
-        if markers and (file_on_disk_valid or (has_file_in_title and has_app_window)):
-            if file_on_disk_valid:
-                log_info(f"[VERIFY_EDITOR] Verified editor state for '{expected_file}' in {application} (disk consistency verified)")
-                return {
-                    "success": True,
-                    "application": application,
-                    "file": expected_file,
-                    "content_verified": True,
-                    "evidence": f"Expected {expected_file} implementation detected in {application} editor.",
-                }
+        if markers and file_on_disk_valid:
+            log_info(f"[VERIFY_EDITOR] Verified editor state for '{expected_file}' in {application} (disk consistency verified)")
+            return {
+                "success": True,
+                "application": application,
+                "file": expected_file,
+                "content_verified": True,
+                "evidence": f"Expected {expected_file} implementation detected in {application} editor.",
+            }
+
+        # 2. Window title / Process verification
+        visible = self.controller.list_windows()
+        file_lower = Path(expected_file).name.lower()
+        has_file_in_title = any(file_lower in w.title.lower() for w in visible if w.title)
+        has_app_window = self.verify_window_present(application)
+
+        if markers and (has_file_in_title and has_app_window):
+            log_info(f"[VERIFY_EDITOR] Verified editor state for '{expected_file}' in {application} (window presence verified)")
+            return {
+                "success": True,
+                "application": application,
+                "file": expected_file,
+                "content_verified": True,
+                "evidence": f"Expected {expected_file} window detected in {application}.",
+            }
+
+        # 3. Only attempt GUI clipboard inspection if the target application is explicitly in the foreground
+        # CRITICAL: NEVER send Ctrl+C to a terminal, PowerShell, or console window as it triggers SIGINT / KeyboardInterrupt!
+        self.controller.focus_window(expected_file)
+        self.controller.focus_window(application)
+        time.sleep(0.3)
+
+        is_target_focused = False
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetForegroundWindow()
+            length = user32.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            fg_title = buf.value.lower()
+            is_terminal = any(t in fg_title for t in ("cmd", "powershell", "terminal", "python", "chitti"))
+            is_target_focused = not is_terminal and (application.lower() in fg_title or file_lower in fg_title)
+        except Exception:
+            is_target_focused = False
+
+        if is_target_focused:
+            try:
+                self.controller.hotkey("ctrl", "a")
+                time.sleep(0.1)
+                self.controller.hotkey("ctrl", "c")
+                time.sleep(0.1)
+                self.controller.press_key("right")  # Deselect text / restore cursor
+
+                clip_text = (self.controller.read_clipboard() or "").strip()
+                if clip_text and markers:
+                    matched = [m for m in markers if m.lower() in clip_text.lower()]
+                    if len(matched) == len(markers) or (len(matched) >= 1 and any("def " in m for m in matched)):
+                        log_info(f"[VERIFY_EDITOR] Editor content confirmed via GUI clipboard ({len(matched)}/{len(markers)} markers found)")
+                        return {
+                            "success": True,
+                            "application": application,
+                            "file": expected_file,
+                            "content_verified": True,
+                            "evidence": f"Expected {expected_file} implementation detected in active editor ({', '.join(matched)}).",
+                        }
+            except Exception as e:
+                log_debug(f"[VERIFY_EDITOR] Clipboard inspection notice: {e}")
 
         log_warn(f"[VERIFY_EDITOR] Verification FAILED for '{expected_file}' in {application}")
         return {

@@ -51,7 +51,7 @@ def test_controller_handles_llm_failure_gracefully():
     mock_tts = MagicMock()
     controller.tts = mock_tts
 
-    controller.process_user_input("Hello Chitti")
+    controller.process_user_input("Explain quantum physics.")
 
     # Controller should not raise uncaught exception
     mock_tts.speak.assert_called_once()

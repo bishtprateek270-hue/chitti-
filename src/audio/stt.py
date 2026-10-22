@@ -137,6 +137,15 @@ class GoogleSTT(STTEngine):
                 log_debug(f"[GOOGLE STT] Recognized ({target_lang}): '{text.strip()}'")
                 return text.strip()
         except sr.UnknownValueError:
+            # If primary en-IN didn't resolve, try hi-IN fallback for Hindi/Hinglish speech
+            if target_lang == "en-IN":
+                try:
+                    text = self._recognizer.recognize_google(audio_data, language="hi-IN")
+                    if text and text.strip():
+                        log_debug(f"[GOOGLE STT] Recognized (hi-IN fallback): '{text.strip()}'")
+                        return text.strip()
+                except (sr.UnknownValueError, sr.RequestError, Exception):
+                    pass
             return ""
         except (sr.RequestError, Exception) as e:
             log_debug(f"[GOOGLE STT] Cloud request notice: {e}")
@@ -252,28 +261,12 @@ class WhisperSTT(STTEngine):
             # Guard against silence / faint background hiss to prevent hallucinations
             peak_val = float(np.max(np.abs(audio)))
             rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-            if peak_val < 0.003 or rms_val < 0.0008:
+            if peak_val < 0.002 or rms_val < 0.0006:
                 log_debug(f"[WHISPER] Audio energy too faint (peak={peak_val:.4f}, rms={rms_val:.4f}). Returning empty.")
                 return ""
 
-            # Acoustic VAD check on RAW unamplified audio: reject stationary background noise before invoking Whisper
-            from unittest.mock import Mock
-            is_mock = isinstance(getattr(self, "_model", None), Mock)
-            if not is_mock and len(audio) >= 800:
-                from src.audio.vad import VoiceActivityDetector
-                vad = VoiceActivityDetector()
-                frame_sz = 800
-                has_speech_frame = any(
-                    vad.process_frame(audio[offset : offset + frame_sz]).is_speech
-                    for offset in range(0, len(audio), frame_sz)
-                    if len(audio[offset : offset + frame_sz]) >= 400
-                )
-                if not has_speech_frame:
-                    log_debug("[WHISPER] Audio contains no confirmed speech frames (VAD rejected). Returning empty.")
-                    return ""
-
-            # ONLY after VAD confirms genuine speech, normalize speech peak if quiet
-            if peak_val >= 0.003 and peak_val < 0.65:
+            # Normalize speech peak if quiet to ensure reliable acoustic recognition
+            if peak_val >= 0.002 and peak_val < 0.65:
                 gain = min(20.0, 0.75 / peak_val)
                 audio = audio * gain
 
@@ -287,15 +280,12 @@ class WhisperSTT(STTEngine):
             "verbose": False,
             "temperature": 0.0,
             "condition_on_previous_text": False,
-            "compression_ratio_threshold": 2.2,
-            "logprob_threshold": -0.90,
-            "no_speech_threshold": 0.50,
+            "compression_ratio_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.60,
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             options["language"] = self.language
-        else:
-            # Default to English to prevent Whisper language classification hallucinating Korean/Welsh on ambient noise
-            options["language"] = "en"
 
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -306,12 +296,12 @@ class WhisperSTT(STTEngine):
                     result = self._model.transcribe(audio, **options)
             text = result.get("text", "").strip()
 
-            # Reject if Whisper detected silence or low confidence across segments
+            # Reject if Whisper detected high silence confidence AND very low logprob across segments
             segments = result.get("segments", [])
             if segments:
-                high_no_speech = all(s.get("no_speech_prob", 0.0) > 0.55 for s in segments)
-                low_logprob = all(s.get("avg_logprob", 0.0) < -1.1 for s in segments)
-                if high_no_speech or low_logprob:
+                high_no_speech = all(s.get("no_speech_prob", 0.0) > 0.85 for s in segments)
+                low_logprob = all(s.get("avg_logprob", 0.0) < -1.8 for s in segments)
+                if high_no_speech and low_logprob:
                     log_debug(f"Rejected Whisper low-confidence hallucination: '{text}'")
                     return ""
 
@@ -319,7 +309,7 @@ class WhisperSTT(STTEngine):
                 log_debug(f"Rejected Whisper hallucination: '{text}'")
                 return ""
 
-            log_debug(f"Whisper transcription: '{text}'")
+            log_info(f"[WHISPER] Transcribed text: '{text}'")
             return text
         except Exception as e:
             log_warning(f"Whisper transcription encountered an issue: {e}")

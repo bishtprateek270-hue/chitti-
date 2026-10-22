@@ -99,7 +99,7 @@ class GlobalHotkeyManager:
         self._last_trigger_time = now
 
         with self._lock:
-            callbacks = list(self._callbacks.get(hk_id, []))
+            callbacks = list(self._callbacks.get(hk_id, self._callbacks.get(1, [])))
 
         log_chitti(f"[HOTKEY] ⚡ Hotkey #{hk_id} activated. Triggering {len(callbacks)} action(s).")
         for cb in callbacks:
@@ -121,7 +121,7 @@ class GlobalHotkeyManager:
         self._running = True
         self._thread = threading.Thread(target=self._msg_loop, daemon=True, name="ChittiHotkeyThread")
         self._thread.start()
-        log_info("[HOTKEY] Safe Global Hotkey Listener started (Alt+Space and Ctrl+Alt+C).")
+        log_info("[HOTKEY] Safe Global Hotkey Listener started (Alt+Space, Ctrl+Space, Alt+C).")
 
     def stop(self):
         """Stops the message loop and unregisters all hotkeys."""
@@ -138,10 +138,32 @@ class GlobalHotkeyManager:
         log_info("[HOTKEY] Safe Global Hotkey Listener stopped.")
 
     def _msg_loop(self):
-        """Standard Win32 message loop using RegisterHotKey."""
+        """Standard Win32 message loop using RegisterHotKey with robust GetAsyncKeyState edge polling."""
+        if platform.system() == "Windows":
+            try:
+                user32 = ctypes.windll.user32
+                hDesk = user32.OpenDesktopW("Default", 0, False, 0x01FF)
+                if hDesk:
+                    user32.SetThreadDesktop(hDesk)
+            except Exception:
+                pass
+
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         self._thread_id = kernel32.GetCurrentThreadId()
+
+        # Explicit Win32 function signatures to prevent 64-bit calling convention issues
+        try:
+            user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
+            user32.RegisterHotKey.restype = wintypes.BOOL
+            user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
+            user32.UnregisterHotKey.restype = wintypes.BOOL
+            user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT]
+            user32.PeekMessageW.restype = wintypes.BOOL
+            user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+            user32.GetAsyncKeyState.restype = wintypes.SHORT
+        except Exception:
+            pass
 
         # Register hotkeys on this thread
         with self._lock:
@@ -154,6 +176,10 @@ class GlobalHotkeyManager:
                     log_debug(f"[HOTKEY] RegisterHotKey exception: {e}")
 
         msg = wintypes.MSG()
+        prev_alt_space = False
+        prev_ctrl_space = False
+        prev_ctrl_alt_c = False
+        prev_alt_c = False
 
         try:
             while self._running:
@@ -167,18 +193,26 @@ class GlobalHotkeyManager:
                     user32.TranslateMessage(ctypes.byref(msg))
                     user32.DispatchMessageW(ctypes.byref(msg))
 
-                # 2. Safe, read-only state query (Non-hooking, zero delay to typing)
-                alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
-                ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+                # 2. Safe, read-only state query with rising-edge detection (handles both main and left/right keys)
+                alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000) or bool(user32.GetAsyncKeyState(0xA4) & 0x8000) or bool(user32.GetAsyncKeyState(0xA5) & 0x8000)
+                ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000) or bool(user32.GetAsyncKeyState(0xA2) & 0x8000) or bool(user32.GetAsyncKeyState(0xA3) & 0x8000)
                 space = bool(user32.GetAsyncKeyState(VK_SPACE) & 0x8000)
                 c_key = bool(user32.GetAsyncKeyState(VK_C) & 0x8000)
 
-                # Alt + Space or Ctrl + Space
-                if (alt and space) or (ctrl and space):
+                is_alt_space = alt and space and not ctrl
+                is_ctrl_space = ctrl and space and not alt
+                is_ctrl_alt_c = ctrl and alt and c_key
+                is_alt_c = alt and c_key and not ctrl
+
+                if (is_alt_space and not prev_alt_space) or (is_ctrl_space and not prev_ctrl_space):
                     self.simulate_hotkey_press(1)
-                # Ctrl + Alt + C
-                elif ctrl and alt and c_key:
-                    self.simulate_hotkey_press(2)
+                elif (is_ctrl_alt_c and not prev_ctrl_alt_c) or (is_alt_c and not prev_alt_c):
+                    self.simulate_hotkey_press(1)
+
+                prev_alt_space = is_alt_space
+                prev_ctrl_space = is_ctrl_space
+                prev_ctrl_alt_c = is_ctrl_alt_c
+                prev_alt_c = is_alt_c
 
                 time.sleep(0.02)
         finally:

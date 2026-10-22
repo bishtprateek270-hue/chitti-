@@ -65,15 +65,20 @@ class FloatingHUD:
 
     def show(self):
         """Makes the HUD visible on top of all windows."""
+        self.state.is_visible = True
         self._queue.put(("show",))
 
     def hide(self):
         """Hides the HUD from view."""
+        self.state.is_visible = False
         self._queue.put(("hide",))
 
     def toggle(self):
         """Toggles visibility between shown and hidden."""
-        self._queue.put(("toggle",))
+        if self.state.is_visible:
+            self.hide()
+        else:
+            self.show()
 
     # -------------------------------------------------------------------------
     # LIFECYCLE & THREAD MANAGEMENT
@@ -118,6 +123,17 @@ class FloatingHUD:
             return
 
         try:
+            import platform
+            if platform.system() == "Windows":
+                try:
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    hDesk = user32.OpenDesktopW("Default", 0, False, 0x01FF)
+                    if hDesk:
+                        user32.SetThreadDesktop(hDesk)
+                except Exception:
+                    pass
+
             self._root = tk.Tk()
             self._root.title("Chitti Dynamic Island")
             self._root.attributes("-topmost", True)
@@ -307,8 +323,10 @@ class FloatingHUD:
                     self.state.is_visible = True
                     if self._root:
                         self._root.deiconify()
+                        self._root.overrideredirect(True)
                         self._root.lift()
                         self._root.attributes("-topmost", True)
+                        self._root.update_idletasks()
                         try:
                             import ctypes
                             hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()
@@ -335,8 +353,10 @@ class FloatingHUD:
                         self.state.is_visible = True
                         if self._root:
                             self._root.deiconify()
+                            self._root.overrideredirect(True)
                             self._root.lift()
                             self._root.attributes("-topmost", True)
+                            self._root.update_idletasks()
                             try:
                                 import ctypes
                                 hwnd = int(self._root.wm_frame(), 16) if hasattr(self._root, "wm_frame") else self._root.winfo_id()

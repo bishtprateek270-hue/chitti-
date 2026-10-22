@@ -3,6 +3,7 @@ Chitti Logging Module.
 Provides clean terminal logging with customizable levels and formatted tags.
 """
 
+import os
 import sys
 import logging
 from typing import Optional

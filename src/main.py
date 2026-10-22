@@ -235,15 +235,25 @@ class ChittiController:
         self.scheduler.register_listener(lambda task: self.speak(f"Reminder: {task.title}. {task.message}"))
         self.scheduler.start()
         def on_hotkey_toggle():
-            self.hud.toggle()
-            if self.hud.is_visible:
-                self.state_manager.wake()
-                self.state_manager.start_conversation_session(timeout_seconds=15.0)
+            from src.audio.ambient_listener import AmbientState
+            if self.hud.is_visible and self.ambient_listener and self.ambient_listener.state == AmbientState.LISTENING:
+                self.hud.hide()
                 if self.ambient_listener:
-                    self.ambient_listener.resume(cooldown=0.5)
+                    self.ambient_listener.resume(cooldown=1.0)
+            else:
+                self.hud.show()
+                if self.ambient_listener:
+                    self.ambient_listener.trigger_manual_listen()
+                else:
+                    self.state_manager.wake()
+                    self.state_manager.start_conversation_session(timeout_seconds=20.0)
 
+        # Primary: Alt + Space
         self.hotkey_manager.register_hotkey(callback=on_hotkey_toggle)
-        from src.ui.hotkey_listener import MOD_CONTROL, MOD_ALT, MOD_NOREPEAT, VK_C
+        # Convenient secondary hotkeys: Ctrl + Space, Alt + C, Ctrl + Alt + C
+        from src.ui.hotkey_listener import MOD_CONTROL, MOD_ALT, MOD_NOREPEAT, VK_C, VK_SPACE
+        self.hotkey_manager.register_hotkey(modifiers=(MOD_CONTROL | MOD_NOREPEAT), vk_code=VK_SPACE, callback=on_hotkey_toggle)
+        self.hotkey_manager.register_hotkey(modifiers=(MOD_ALT | MOD_NOREPEAT), vk_code=VK_C, callback=on_hotkey_toggle)
         self.hotkey_manager.register_hotkey(modifiers=(MOD_CONTROL | MOD_ALT | MOD_NOREPEAT), vk_code=VK_C, callback=on_hotkey_toggle)
         self.hotkey_manager.start()
         self.hud.start(non_blocking=True)
@@ -1267,6 +1277,14 @@ Chitti AI Companion - Usage:
     # Win32 Single-Instance Mutex (Prevents duplicate processes & acoustic echo loops)
     mutex = None
     if sys.platform == "win32":
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hDesk = user32.OpenDesktopW("Default", 0, False, 0x01FF)
+            if hDesk:
+                user32.SetThreadDesktop(hDesk)
+        except Exception:
+            pass
         try:
             import ctypes
             kernel32 = ctypes.windll.kernel32

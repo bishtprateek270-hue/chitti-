@@ -160,13 +160,87 @@ class AmbientVoiceListener:
             )
             worker.start()
         else:
-            # Start streaming recording in background worker
+            def _wake_acknowledge_and_listen():
+                try:
+                    if self.hud:
+                        self.hud.set_mode(HUDMode.LISTENING)
+                        self.hud.set_progress("Haan, boliye... (Listening)")
+                        self.hud.set_response("Haan, boliye.")
+
+                    self._play_wake_sound()
+
+                    # Flush any speaker output echo from the capture buffer before listening
+                    from src.audio.capture_service import get_audio_capture_service
+                    get_audio_capture_service().flush()
+
+                    if self.hud:
+                        self.hud.set_mode(HUDMode.LISTENING)
+                        self.hud.set_progress("Listening (speak now)...")
+
+                    self._record_and_process_speech()
+                except Exception as e:
+                    log_warn(f"[AMBIENT] Wake response notice: {e}")
+
             worker = threading.Thread(
-                target=self._record_and_process_speech,
+                target=_wake_acknowledge_and_listen,
                 daemon=True,
                 name="AmbientSpeechWorker",
             )
             worker.start()
+
+    def _play_wake_sound(self):
+        """Plays instant wake auditory feedback (<5ms) without stalling the capture loop."""
+        import os
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ack_wav = os.path.join(base_dir, "data", "wake_ack_real.wav")
+        if not os.path.exists(ack_wav):
+            ack_wav = os.path.abspath("data/wake_ack_real.wav")
+
+        try:
+            import winsound
+            if os.path.exists(ack_wav):
+                winsound.PlaySound(ack_wav, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                return
+            # Instant 130ms two-tone chime fallback
+            winsound.Beep(880, 50)
+            winsound.Beep(1320, 80)
+        except Exception as e:
+            log_debug(f"[AMBIENT] Wake sound notice: {e}")
+
+    def trigger_manual_listen(self):
+        """
+        Manually triggers active speech listening (e.g. from hotkey or UI button).
+        Wakes the system, announces readiness instantly, and begins recording speech.
+        """
+        with self._lock:
+            if self.state == AmbientState.LISTENING:
+                return
+            self.state = AmbientState.WAKING
+
+        def _worker():
+            try:
+                self.state_mgr.wake()
+                self.state_mgr.start_conversation_session(timeout_seconds=20.0)
+                if self.hud:
+                    self.hud.show()
+                    self.hud.set_mode(HUDMode.LISTENING)
+                    self.hud.set_progress("Haan, boliye... (Listening)")
+                    self.hud.set_response("Haan, boliye.")
+
+                self._play_wake_sound()
+
+                from src.audio.capture_service import get_audio_capture_service
+                get_audio_capture_service().flush()
+
+                if self.hud:
+                    self.hud.set_mode(HUDMode.LISTENING)
+                    self.hud.set_progress("Listening (speak now)...")
+
+                self._record_and_process_speech()
+            except Exception as e:
+                log_warn(f"[AMBIENT] Manual listen trigger notice: {e}")
+
+        threading.Thread(target=_worker, daemon=True, name="ManualListenWorker").start()
 
     def _process_direct_command(self, command_text: str):
         """Directly processes a command captured alongside the wake word."""
@@ -201,7 +275,10 @@ class AmbientVoiceListener:
             )
 
             if not transcribed_text or not transcribed_text.strip():
-                log_debug("[AMBIENT] No recognizable speech received.")
+                log_info("[AMBIENT] No recognizable speech captured from audio stream.")
+                if self.hud:
+                    self.hud.set_progress("Didn't catch that — speak again")
+                    time.sleep(0.5)
                 self.state_mgr.end_conversation_session()
                 self._return_to_standby()
                 return

@@ -90,7 +90,16 @@ def get_best_input_device(preferred_index: Optional[int] = None, force_refresh: 
         return None, 16000
 
     try:
-        # 1. On Windows, prioritize DirectSound 'Primary Sound Capture Driver' (full AGC, mic boost & dynamic routing)
+        # 1. Prioritize the Windows system default input device (e.g. built-in mic array or connected headset)
+        indices_to_try = []
+        try:
+            default_idx = int(sd.default.device[0])
+            if default_idx >= 0:
+                indices_to_try.append(default_idx)
+        except Exception:
+            pass
+
+        # 2. Check for DirectSound primary as fallback candidate
         devices = sd.query_devices()
         directsound_primary = None
         for idx, d in enumerate(devices):
@@ -105,20 +114,16 @@ def get_best_input_device(preferred_index: Optional[int] = None, force_refresh: 
                     directsound_primary = idx
                     break
 
-        indices_to_try = [directsound_primary] if directsound_primary is not None else []
-        try:
-            default_idx = int(sd.default.device[0])
-            if default_idx >= 0 and default_idx not in indices_to_try:
-                indices_to_try.append(default_idx)
-        except Exception:
-            pass
+        if directsound_primary is not None and directsound_primary not in indices_to_try:
+            indices_to_try.append(directsound_primary)
 
         for dev_idx in indices_to_try:
             try:
                 d = sd.query_devices(dev_idx)
                 if d.get("max_input_channels", 0) > 0:
                     native_sr = int(d.get("default_samplerate", 44100))
-                    rates_to_test = [16000] if 16000 == native_sr else [16000, native_sr, 44100, 48000]
+                    # Test native sample rate first for rock-solid PortAudio stability
+                    rates_to_test = [native_sr] if native_sr == 16000 else [native_sr, 16000, 44100, 48000]
                     for rate in rates_to_test:
                         try:
                             test_samples = int(rate * 0.04)

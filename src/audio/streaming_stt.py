@@ -196,8 +196,8 @@ class StreamingSTTEngine:
                     if elapsed >= max_sec:
                         log_debug(f"[STREAMING STT] Max recording timeout reached ({max_sec}s).")
                         break
-                    # Timeout if user never spoke after 4.0s
-                    if not state.is_speaking and elapsed >= 4.0:
+                    # Timeout if user never spoke after 7.0s
+                    if not state.is_speaking and elapsed >= 7.0:
                         log_debug("[STREAMING STT] No speech detected within initial window.")
                         break
         except Exception as e:
