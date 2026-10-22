@@ -61,8 +61,9 @@ WHISPER_HALLUCINATION_PATTERNS = [
     r"(?i)\b(?:watch\s+the\s+video|in\s+this\s+video|like\s+and\s+subscribe|hit\s+the\s+bell)\b",
     r"(?i)\b(?:i\s+will\s+(?:begin|again|get\s+it|get\s+under|run\s+again|one\s+again|one\s+get\s+under))\b",
     r"(?i)\b(?:i'll\s+be\s+one\s+again|i\s+will\s+one\s+again)\b",
-    r"(?i)\b(?:i\s+will\s+one\s+get\s+under\.\s*first\s+time|first\s+time\s+i\s+will)\b",
     r"(?i)\b(?:i\s+will\s+run\s+again|i\s+will\s+again|i\s+will\s+begin)\b",
+    r"(?i)\b(?:i\s+feel\s+it|i\s+feel\s+like|i'm\s+so\s+sorry|i'm\s+sorry|i'm\s+not\s+going\s+to\s+be\s+late)\b",
+    r"(?i)^\s*(?:thank\s+you|you)[\.!\?]?\s*$",
     r"(?i)^\[.*\]$",  # e.g. [Music], [Applause], [Silence]
 ]
 
@@ -129,16 +130,19 @@ class GoogleSTT(STTEngine):
         if not audio_data:
             return ""
 
-        # Single fast pass with Indian English / Hinglish model (0.3s)
-        target_lang = self.language or "en-IN"
+        # Primary pass with Indian English (or configured language)
+        pref_lang = self.language or "en-IN"
+        if pref_lang == "en":
+            pref_lang = "en-IN"
+
         try:
-            text = self._recognizer.recognize_google(audio_data, language=target_lang)
+            text = self._recognizer.recognize_google(audio_data, language=pref_lang)
             if text and text.strip():
-                log_debug(f"[GOOGLE STT] Recognized ({target_lang}): '{text.strip()}'")
+                log_debug(f"[GOOGLE STT] Recognized ({pref_lang}): '{text.strip()}'")
                 return text.strip()
         except sr.UnknownValueError:
             # If primary en-IN didn't resolve, try hi-IN fallback for Hindi/Hinglish speech
-            if target_lang == "en-IN":
+            if pref_lang != "hi-IN":
                 try:
                     text = self._recognizer.recognize_google(audio_data, language="hi-IN")
                     if text and text.strip():
@@ -283,9 +287,12 @@ class WhisperSTT(STTEngine):
             "compression_ratio_threshold": 2.4,
             "logprob_threshold": -1.0,
             "no_speech_threshold": 0.60,
+            "initial_prompt": "Chitti, Hey Chitti, Chitti suno, Stop, Ruk ja, Bas kar, Chup ho ja, Chitti stop",
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
-            options["language"] = self.language
+            # Whisper expects 2-letter ISO 639-1 language code (e.g. 'en', 'hi')
+            base_lang = self.language.split("-")[0].lower().strip()
+            options["language"] = base_lang
 
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

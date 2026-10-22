@@ -51,15 +51,20 @@ class WakeWordDetector:
         # English wake words
         "chitti", "hey chitti", "hello chitti", "ok chitti", "hi chitti",
         "wake up chitti", "chitti wake up", "chitti are you there",
-        # Phonetic & Accent variations (explicitly handling chitthi, chitii, chiti, chitty)
+        # Phonetic & Accent variations (explicitly handling chitthi, chitii, chiti, chitty, chatti, cheeti)
         "chitthi", "he chitthi", "hey chitthi", "hello chitthi", "hi chitthi", "ok chitthi", "wake up chitthi", "chitthi wake up",
-        "he chitti",
+        "he chitti", "hai chitthi", "hai chitti",
         "chitii", "hey chitii", "hello chitii", "hi chitii", "ok chitii", "wake up chitii", "chitii wake up",
         "chiti", "hey chiti", "hello chiti", "hi chiti", "ok chiti", "wake up chiti", "chiti wake up",
         "chitty", "hey chitty", "hello chitty", "hi chitty", "ok chitty",
+        "chatti", "hey chatti", "hello chatti", "hi chatti", "ok chatti", "wake up chatti", "chatti wake up",
+        "cheeti", "hey cheeti", "hello cheeti", "hi cheeti", "ok cheeti",
+        "chetti", "hey chetti",
+        "hey city", "ok city", "hello city", "hey kitty",
         # Hindi & Hinglish
         "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno", "chitti sun",
         "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "चिट्टी",
+        "हे चिट्टी", "चिट्ठी", "हे चिट्ठी", "है चिट्ठी", "चिट्ठी सुनो", "सुनो चिट्ठी",
         "chitii suno", "chitii sun", "chiti suno", "chiti sun",
         "hey chitti suno", "hey chitii suno", "chitti active ho ja", "chitti active ho jao", "active ho ja chitti",
     ]
@@ -198,10 +203,30 @@ class WakeWordDetector:
                 continue
 
             try:
+                # If audio queue built up items while STT was running, drain older chunks into the buffer
+                accumulated = [chunk]
+                while not self._audio_queue.empty():
+                    try:
+                        accumulated.append(self._audio_queue.get_nowait())
+                    except queue.Empty:
+                        break
+
+                for c in accumulated[:-1]:
+                    c_16k = resample_to_16k(c, self._stream_sample_rate) if self._stream_sample_rate != self.sample_rate else c
+                    if c_16k.dtype != np.float32:
+                        c_16k = c_16k.astype(np.float32)
+                    with self._buffer_lock:
+                        if len(c_16k) >= self._buffer_size:
+                            self._audio_buffer = c_16k[-self._buffer_size:].copy()
+                        else:
+                            self._audio_buffer = np.roll(self._audio_buffer, -len(c_16k))
+                            self._audio_buffer[-len(c_16k):] = c_16k
+
+                latest_chunk = accumulated[-1]
                 if self._stream_sample_rate != self.sample_rate:
-                    chunk_16k = resample_to_16k(chunk, self._stream_sample_rate)
+                    chunk_16k = resample_to_16k(latest_chunk, self._stream_sample_rate)
                 else:
-                    chunk_16k = chunk
+                    chunk_16k = latest_chunk
 
                 event = self.process_audio_chunk(chunk_16k)
                 if event and self._callback:
@@ -251,7 +276,7 @@ class WakeWordDetector:
         acoustic_score = self._evaluate_acoustic_signature(current_window)
 
         # Drop immediately if neither VAD speech nor acoustic score matches
-        if not is_speech and acoustic_score < 0.35:
+        if not is_speech and acoustic_score < 0.30:
             return None
 
         matched = False
@@ -261,16 +286,24 @@ class WakeWordDetector:
 
         # 3. Strict Verification via STT Engine when available
         if self.stt_engine is not None:
-            # Debounce STT checks to at most once per 0.50s
-            if now - self._last_stt_check_time < 0.50:
+            # Debounce STT checks to at most once per 0.35s
+            if now - self._last_stt_check_time < 0.35:
                 return None
             self._last_stt_check_time = now
 
             try:
-                # Transcribe with Google STT first (<0.3s).
-                # Require strong acoustic periodicity/energy before triggering heavy Whisper fallback.
-                allow_whisper = (acoustic_score >= 0.68)
-                snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=allow_whisper)
+                # Extract the active recent audio window (~1.4s) to maximize STT accuracy on wake words
+                snippet_len = min(len(current_window), int(self.sample_rate * 1.4))
+                speech_snippet = current_window[-snippet_len:].copy()
+
+                # Normalize amplitude if voice is soft
+                peak = float(np.max(np.abs(speech_snippet)))
+                if 0.001 < peak < 0.65:
+                    speech_snippet = speech_snippet * min(15.0, 0.75 / peak)
+
+                # Allow Whisper fallback if Google STT fails
+                allow_whisper = is_speech or (acoustic_score >= 0.35)
+                snippet_text = self.stt_engine.transcribe(speech_snippet, allow_whisper_fallback=allow_whisper)
                 snippet_text = snippet_text.lower().strip() if snippet_text else ""
 
                 if snippet_text:

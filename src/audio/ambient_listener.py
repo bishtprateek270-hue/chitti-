@@ -102,7 +102,7 @@ class AmbientVoiceListener:
         if hasattr(self.tts, "stop"):
             self.tts.stop()
         self.barge_in.stop_monitoring()
-        self.wake_detector.resume(cooldown=4.0)
+        self.wake_detector.resume(cooldown=1.0)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")
@@ -125,7 +125,7 @@ class AmbientVoiceListener:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")
             self.hud.hide()
-        self.wake_detector.resume(cooldown=3.0)
+        self.wake_detector.resume(cooldown=1.0)
 
     def _on_wake_word_triggered(self, event: WakeWordEvent):
         """Triggered automatically when a wake phrase is recognized by the detector."""
@@ -348,7 +348,7 @@ class AmbientVoiceListener:
 
         # ---------------- PRIORITY 1: GLOBAL STOP / INTERRUPT ----------------
         if match_res.command == ControlCommand.STOP:
-            log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{match_res.matched_phrase}'")
+            log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{match_res.matched_phrase}'. Stopped listening.")
             if self.tts and hasattr(self.tts, "stop"):
                 self.tts.stop()
             self.barge_in.stop_monitoring()
@@ -363,7 +363,7 @@ class AmbientVoiceListener:
                 self.hud.set_mode(HUDMode.IDLE)
                 self.hud.set_progress("")
                 self.hud.hide()
-            self.wake_detector.resume(cooldown=4.0)
+            self.wake_detector.resume(cooldown=1.0)
             return
 
         # ---------------- PRIORITY 2: SLEEP COMMAND ----------------
@@ -382,27 +382,33 @@ class AmbientVoiceListener:
                 self.hud.set_mode(HUDMode.IDLE)
                 self.hud.set_progress("")
                 self.hud.hide()
-            self.wake_detector.resume(cooldown=4.0)
+            self.wake_detector.resume(cooldown=1.0)
             return
 
         # ---------------- PRIORITY 3: WAKE COMMAND ----------------
         if match_res.command == ControlCommand.WAKE:
             log_chitti(f"[CHITTI][CONTROL] ⚡ WAKE command recognized: '{match_res.matched_phrase}'")
             self.state_mgr.wake()
+            self.state_mgr.start_conversation_session(timeout_seconds=15.0)
             if self.hud:
-                self.hud.set_mode(HUDMode.IDLE)
-                self.hud.set_progress("Awake (Haan, boliye)")
+                self.hud.show()
+                self.hud.set_mode(HUDMode.LISTENING)
+                self.hud.set_progress("Haan, boliye... (Listening)")
                 self.hud.set_response("Haan, boliye.")
 
             if match_res.extracted_tail:
                 # User said wake phrase + command together (e.g. "Chitti open Chrome")
                 self._handle_incoming_transcript(match_res.extracted_tail)
             else:
-                if self.tts:
+                def _wake_listen():
                     try:
-                        self.tts.speak("Haan, boliye.", wait=False)
-                    except Exception:
-                        pass
+                        self._play_wake_sound()
+                        from src.audio.capture_service import get_audio_capture_service
+                        get_audio_capture_service().flush()
+                        self._record_and_process_speech()
+                    except Exception as e:
+                        log_warn(f"[AMBIENT] Wake listen notice: {e}")
+                threading.Thread(target=_wake_listen, daemon=True, name="WakeDirectWorker").start()
             return
 
         # ---------------- PRIORITY 4: NORMAL USER COMMAND ----------------
@@ -546,7 +552,7 @@ class AmbientVoiceListener:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")
             self.hud.hide()
-        self.wake_detector.resume(cooldown=4.0)
+        self.wake_detector.resume(cooldown=1.0)
 
     def resume(self, cooldown: float = 1.0):
         """Resumes ambient listening after proactive greeting or interruption."""
@@ -566,7 +572,7 @@ class AmbientVoiceListener:
         with self._lock:
             self.state = AmbientState.STANDBY
 
-        self.wake_detector.resume(cooldown=1.5)
+        self.wake_detector.resume(cooldown=1.0)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
             self.hud.set_progress("")
