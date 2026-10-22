@@ -181,8 +181,8 @@ class ActionParser:
                 raw_input=raw,
             )
 
-        for site_name, url in DEFAULT_URL_MAP.items():
-            if re.search(rf"(?i)(?:^open\s+(?:the\s+|my\s+|application\s+|app\s+|website\s+|site\s+)?{site_name}\b|\bopen\s+{site_name}\b|^{site_name}\s+(?:kholo|chalao|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
+        for site_name, url in sorted(DEFAULT_URL_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+            if re.search(rf"(?i)(?:^open\s+(?:the\s+|my\s+|application\s+|app\s+|website\s+|site\s+|link\s+of\s+|link\s+to\s+)?{re.escape(site_name)}\b|\bopen\s+{re.escape(site_name)}\b|^{re.escape(site_name)}\s+(?:kholo|chalao|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
                 return StructuredAction(
                     action=ActionType.OPEN_URL,
                     parameters={"url": url, "site_name": site_name.title()},
@@ -232,16 +232,19 @@ class ActionParser:
         m_app_match = m_app_hi or m_app_en
         if m_app_match:
             target_str = m_app_match.group(1).strip().rstrip(".!? \t\n")
-            target_str = re.sub(r"(?i)^(?:application|app|the|my|a|an)\s+", "", target_str).strip()
+            target_str = re.sub(r"(?i)^(?:application|app|the|my|a|an|link\s+(?:of|to|for)|url\s+(?:of|to|for)|website\s+(?:of|for)|site\s+(?:of|for)|page\s+(?:of|for))\s+", "", target_str).strip()
 
             # Exclude compound phrases containing conjunctions or complex sub-actions
             if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type)\b", target_str):
                 return None
 
-            # Check if target is a web URL/domain or known web service
+            # Check if target is a web URL/domain or known web service / user project link
             clean_target_lower = target_str.lower()
-            if ResourceDiscovery.is_url(target_str) or clean_target_lower in DEFAULT_URL_MAP:
-                url_val = ResourceDiscovery.to_url(target_str)
+            norm_target_key = re.sub(r"(?i)\s+(?:website|site|link|page|demo)$", "", clean_target_lower).strip()
+
+            if ResourceDiscovery.is_url(target_str) or clean_target_lower in DEFAULT_URL_MAP or norm_target_key in DEFAULT_URL_MAP:
+                lookup_key = target_str if (ResourceDiscovery.is_url(target_str) or clean_target_lower in DEFAULT_URL_MAP) else norm_target_key
+                url_val = ResourceDiscovery.to_url(lookup_key)
                 return StructuredAction(
                     action=ActionType.OPEN_URL,
                     parameters={"url": url_val, "site_name": target_str.title()},
