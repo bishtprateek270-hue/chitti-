@@ -261,7 +261,8 @@ class MasterRouter:
             )
 
         # 3. Check for Personal / Creator / Relationship Memory Query
-        if any(re.search(pat, clean) for pat in cls.PERSONAL_MEMORY_PATTERNS):
+        is_open_cmd = bool(re.search(r"(?i)^(?:open|launch|visit|go\s+to)\s+", clean) or re.search(r"(?i)\s+(?:kholo|chalao|open\s+karo)(?:\s+|$|[.,!?])", clean))
+        if not is_open_cmd and any(re.search(pat, clean) for pat in cls.PERSONAL_MEMORY_PATTERNS):
             return cls._make_decision(
                 route=MasterRoute.PERSONAL_MEMORY,
                 confidence=0.96,

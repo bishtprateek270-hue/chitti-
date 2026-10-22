@@ -43,10 +43,11 @@ class ActionValidator:
 
             resolved = AppDiscovery.resolve_application(clean_target)
             if not resolved:
-                # Check if target is a web URL, website, or mapped web service (YouTube, Google, WhatsApp, etc.)
+                # Check if target is a web URL, website, project repo, or mapped web service
                 from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
-                if ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP:
-                    target_url = ResourceDiscovery.to_url(clean_target)
+                resolved_url = ResourceDiscovery.resolve_url(clean_target)
+                if resolved_url or ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP:
+                    target_url = resolved_url or ResourceDiscovery.to_url(clean_target)
                     log_chitti(f"[AGENT] Re-routing web target '{clean_target}' from OPEN_APPLICATION to OPEN_URL: {target_url}")
                     action.action = ActionType.OPEN_URL
                     action.parameters["url"] = target_url

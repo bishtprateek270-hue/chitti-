@@ -135,59 +135,150 @@ DEFAULT_URL_MAP: Dict[str, str] = {
     "my portfolio": "https://bishtprateek270-hue.github.io/Portfolio/",
     "portfolio website": "https://bishtprateek270-hue.github.io/Portfolio/",
     "portfolio site": "https://bishtprateek270-hue.github.io/Portfolio/",
+    "portfolio link": "https://bishtprateek270-hue.github.io/Portfolio/",
+    "my projects": "https://bishtprateek270-hue.github.io/Portfolio/",
+    "projects": "https://bishtprateek270-hue.github.io/Portfolio/",
     "my github": "https://github.com/bishtprateek270-hue",
     "my github profile": "https://github.com/bishtprateek270-hue",
     "github profile": "https://github.com/bishtprateek270-hue",
+    "my repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my repositories": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "repositories": "https://github.com/bishtprateek270-hue?tab=repositories",
     "my linkedin": "https://linkedin.com/in/prateek-singh-bisht",
 
     # User's Projects (Demos & Repositories)
     "chitti": "https://github.com/bishtprateek270-hue/chitti-",
     "chitti repo": "https://github.com/bishtprateek270-hue/chitti-",
     "chitti repository": "https://github.com/bishtprateek270-hue/chitti-",
+    "chitti github": "https://github.com/bishtprateek270-hue/chitti-",
+
     "3d-ulpin": "https://3-d-ulpin-mvp.vercel.app/",
     "3d ulpin": "https://3-d-ulpin-mvp.vercel.app/",
     "3d usb": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d-ulpin demo": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin demo": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d usb demo": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d-ulpin website": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin website": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d usb website": "https://3-d-ulpin-mvp.vercel.app/",
     "3d-ulpin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d ulpin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d usb repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d-ulpin repository": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d ulpin repository": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d usb repository": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d-ulpin github": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d ulpin github": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d usb github": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+
     "karigarai": "https://karigar-ai-amber.vercel.app",
     "karigar ai": "https://karigar-ai-amber.vercel.app",
     "karigar": "https://karigar-ai-amber.vercel.app",
+    "karigarai demo": "https://karigar-ai-amber.vercel.app",
+    "karigar ai demo": "https://karigar-ai-amber.vercel.app",
+    "karigar demo": "https://karigar-ai-amber.vercel.app",
+    "karigarai website": "https://karigar-ai-amber.vercel.app",
+    "karigar ai website": "https://karigar-ai-amber.vercel.app",
     "karigarai repo": "https://github.com/bishtprateek270-hue/karigarAI",
     "karigar ai repo": "https://github.com/bishtprateek270-hue/karigarAI",
+    "karigar repo": "https://github.com/bishtprateek270-hue/karigarAI",
+    "karigarai repository": "https://github.com/bishtprateek270-hue/karigarAI",
+    "karigar ai repository": "https://github.com/bishtprateek270-hue/karigarAI",
+    "karigar repository": "https://github.com/bishtprateek270-hue/karigarAI",
+    "karigarai github": "https://github.com/bishtprateek270-hue/karigarAI",
+    "karigar ai github": "https://github.com/bishtprateek270-hue/karigarAI",
+    "karigar github": "https://github.com/bishtprateek270-hue/karigarAI",
+
     "docforensics": "https://doc-forensics-ai.vercel.app",
     "docforensics ai": "https://doc-forensics-ai.vercel.app",
     "doc forensics": "https://doc-forensics-ai.vercel.app",
     "doc forensics ai": "https://doc-forensics-ai.vercel.app",
+    "docforensics demo": "https://doc-forensics-ai.vercel.app",
+    "docforensics website": "https://doc-forensics-ai.vercel.app",
     "docforensics repo": "https://github.com/bishtprateek270-hue/DocForensics-AI",
     "docforensics ai repo": "https://github.com/bishtprateek270-hue/DocForensics-AI",
+    "doc forensics repo": "https://github.com/bishtprateek270-hue/DocForensics-AI",
+    "doc forensics ai repo": "https://github.com/bishtprateek270-hue/DocForensics-AI",
+    "docforensics repository": "https://github.com/bishtprateek270-hue/DocForensics-AI",
+    "docforensics github": "https://github.com/bishtprateek270-hue/DocForensics-AI",
+
     "doseband": "https://github.com/bishtprateek270-hue/DoseBand",
     "dose band": "https://github.com/bishtprateek270-hue/DoseBand",
     "doseband repo": "https://github.com/bishtprateek270-hue/DoseBand",
+    "dose band repo": "https://github.com/bishtprateek270-hue/DoseBand",
+    "doseband repository": "https://github.com/bishtprateek270-hue/DoseBand",
+    "doseband github": "https://github.com/bishtprateek270-hue/DoseBand",
+
     "resume analyzer": "https://resume-analyzer-nejevwpy2bcvrvuag9schr.streamlit.app/",
     "ai resume analyzer": "https://resume-analyzer-nejevwpy2bcvrvuag9schr.streamlit.app/",
+    "resume analyzer demo": "https://resume-analyzer-nejevwpy2bcvrvuag9schr.streamlit.app/",
+    "resume analyzer website": "https://resume-analyzer-nejevwpy2bcvrvuag9schr.streamlit.app/",
     "resume analyzer repo": "https://github.com/bishtprateek270-hue/resume-analyzer",
+    "ai resume analyzer repo": "https://github.com/bishtprateek270-hue/resume-analyzer",
+    "resume analyzer repository": "https://github.com/bishtprateek270-hue/resume-analyzer",
+    "resume analyzer github": "https://github.com/bishtprateek270-hue/resume-analyzer",
+
     "ragmind": "https://ai-rag-platform-sigma.vercel.app",
     "ai rag platform": "https://ai-rag-platform-sigma.vercel.app",
     "ai-rag-platform": "https://ai-rag-platform-sigma.vercel.app",
     "rag platform": "https://ai-rag-platform-sigma.vercel.app",
+    "ragmind demo": "https://ai-rag-platform-sigma.vercel.app",
+    "ragmind website": "https://ai-rag-platform-sigma.vercel.app",
     "rag repo": "https://github.com/bishtprateek270-hue/AI-RAG-Platform",
+    "ragmind repo": "https://github.com/bishtprateek270-hue/AI-RAG-Platform",
+    "ragmind repository": "https://github.com/bishtprateek270-hue/AI-RAG-Platform",
+    "ragmind github": "https://github.com/bishtprateek270-hue/AI-RAG-Platform",
+
     "shikshasetu": "https://shikshasetu-ten.vercel.app",
     "shiksha setu": "https://shikshasetu-ten.vercel.app",
     "siksasetu": "https://shikshasetu-ten.vercel.app",
+    "siksa setu": "https://shikshasetu-ten.vercel.app",
+    "shikshasetu demo": "https://shikshasetu-ten.vercel.app",
+    "shikshasetu website": "https://shikshasetu-ten.vercel.app",
     "shikshasetu repo": "https://github.com/bishtprateek270-hue/ShikshaSetu",
     "shiksha setu repo": "https://github.com/bishtprateek270-hue/ShikshaSetu",
     "siksasetu repo": "https://github.com/bishtprateek270-hue/ShikshaSetu",
+    "siksa setu repo": "https://github.com/bishtprateek270-hue/ShikshaSetu",
+    "shikshasetu repository": "https://github.com/bishtprateek270-hue/ShikshaSetu",
+    "shiksha setu repository": "https://github.com/bishtprateek270-hue/ShikshaSetu",
+    "siksasetu repository": "https://github.com/bishtprateek270-hue/ShikshaSetu",
+    "shikshasetu github": "https://github.com/bishtprateek270-hue/ShikshaSetu",
     "message repository": "https://github.com/bishtprateek270-hue/ShikshaSetu",
+
     "churnops": "https://churnops-u0bn.onrender.com",
     "churn ops": "https://churnops-u0bn.onrender.com",
+    "churnops demo": "https://churnops-u0bn.onrender.com",
+    "churnops website": "https://churnops-u0bn.onrender.com",
     "churnops repo": "https://github.com/bishtprateek270-hue/churnops",
+    "churn ops repo": "https://github.com/bishtprateek270-hue/churnops",
+    "churnops repository": "https://github.com/bishtprateek270-hue/churnops",
+    "churnops github": "https://github.com/bishtprateek270-hue/churnops",
+
     "simplepay": "https://simplepay-946w.onrender.com",
     "simple pay": "https://simplepay-946w.onrender.com",
+    "simplepay demo": "https://simplepay-946w.onrender.com",
+    "simplepay website": "https://simplepay-946w.onrender.com",
     "simplepay repo": "https://github.com/bishtprateek270-hue/SimplePay",
+    "simple pay repo": "https://github.com/bishtprateek270-hue/SimplePay",
+    "simplepay repository": "https://github.com/bishtprateek270-hue/SimplePay",
+    "simplepay github": "https://github.com/bishtprateek270-hue/SimplePay",
+
     "puzzle app": "https://puzzle-app-53uh.onrender.com",
+    "puzzle app demo": "https://puzzle-app-53uh.onrender.com",
+    "puzzle app website": "https://puzzle-app-53uh.onrender.com",
     "puzzle app repo": "https://github.com/bishtprateek270-hue/puzzle-app",
+    "puzzle app repository": "https://github.com/bishtprateek270-hue/puzzle-app",
+    "puzzle app github": "https://github.com/bishtprateek270-hue/puzzle-app",
+
     "dsa repo": "https://github.com/bishtprateek270-hue/dsa",
+    "dsa repository": "https://github.com/bishtprateek270-hue/dsa",
+    "dsa github": "https://github.com/bishtprateek270-hue/dsa",
+
     "mlops repo": "https://github.com/bishtprateek270-hue/ml-ops",
+    "ml ops repo": "https://github.com/bishtprateek270-hue/ml-ops",
+    "mlops repository": "https://github.com/bishtprateek270-hue/ml-ops",
+    "mlops github": "https://github.com/bishtprateek270-hue/ml-ops",
 }
 
 
@@ -503,31 +594,118 @@ class ResourceDiscovery:
     """Categorizes arbitrary user targets into URLs, Folders, Applications, or Files."""
 
     @classmethod
+    def resolve_url(cls, target: str) -> Optional[str]:
+        """
+        Intelligently resolves arbitrary user phrases (including 'repo of X', 'link of X',
+        'X ka repo', 'project X', etc.) to a verified URL from DEFAULT_URL_MAP or valid web scheme.
+        """
+        if not target or not isinstance(target, str):
+            return None
+        raw = target.strip()
+        clean = raw.lower()
+
+        # 1. Direct web scheme or domain check
+        if clean.startswith("http://") or clean.startswith("https://"):
+            return raw
+        if clean.startswith("www."):
+            return f"https://{raw}"
+        if re.search(r"\b[a-zA-Z0-9_\-]+\.(?:com|org|net|io|in|co|ai|app|dev|edu|gov|xyz|tech|tv)(?:/\S*)?$", clean):
+            return f"https://{raw}"
+
+        # 2. Direct match in DEFAULT_URL_MAP
+        if clean in DEFAULT_URL_MAP:
+            return DEFAULT_URL_MAP[clean]
+
+        # 3. Handle Hinglish / Hindi postpositions: e.g. "3d ulpin ka repo", "shikshasetu ki link", "karigar ai ka github"
+        m_hinglish = re.search(r"(?i)^([a-z0-9_\-\s]+?)\s+(?:ka|ki|ke)\s+(repo|repository|github|git|link|website|site|url|demo|live)\b", clean)
+        if m_hinglish:
+            h_subj = m_hinglish.group(1).strip()
+            h_type = m_hinglish.group(2).strip().lower()
+            if h_type in ("repo", "repository", "github", "git"):
+                cand_key = f"{h_subj} repo"
+            else:
+                cand_key = f"{h_subj}"
+            if cand_key in DEFAULT_URL_MAP:
+                return DEFAULT_URL_MAP[cand_key]
+            clean = f"{h_type} of {h_subj}"
+
+        # 4. Check if request is specifically asking for a REPO vs DEMO/WEBSITE
+        is_repo_request = bool(re.search(r"(?i)\b(?:repo|repository|github|git)\b", clean))
+
+        # 5. Normalize target by stripping prefix noise:
+        # e.g. "repo of 3D USB", "the link of 3D-ULPIN", "link to karigar ai", "github of shikshasetu", "project shikshasetu"
+        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:repo|repository|github|git|link|live\s+link|demo\s+link|website|site|webpage|page|url|project|demo)\s+(?:of|for|to)\s+", "", clean).strip()
+        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:project)\s+", "", clean_norm).strip()
+        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)", "", clean_norm).strip()
+
+        # Strip suffix noise: e.g. "3d-ulpin repo", "karigar ai github", "shikshasetu project"
+        core_name = re.sub(r"(?i)\s+(?:repo|repository|github|git|link|live\s+link|demo\s+link|website|site|webpage|page|url|project|demo|live)$", "", clean_norm).strip()
+
+        # If repo is specifically requested, prioritize repo keys
+        if is_repo_request:
+            repo_candidates = [
+                f"{core_name} repo",
+                f"{clean_norm} repo" if clean_norm != core_name else None,
+                f"{core_name} repository",
+                f"{core_name} github",
+            ]
+            for cand in repo_candidates:
+                if cand and cand in DEFAULT_URL_MAP:
+                    return DEFAULT_URL_MAP[cand]
+
+        # Check if clean or core_name is known to be a desktop app (and not explicitly asking for repo/link)
+        if not is_repo_request and not bool(re.search(r"(?i)\b(?:link|website|site|url|demo|live)\b", clean)):
+            if clean in DEFAULT_APP_MAP or core_name in DEFAULT_APP_MAP or clean in ("vscode", "vs code", "code", "notepad", "calculator", "calc", "cmd", "terminal", "powershell", "paint", "explorer"):
+                return None
+
+        # Check clean_norm and core_name directly
+        for cand in [clean_norm, core_name]:
+            if cand in DEFAULT_URL_MAP:
+                return DEFAULT_URL_MAP[cand]
+
+        # If link / demo / site requested, or fallback
+        for cand in [f"{core_name} website", f"{core_name} demo", f"{core_name} link"]:
+            if cand in DEFAULT_URL_MAP:
+                return DEFAULT_URL_MAP[cand]
+
+        # Check any repo key for core_name regardless
+        for cand in [f"{core_name} repo", f"{core_name} repository", f"{core_name} github"]:
+            if cand in DEFAULT_URL_MAP:
+                return DEFAULT_URL_MAP[cand]
+
+        # 6. Fuzzy matching on keys (strict cutoff to avoid matching vscode to discord)
+        all_keys = list(DEFAULT_URL_MAP.keys())
+        if is_repo_request:
+            m = difflib.get_close_matches(f"{core_name} repo", all_keys, n=1, cutoff=0.75)
+            if m:
+                return DEFAULT_URL_MAP[m[0]]
+
+        m = difflib.get_close_matches(core_name, all_keys, n=1, cutoff=0.82)
+        if m:
+            return DEFAULT_URL_MAP[m[0]]
+
+        return None
+
+    @classmethod
     def is_url(cls, target: str) -> bool:
+        if cls.resolve_url(target) is not None:
+            return True
         clean = target.strip().lower()
         if clean.startswith("http://") or clean.startswith("https://") or clean.startswith("www."):
             return True
-        # Check standard web domains / TLDs
         if re.search(r"\b[a-zA-Z0-9_\-]+\.(?:com|org|net|io|in|co|ai|app|dev|edu|gov|xyz|tech|tv)(?:/\S*)?$", clean):
-            return True
-        if clean in DEFAULT_URL_MAP:
-            return True
-        # Check fuzzy match in DEFAULT_URL_MAP
-        matches = difflib.get_close_matches(clean, list(DEFAULT_URL_MAP.keys()), n=1, cutoff=0.7)
-        if matches:
             return True
         return False
 
     @classmethod
     def to_url(cls, target: str) -> str:
-        clean = target.strip().lower()
-        if clean in DEFAULT_URL_MAP:
-            return DEFAULT_URL_MAP[clean]
-        matches = difflib.get_close_matches(clean, list(DEFAULT_URL_MAP.keys()), n=1, cutoff=0.7)
-        if matches:
-            return DEFAULT_URL_MAP[matches[0]]
-        if clean.startswith("http://") or clean.startswith("https://"):
-            return target.strip()
-        if clean.startswith("www."):
-            return f"https://{target.strip()}"
-        return f"https://{target.strip()}"
+        resolved = cls.resolve_url(target)
+        if resolved:
+            return resolved
+        clean = target.strip()
+        if clean.lower().startswith("http://") or clean.lower().startswith("https://"):
+            return clean
+        if clean.lower().startswith("www."):
+            return f"https://{clean}"
+        return f"https://{clean}"
+

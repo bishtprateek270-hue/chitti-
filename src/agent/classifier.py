@@ -244,7 +244,7 @@ class TaskClassifier:
 
         # 6. Check for Dedicated Computer Control / App Launch / Browser / Messaging
         if any(re.search(pat, raw) for pat in cls.COMPUTER_CONTROL_PATTERNS) or any(re.search(pat, clean) for pat in cls.COMPUTER_CONTROL_PATTERNS):
-            if any(w in lower or w in clean_lower for w in ["whatsapp", "youtube", "song", "gaana", "browser", "chrome", "web", "gmail", "message", "telegram", "slack"]):
+            if any(w in lower or w in clean_lower for w in ["whatsapp", "youtube", "song", "gaana", "browser", "chrome", "web", "gmail", "message", "telegram", "slack", "repo", "repository", "github", "git", "link", "portfolio", "website", "url", "demo"]):
                 intent = TaskIntent.BROWSER_TASK
             elif "folder" in lower or "folder" in clean_lower or "file" in lower or "desktop" in lower or "delete" in lower:
                 intent = TaskIntent.FILE_OPERATION

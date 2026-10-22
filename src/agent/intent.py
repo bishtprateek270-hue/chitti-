@@ -686,11 +686,18 @@ class ActionIntentAnalyzer:
                     verification_required=True,
                 )
 
-            # Check if this target is a URL / Website / Web Service
-            from src.agent.registry import DEFAULT_URL_MAP
+            # Check if this target is a URL / Website / Web Service / Repo / Project link
+            from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
             clean_target_lower = raw_target.lower()
-            if ResourceDiscovery.is_url(raw_target) or clean_target_lower in DEFAULT_URL_MAP or "browser" in clean_lower or "website" in clean_lower or "site" in clean_lower or "web" in clean_lower:
-                target_url = ResourceDiscovery.to_url(raw_target)
+            resolved_url = ResourceDiscovery.resolve_url(raw_target)
+            is_web_or_repo = (
+                resolved_url is not None
+                or ResourceDiscovery.is_url(raw_target)
+                or clean_target_lower in DEFAULT_URL_MAP
+                or any(w in clean_lower for w in ["browser", "website", "site", "web", "repo", "repository", "github", "git", "portfolio", "link", "url", "demo", "live"])
+            )
+            if is_web_or_repo:
+                target_url = resolved_url or ResourceDiscovery.to_url(raw_target)
                 site_name = raw_target.title()
                 return ActionIntent(
                     intent=ActionIntentType.OPEN_URL,
