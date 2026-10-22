@@ -1133,7 +1133,12 @@ class ChittiController:
         while True:
             try:
                 try:
-                    raw_input_line = input("\n[Ready] Press ENTER to talk (or T=type, V=vision, O=observe, R=register, L=list, M=memory, C=clear, Q=quit): ").strip()
+                    prompt_label = (
+                        "\n[Ready] Say 'Hey Chitti' or Alt+Space (or type command / ENTER to talk / Q=quit): "
+                        if self.ambient_listener
+                        else "\n[Ready] Press ENTER to talk (or T=type, V=vision, O=observe, R=register, L=list, M=memory, C=clear, Q=quit): "
+                    )
+                    raw_input_line = input(prompt_label).strip()
                 except (EOFError, OSError):
                     time.sleep(1)
                     continue
@@ -1205,13 +1210,17 @@ class ChittiController:
                     self.process_user_input(raw_input_line)
                     continue
 
-                # Default: Push-to-talk microphone capture (user pressed ENTER on empty prompt)
-                voice_text = self.listen_and_transcribe()
-                if voice_text:
-                    self.process_user_input(voice_text)
+                # Default: Push-to-talk capture (user pressed ENTER on empty prompt)
+                if self.ambient_listener:
+                    log_chitti("Push-to-talk active. Say your command (or say 'Hey Chitti')...")
+                    self.ambient_listener.trigger_manual_listen()
                 else:
-                    log_chitti("No speech was detected or understood.")
-                    print("Hint: Check microphone volume or type your request directly.")
+                    voice_text = self.listen_and_transcribe()
+                    if voice_text:
+                        self.process_user_input(voice_text)
+                    else:
+                        log_chitti("No speech was detected or understood.")
+                        print("Hint: Check microphone volume or type your request directly.")
 
             except KeyboardInterrupt:
                 print("\n")

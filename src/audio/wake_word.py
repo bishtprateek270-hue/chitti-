@@ -52,12 +52,11 @@ class WakeWordDetector:
         "chitti", "hey chitti", "hello chitti", "ok chitti", "hi chitti",
         "wake up chitti", "chitti wake up", "chitti are you there",
         # Phonetic & Accent variations (explicitly handling chitthi, chitii, chiti, chitty)
-        "chitthi", "he chitthi", "hey chitthi", "hello chitthi", "hi chitthi", "ok chitthi", "play chitthi", "wake up chitthi", "chitthi wake up",
-        "he chitti", "play chitti",
+        "chitthi", "he chitthi", "hey chitthi", "hello chitthi", "hi chitthi", "ok chitthi", "wake up chitthi", "chitthi wake up",
+        "he chitti",
         "chitii", "hey chitii", "hello chitii", "hi chitii", "ok chitii", "wake up chitii", "chitii wake up",
         "chiti", "hey chiti", "hello chiti", "hi chiti", "ok chiti", "wake up chiti", "chiti wake up",
-        "chitty", "hey chitty", "hello chitty", "cheeti",
-        "chatti", "hey chatti", "hello chatti", "chatty", "hey chatty", "hey city", "hello city",
+        "chitty", "hey chitty", "hello chitty", "hi chitty", "ok chitty",
         # Hindi & Hinglish
         "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno", "chitti sun",
         "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "चिट्टी",
@@ -269,8 +268,8 @@ class WakeWordDetector:
 
             try:
                 # Transcribe with Google STT first (<0.3s).
-                # If Google yields nothing but speech is active, allow Whisper fallback.
-                allow_whisper = (acoustic_score >= 0.50 or is_speech)
+                # Require strong acoustic periodicity/energy before triggering heavy Whisper fallback.
+                allow_whisper = (acoustic_score >= 0.68)
                 snippet_text = self.stt_engine.transcribe(current_window, allow_whisper_fallback=allow_whisper)
                 snippet_text = snippet_text.lower().strip() if snippet_text else ""
 
@@ -295,10 +294,10 @@ class WakeWordDetector:
                         confidence = phrase_res.confidence
                         extracted_command = phrase_res.extracted_tail
                     else:
+                        # Strictly require that the wake word was spoken FIRST (at start of speech or after greeting)
                         import re
                         for kw in self.keywords:
-                            # Enforce whole-word boundary matching so ambient talk and words don't trigger
-                            pattern = r"\b" + re.escape(kw) + r"\b"
+                            pattern = r"^(?:hey|he|hello|hi|ok|arre|oye|suno|yo)?\s*\b" + re.escape(kw) + r"\b"
                             match = re.search(pattern, snippet_text)
                             if match:
                                 matched = True

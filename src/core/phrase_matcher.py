@@ -62,13 +62,9 @@ class PhraseMatcher:
         "chitthi",
         "wake up chitthi",
         "chitthi wake up",
-        "play chitthi",
-        "he chitti",
-        "play chitti",
         "hello chitii",
         "chitii hello",
         "hey chitii",
-        "he chitii",
         "hi chitii",
         "ok chitii",
         "chitii",
@@ -77,7 +73,6 @@ class PhraseMatcher:
         "hello chiti",
         "chiti hello",
         "hey chiti",
-        "he chiti",
         "hi chiti",
         "ok chiti",
         "chiti",
@@ -85,30 +80,9 @@ class PhraseMatcher:
         "chiti wake up",
         "hello chitty",
         "hey chitty",
-        "he chitty",
+        "hi chitty",
+        "ok chitty",
         "chitty",
-        # Whisper & Google STT acoustic transliterations
-        "hey shri dee",
-        "hello shri dee",
-        "shri dee",
-        "hey shridee",
-        "shridee",
-        "hey chatti",
-        "he chatti",
-        "chatti",
-        "hello chatti",
-        "hey chatty",
-        "he chatty",
-        "chatty",
-        "hey cheeti",
-        "he cheeti",
-        "cheeti",
-        "hey city",
-        "hello city",
-        "hey kitty",
-        "hello kitty",
-        "hey hd",
-        "he hd",
     ]
     WAKE_PHRASES_HI = [
         "chitti jaag ja",
@@ -380,8 +354,8 @@ class PhraseMatcher:
             phrase = wake_match.group(0).lower()
             idx = cleaned.find(phrase)
             prefix = cleaned[:idx].strip()
-            # If preceded by natural conversational greeting or filler ('hey', 'he', 'play', 'suno', etc.)
-            if prefix in ("", "hey", "he", "hello", "hi", "ok", "play", "arre", "oye", "suno", "yo"):
+            # If preceded by natural conversational greeting or filler ('hey', 'he', 'suno', etc.)
+            if prefix in ("", "hey", "he", "hello", "hi", "ok", "arre", "oye", "suno", "yo"):
                 tail = cleaned[idx + len(phrase):].strip()
                 conf = 1.0 if not tail else 0.95
                 log_debug(f"[CONTROL] Match WAKE: '{phrase}', tail='{tail}' (Priority 3)")
