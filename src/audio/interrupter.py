@@ -30,9 +30,9 @@ class BargeInDetector:
         self,
         sample_rate: int = 16000,
         chunk_size: int = 800,  # 50ms chunks
-        energy_threshold: float = 0.02,
-        consecutive_frames: int = 2,
-        grace_period_seconds: float = 0.2,
+        energy_threshold: float = 0.10,
+        consecutive_frames: int = 4,
+        grace_period_seconds: float = 0.8,
     ):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size

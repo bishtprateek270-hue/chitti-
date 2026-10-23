@@ -201,17 +201,36 @@ class AmbientVoiceListener:
     def _play_wake_sound(self):
         """Plays instant wake auditory feedback (<5ms) without stalling the capture loop."""
         import os
+        import ctypes
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        ack_wav = os.path.join(base_dir, "data", "wake_ack_real.wav")
-        if not os.path.exists(ack_wav):
-            ack_wav = os.path.abspath("data/wake_ack_real.wav")
+        cfg = get_config()
+        is_male = getattr(cfg.tts, "voice_gender", "male").lower() != "female"
+
+        male_ack = os.path.join(base_dir, "data", "wake_ack_male.mp3")
+        female_ack = os.path.join(base_dir, "data", "wake_ack_female.wav")
+        chosen_ack = male_ack if (is_male and os.path.exists(male_ack)) else female_ack
+        if not os.path.exists(chosen_ack):
+            chosen_ack = os.path.join(base_dir, "data", "wake_ack_real.wav")
+
+        try:
+            winmm = getattr(ctypes, "windll", None)
+            if winmm and hasattr(winmm, "winmm") and os.path.exists(chosen_ack):
+                alias = f"chitti_ack_{os.getpid()}"
+                winmm.winmm.mciSendStringW(f'close {alias}', None, 0, 0)
+                if chosen_ack.endswith(".mp3"):
+                    winmm.winmm.mciSendStringW(f'open "{chosen_ack}" type mpegvideo alias {alias}', None, 0, 0)
+                else:
+                    winmm.winmm.mciSendStringW(f'open "{chosen_ack}" alias {alias}', None, 0, 0)
+                winmm.winmm.mciSendStringW(f'play {alias}', None, 0, 0)
+                return
+        except Exception as e:
+            log_debug(f"[AMBIENT] Wake sound MCI notice: {e}")
 
         try:
             import winsound
-            if os.path.exists(ack_wav):
-                winsound.PlaySound(ack_wav, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            if os.path.exists(chosen_ack) and chosen_ack.endswith(".wav"):
+                winsound.PlaySound(chosen_ack, winsound.SND_FILENAME | winsound.SND_ASYNC)
                 return
-            # Instant 130ms two-tone chime fallback
             winsound.Beep(880, 50)
             winsound.Beep(1320, 80)
         except Exception as e:
