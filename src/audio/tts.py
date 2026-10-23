@@ -98,9 +98,18 @@ class EdgeNeuralTTS(TTSEngine):
     """
 
     # High-quality neural voices
-    DEFAULT_HINDI_VOICE = "hi-IN-SwaraNeural"       # Female, natural, fluent Hindi/Hinglish
-    DEFAULT_HINGLISH_VOICE = "en-IN-NeerjaNeural"   # Female, clear Indian English & Hinglish
-    DEFAULT_MALE_VOICE = "hi-IN-MadhurNeural"       # Male, natural Hindi/Hinglish
+    MALE_HINDI_VOICE = "hi-IN-MadhurNeural"       # Male, natural Hindi/Hinglish
+    MALE_ENGLISH_VOICE = "en-IN-PrabhatNeural"    # Male, clear Indian English & Hinglish
+    MALE_US_VOICE = "en-US-ChristopherNeural"     # Male, US English
+
+    FEMALE_HINDI_VOICE = "hi-IN-SwaraNeural"      # Female, natural Hindi/Hinglish
+    FEMALE_ENGLISH_VOICE = "en-IN-NeerjaNeural"   # Female, clear Indian English & Hinglish
+    FEMALE_US_VOICE = "en-US-JennyNeural"         # Female, US English
+
+    DEFAULT_HINDI_VOICE = MALE_HINDI_VOICE
+    DEFAULT_HINGLISH_VOICE = MALE_ENGLISH_VOICE
+    DEFAULT_MALE_VOICE = MALE_HINDI_VOICE
+    DEFAULT_FEMALE_VOICE = FEMALE_HINDI_VOICE
 
     def __init__(self, config: Optional[TTSConfig] = None, fallback_engine: Optional[TTSEngine] = None):
         self.config = config or get_config().tts
@@ -117,22 +126,54 @@ class EdgeNeuralTTS(TTSEngine):
         self._cancel_requested = threading.Event()
         self._last_interrupt_latency_ms = 0.0
 
+    def set_voice(self, voice_id: str):
+        """Switches the active neural voice on the fly."""
+        self.voice_id = voice_id.strip()
+        self.config.voice_id = self.voice_id
+        log_chitti(f"[TTS] Voice switched to: {self.voice_id}")
+
+    def set_gender(self, gender: str):
+        """Switches voice gender between 'male' and 'female'."""
+        gender = gender.strip().lower()
+        if gender == "male":
+            self.voice_id = self.MALE_HINDI_VOICE
+            self.config.voice_id = None
+            self.config.voice_gender = "male"
+        else:
+            self.voice_id = self.FEMALE_HINDI_VOICE
+            self.config.voice_id = None
+            self.config.voice_gender = "female"
+        log_chitti(f"[TTS] Voice gender switched to: {gender} ({self.voice_id})")
+
     def is_speaking(self) -> bool:
         return self._is_playing
 
     def _detect_voice_for_text(self, text: str) -> str:
-        """Selects the best natural human neural voice based on text language."""
-        if self.config.voice_id and self.config.voice_id.strip():
-            return self.config.voice_id.strip()
+        """Selects the best natural human neural voice based on text language and configured voice/gender."""
+        is_male = getattr(self.config, "voice_gender", "male").lower() != "female"
+        cfg_voice = (self.config.voice_id or "").strip()
+
+        if cfg_voice.lower() == "male":
+            is_male = True
+            cfg_voice = ""
+        elif cfg_voice.lower() == "female":
+            is_male = False
+            cfg_voice = ""
+        elif cfg_voice.lower() in ("auto", "default", "none"):
+            cfg_voice = ""
+
+        # If a specific voice ID is configured
+        if cfg_voice:
+            return cfg_voice
 
         # Check for Devanagari Hindi characters (U+0900 to U+097F)
         has_devanagari = bool(re.search(r'[\u0900-\u097F]', text))
         # Check for romanized Hinglish keywords
-        has_hinglish = bool(re.search(r'(?i)\b(?:kya|hai|hoon|karo|batao|kaise|mera|meri|mere|aap|tum|chalao|kholo|banao)\b', text))
+        has_hinglish = bool(re.search(r'(?i)\b(?:kya|hai|hoon|karo|batao|kaise|mera|meri|mere|aap|tum|chalao|kholo|banao|shukriya|namaste|theek|suno|bolna|awaz)\b', text))
 
         if has_devanagari or has_hinglish:
-            return self.DEFAULT_HINDI_VOICE
-        return self.DEFAULT_HINGLISH_VOICE
+            return self.MALE_HINDI_VOICE if is_male else self.FEMALE_HINDI_VOICE
+        return self.MALE_ENGLISH_VOICE if is_male else self.FEMALE_ENGLISH_VOICE
 
     def _play_audio_file(self, file_path: str, gen_id: int):
         """Plays audio using Windows native Multimedia API with instant cancellation support."""
@@ -264,11 +305,12 @@ class EdgeNeuralTTS(TTSEngine):
     def list_voices(self) -> List[Dict[str, Any]]:
         """Lists recommended human neural voices."""
         return [
-            {"id": "hi-IN-SwaraNeural", "name": "Swara (Hindi/Hinglish - Female, Natural)", "languages": ["hi-IN", "en-IN"]},
-            {"id": "hi-IN-MadhurNeural", "name": "Madhur (Hindi/Hinglish - Male, Natural)", "languages": ["hi-IN", "en-IN"]},
-            {"id": "en-IN-NeerjaNeural", "name": "Neerja (Indian English / Hinglish - Female)", "languages": ["en-IN"]},
-            {"id": "en-IN-PrabhatNeural", "name": "Prabhat (Indian English / Hinglish - Male)", "languages": ["en-IN"]},
-            {"id": "en-US-JennyNeural", "name": "Jenny (US English - Female)", "languages": ["en-US"]},
+            {"id": "hi-IN-MadhurNeural", "name": "Madhur (Hindi/Hinglish/English - Male, Natural)", "languages": ["hi-IN", "en-IN"], "gender": "male"},
+            {"id": "en-IN-PrabhatNeural", "name": "Prabhat (Indian English - Male, Natural)", "languages": ["en-IN"], "gender": "male"},
+            {"id": "en-US-ChristopherNeural", "name": "Christopher (US English - Male)", "languages": ["en-US"], "gender": "male"},
+            {"id": "hi-IN-SwaraNeural", "name": "Swara (Hindi/Hinglish - Female, Natural)", "languages": ["hi-IN", "en-IN"], "gender": "female"},
+            {"id": "en-IN-NeerjaNeural", "name": "Neerja (Indian English / Hinglish - Female)", "languages": ["en-IN"], "gender": "female"},
+            {"id": "en-US-JennyNeural", "name": "Jenny (US English - Female)", "languages": ["en-US"], "gender": "female"},
         ]
 
     def stop(self) -> float:
@@ -309,6 +351,29 @@ class Pyttsx3TTS(TTSEngine):
     def is_speaking(self) -> bool:
         return self._is_playing
 
+    def set_voice(self, voice_id: str):
+        self.voice_id = voice_id.strip()
+        self.config.voice_id = self.voice_id
+
+    def set_gender(self, gender: str):
+        gender = gender.strip().lower()
+        self.config.voice_gender = gender
+        try:
+            voices = self.list_voices()
+            for v in voices:
+                name_lower = v.get("name", "").lower()
+                gender_lower = v.get("gender", "").lower()
+                if gender == "male" and ("david" in name_lower or gender_lower == "male"):
+                    self.voice_id = v["id"]
+                    self.config.voice_id = self.voice_id
+                    break
+                elif gender == "female" and ("zira" in name_lower or gender_lower == "female"):
+                    self.voice_id = v["id"]
+                    self.config.voice_id = self.voice_id
+                    break
+        except Exception:
+            pass
+
     def _init_engine(self):
         """Creates a fresh pyttsx3 engine instance safely."""
         if pyttsx3 is None:
@@ -317,8 +382,24 @@ class Pyttsx3TTS(TTSEngine):
             engine = pyttsx3.init()
             engine.setProperty("rate", self.rate)
             engine.setProperty("volume", self.volume)
-            if self.voice_id:
-                engine.setProperty("voice", self.voice_id)
+            target_voice = self.voice_id
+            if not target_voice:
+                is_male = getattr(self.config, "voice_gender", "male").lower() != "female"
+                try:
+                    voices = engine.getProperty("voices")
+                    for v in voices:
+                        name_lower = getattr(v, "name", "").lower()
+                        gender_lower = getattr(v, "gender", "").lower()
+                        if is_male and ("david" in name_lower or gender_lower == "male"):
+                            target_voice = v.id
+                            break
+                        elif not is_male and ("zira" in name_lower or gender_lower == "female"):
+                            target_voice = v.id
+                            break
+                except Exception:
+                    pass
+            if target_voice:
+                engine.setProperty("voice", target_voice)
             return engine
         except Exception as e:
             raise TTSError(f"Failed to initialize pyttsx3 engine: {e}") from e
@@ -426,6 +507,20 @@ class HybridTTS(TTSEngine):
         # Fallback to local SAPI5
         self.fallback_tts.speak(text, wait=wait, request_id=request_id)
 
+    def set_voice(self, voice_id: str):
+        """Sets voice on Edge Neural and fallback engines."""
+        if self.edge_tts and hasattr(self.edge_tts, "set_voice"):
+            self.edge_tts.set_voice(voice_id)
+        if self.fallback_tts and hasattr(self.fallback_tts, "set_voice"):
+            self.fallback_tts.set_voice(voice_id)
+
+    def set_gender(self, gender: str):
+        """Sets gender on Edge Neural and fallback engines."""
+        if self.edge_tts and hasattr(self.edge_tts, "set_gender"):
+            self.edge_tts.set_gender(gender)
+        if self.fallback_tts and hasattr(self.fallback_tts, "set_gender"):
+            self.fallback_tts.set_gender(gender)
+
     def list_voices(self) -> List[Dict[str, Any]]:
         """Returns list of voices available."""
         if self.edge_tts:
@@ -470,6 +565,16 @@ class SpeechController:
         self._lock = threading.Lock()
         self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="ChittiSpeechController")
         self._worker_thread.start()
+
+    def set_voice(self, voice_id: str):
+        """Changes voice dynamically on active speech engine."""
+        if hasattr(self.engine, "set_voice"):
+            self.engine.set_voice(voice_id)
+
+    def set_gender(self, gender: str):
+        """Changes voice gender dynamically on active speech engine."""
+        if hasattr(self.engine, "set_gender"):
+            self.engine.set_gender(gender)
 
     def speak(self, text: str, wait: bool = False, priority: bool = False, request_id: Optional[int] = None) -> None:
         """Queues or synchronously executes speech."""

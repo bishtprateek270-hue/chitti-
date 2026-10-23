@@ -95,6 +95,16 @@ class AmbientVoiceListener:
         self.state = AmbientState.STANDBY
         log_debug("[AMBIENT] Ambient voice listener stopped.")
 
+    def set_voice(self, voice_id: str):
+        """Updates the active voice on the underlying TTS engine."""
+        if self.tts and hasattr(self.tts, "set_voice"):
+            self.tts.set_voice(voice_id)
+
+    def set_gender(self, gender: str):
+        """Updates the active voice gender on the underlying TTS engine."""
+        if self.tts and hasattr(self.tts, "set_gender"):
+            self.tts.set_gender(gender)
+
     def _on_system_sleep(self):
         """Callback when SystemStateManager enters SLEEPING state."""
         with self._lock:

@@ -345,6 +345,29 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Fallback speech execution failed: {e}")
 
+    @staticmethod
+    def _update_env_setting(key: str, value: str, env_path: str = ".env"):
+        """Safely updates or appends a key-value setting in .env file."""
+        if not os.path.exists(env_path):
+            return
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            found = False
+            new_lines = []
+            for line in lines:
+                if line.strip().startswith(f"{key}="):
+                    new_lines.append(f"{key}={value}\n")
+                    found = True
+                else:
+                    new_lines.append(line)
+            if not found:
+                new_lines.append(f"{key}={value}\n")
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+        except Exception as e:
+            log_warning(f"Could not update {env_path} for {key}: {e}")
+
 
     def process_user_input(self, user_text: str, request_id: Optional[int] = None):
         """Processes user input through Multilingual/Vision/Memory/LLM, records history, and speaks output."""
@@ -390,6 +413,44 @@ class ChittiController:
                 self.vision.camera.release()
             log_chitti("[VISION] 📷 Camera device released and freed for other applications.")
             self.safe_speak("I have released the camera so your browser and other applications can use it.")
+            return
+
+        # ---------------- PRIORITY 1C: VOICE SWITCHING COMMAND ----------------
+        voice_change_match = re.search(
+            r"\b(?:change|switch|set|use|lagao|badlo)\s+(?:chitti\s+)?(?:voice|aawaz)(?:\s+(?:to|ko|mein))?\s+(male|female|aadmi|aurat|ladka|ladki)\b|"
+            r"\b(?:use|switch\s+to|change\s+to)\s+(male|female)\s+voice\b|"
+            r"\b(?:can\s+(?:u|you)\s+use\s+(male|female)\s+voice)\b|"
+            r"\b(male|female)\s+voice\s+(?:use\s+karo|lagao|rakho|karo)\b|"
+            r"\bvoice\s+(male|female)\s+karo\b",
+            user_text,
+            re.IGNORECASE
+        )
+        if voice_change_match:
+            matched_g = next((g for g in voice_change_match.groups() if g), "male").lower()
+            target_gender = "male" if matched_g in ("male", "aadmi", "ladka") else "female"
+            target_voice = "hi-IN-MadhurNeural" if target_gender == "male" else "hi-IN-SwaraNeural"
+
+            self.config.tts.voice_id = target_voice
+            self.config.tts.voice_gender = target_gender
+            if self.tts and hasattr(self.tts, "set_gender"):
+                self.tts.set_gender(target_gender)
+            if self.ambient_listener and hasattr(self.ambient_listener, "set_gender"):
+                self.ambient_listener.set_gender(target_gender)
+
+            self._update_env_setting("TTS_VOICE_ID", target_voice)
+            self._update_env_setting("TTS_VOICE_GENDER", target_gender)
+
+            has_hindi = bool(re.search(r'[\u0900-\u097F]', user_text)) or bool(re.search(r'(?i)\b(?:karo|lagao|badlo|kardo|aawaz)\b', user_text))
+            if target_gender == "male":
+                ack_msg = "Maine apni voice male switch kar li hai. Ab se main Madhur male voice mein baat karunga." if has_hindi else "Voice switched to male. I am now using Microsoft Madhur neural voice."
+            else:
+                ack_msg = "Maine apni voice female switch kar li hai. Ab se main Swara female voice mein baat karunga." if has_hindi else "Voice switched to female. I am now using Microsoft Swara neural voice."
+
+            log_chitti(f"[TTS] 🎙️ {ack_msg}")
+            if self.hud:
+                self.hud.set_response(ack_msg)
+                self.hud.set_mode(HUDMode.IDLE)
+            self.safe_speak(ack_msg)
             return
 
         # ---------------- PRIORITY 2: SLEEP COMMAND ----------------

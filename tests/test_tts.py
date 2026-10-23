@@ -48,3 +48,34 @@ def test_edge_neural_tts_fallback_delegation():
         mock_fallback.speak.assert_called_once()
         assert "Testing fallback speech" in mock_fallback.speak.call_args[0][0]
 
+
+def test_edge_neural_tts_male_voice_defaults():
+    from src.audio.tts import EdgeNeuralTTS
+    tts = EdgeNeuralTTS(TTSConfig(voice_gender="male", voice_id=None))
+    assert tts.DEFAULT_HINDI_VOICE == "hi-IN-MadhurNeural"
+    assert tts.DEFAULT_HINGLISH_VOICE == "en-IN-PrabhatNeural"
+    assert tts._detect_voice_for_text("नमस्ते, आप कैसे हैं?") == "hi-IN-MadhurNeural"
+    assert tts._detect_voice_for_text("Hello, how are you?") == "en-IN-PrabhatNeural"
+
+
+def test_edge_neural_tts_gender_switch():
+    from src.audio.tts import EdgeNeuralTTS
+    tts = EdgeNeuralTTS(TTSConfig(voice_gender="female", voice_id=None))
+    assert tts._detect_voice_for_text("Hello!") == "en-IN-NeerjaNeural"
+    tts.set_gender("male")
+    assert tts.config.voice_gender == "male"
+    assert tts.voice_id == "hi-IN-MadhurNeural"
+    assert tts._detect_voice_for_text("Hello!") == "en-IN-PrabhatNeural"
+
+
+def test_pyttsx3_male_voice_auto_selection():
+    tts = Pyttsx3TTS(TTSConfig(voice_gender="male", voice_id=None))
+    mock_voice_david = MagicMock(id="DAVID_VOICE_ID", name="Microsoft David Desktop", gender="Male")
+    mock_voice_zira = MagicMock(id="ZIRA_VOICE_ID", name="Microsoft Zira Desktop", gender="Female")
+    mock_engine = MagicMock()
+    mock_engine.getProperty.return_value = [mock_voice_david, mock_voice_zira]
+
+    with patch("src.audio.tts.pyttsx3.init", return_value=mock_engine):
+        engine = tts._init_engine()
+        mock_engine.setProperty.assert_any_call("voice", "DAVID_VOICE_ID")
+

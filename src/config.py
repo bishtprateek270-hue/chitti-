@@ -76,7 +76,10 @@ class TTSConfig:
         default_factory=lambda: float(os.getenv("TTS_VOLUME", "1.0"))
     )
     voice_id: Optional[str] = field(
-        default_factory=lambda: os.getenv("TTS_VOICE_ID", "").strip() or None
+        default_factory=lambda: os.getenv("TTS_VOICE_ID", "hi-IN-MadhurNeural").strip() or None
+    )
+    voice_gender: str = field(
+        default_factory=lambda: os.getenv("TTS_VOICE_GENDER", "male").strip().lower()
     )
 
 
