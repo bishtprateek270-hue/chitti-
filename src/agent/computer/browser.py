@@ -173,15 +173,9 @@ class BrowserController:
         return ServerProcessManager.verify_web_page_rendering(url, expected_keywords=expected_keywords)
 
     def search_web(self, query: str, engine: str = "google") -> bool:
-        """Searches the web for a given query string."""
-        encoded = urllib.parse.quote(query.strip())
-        if engine.lower() == "bing":
-            url = f"https://www.bing.com/search?q={encoded}"
-        elif engine.lower() == "duckduckgo":
-            url = f"https://duckduckgo.com/?q={encoded}"
-        else:
-            url = f"https://www.google.com/search?q={encoded}"
-
+        """Searches the web or target platform for a given query string."""
+        from src.agent.registry import ResourceDiscovery
+        url = ResourceDiscovery.build_search_url(engine, query)
         return self.open_url(url)
 
     def fetch_top_youtube_video_id(self, search_query: str) -> Optional[str]:

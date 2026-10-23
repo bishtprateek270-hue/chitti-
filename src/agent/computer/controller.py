@@ -74,6 +74,23 @@ class WindowInfo:
     is_minimized: bool
 
 
+@dataclass
+class UIElementInfo:
+    """Represents an interactive on-screen control discovered via Windows UI Automation or Win32."""
+    name: str
+    control_type: str
+    handle: int
+    left: int
+    top: int
+    width: int
+    height: int
+    center_x: int
+    center_y: int
+    is_enabled: bool = True
+    is_visible: bool = True
+    control_id: int = 0
+
+
 class ComputerController:
     """Central interface for low-level & high-level computer operations."""
 
@@ -631,3 +648,161 @@ class ComputerController:
             except Exception:
                 pass
         return False
+
+    # -------------------------------------------------------------
+    # WINDOWS UI AUTOMATION & NATIVE CONTROL INTERACTION
+    # -------------------------------------------------------------
+
+    def find_ui_elements(
+        self,
+        window_title: Optional[str] = None,
+        name_query: Optional[str] = None,
+        control_type: Optional[str] = None,
+    ) -> List[UIElementInfo]:
+        """
+        Discovers visible interactive controls (buttons, edits, comboboxes, links, tabs)
+        inside the target or active window using Windows UI Automation and Win32 child enumeration.
+        """
+        elements: List[UIElementInfo] = []
+        target_win = self.find_window(window_title) if window_title else self.get_active_window()
+        if not target_win and window_title:
+            return elements
+
+        hwnd_target = target_win.handle if target_win else 0
+
+        # Win32 Child Control Enumeration
+        if HAS_WIN32 and hwnd_target:
+            def enum_proc(hwnd, _):
+                try:
+                    if win32gui.IsWindowVisible(hwnd):
+                        text = win32gui.GetWindowText(hwnd).strip()
+                        cls_name = win32gui.GetClassName(hwnd).strip()
+                        rect = win32gui.GetWindowRect(hwnd)
+                        cl, ct, cr, cb = rect
+                        w = cr - cl
+                        h = cb - ct
+                        if w > 0 and h > 0:
+                            # Map class name to generic semantic control_type
+                            ctype = "generic"
+                            cls_lower = cls_name.lower()
+                            if "button" in cls_lower or "btn" in cls_lower:
+                                ctype = "button"
+                            elif "edit" in cls_lower or "text" in cls_lower or "rich" in cls_lower:
+                                ctype = "edit"
+                            elif "combo" in cls_lower:
+                                ctype = "combobox"
+                            elif "list" in cls_lower:
+                                ctype = "list"
+                            elif "tab" in cls_lower:
+                                ctype = "tab"
+                            elif "link" in cls_lower:
+                                ctype = "link"
+
+                            ctrl_id = 0
+                            try:
+                                ctrl_id = win32gui.GetDlgCtrlID(hwnd)
+                            except Exception:
+                                pass
+
+                            elements.append(UIElementInfo(
+                                name=text or cls_name,
+                                control_type=ctype,
+                                handle=hwnd,
+                                left=cl,
+                                top=ct,
+                                width=w,
+                                height=h,
+                                center_x=cl + w // 2,
+                                center_y=ct + h // 2,
+                                is_enabled=bool(win32gui.IsWindowEnabled(hwnd)),
+                                is_visible=True,
+                                control_id=ctrl_id,
+                            ))
+                except Exception:
+                    pass
+                return True
+
+            try:
+                win32gui.EnumChildWindows(hwnd_target, enum_proc, None)
+            except Exception as e:
+                log_debug(f"[CONTROLLER] EnumChildWindows notice: {e}")
+
+        # Filter by name_query if supplied
+        if name_query:
+            q = name_query.lower().strip()
+            elements = [
+                e for e in elements
+                if q in e.name.lower() or any(tok in e.name.lower() for tok in q.split() if len(tok) > 2)
+            ]
+
+        # Filter by control_type if supplied
+        if control_type:
+            ct = control_type.lower().strip()
+            elements = [e for e in elements if ct in e.control_type.lower()]
+
+        return elements
+
+    def find_element_by_name(
+        self,
+        name: str,
+        control_type: Optional[str] = None,
+        window_title: Optional[str] = None,
+    ) -> Optional[UIElementInfo]:
+        """
+        Finds the best matching interactive UI control by name and optional control type.
+        Falls back to relative semantic geometry if native control hierarchy is unavailable (e.g. Canvas/Web).
+        """
+        clean_name = name.lower().strip()
+        matches = self.find_ui_elements(window_title=window_title, name_query=clean_name, control_type=control_type)
+        if matches:
+            # Prioritize exact name match
+            for m in matches:
+                if m.name.lower() == clean_name:
+                    return m
+            # Prioritize matching control_type
+            if control_type:
+                for m in matches:
+                    if control_type.lower() in m.control_type.lower():
+                        return m
+            return matches[0]
+
+        # Fallback to Semantic Layout Detector if native child controls are composite/canvas
+        target_win = self.find_window(window_title) if window_title else self.get_active_window()
+        if target_win:
+            wl, wt, ww, wh = target_win.left, target_win.top, target_win.width, target_win.height
+            if "search" in clean_name:
+                cx = wl + int(ww * 0.25)
+                cy = wt + int(wh * 0.15)
+                return UIElementInfo(name="Search", control_type="edit", handle=target_win.handle, left=wl, top=wt, width=ww, height=wh, center_x=cx, center_y=cy)
+            elif "send" in clean_name or "submit" in clean_name:
+                cx = wl + int(ww * 0.90)
+                cy = wt + int(wh * 0.92)
+                return UIElementInfo(name=name, control_type="button", handle=target_win.handle, left=wl, top=wt, width=ww, height=wh, center_x=cx, center_y=cy)
+            elif "close" in clean_name:
+                cx = wl + ww - 20
+                cy = wt + 15
+                return UIElementInfo(name="Close", control_type="button", handle=target_win.handle, left=wl, top=wt, width=ww, height=wh, center_x=cx, center_y=cy)
+
+        return None
+
+    def click_element_by_name(
+        self,
+        name: str,
+        control_type: Optional[str] = None,
+        window_title: Optional[str] = None,
+    ) -> bool:
+        """
+        Locates an interactive UI element by name and executes a reliable click.
+        Brings the target window to focus, calculates the center coordinates, and clicks.
+        """
+        if window_title:
+            self.focus_window(window_title)
+            time.sleep(0.1)
+
+        elem = self.find_element_by_name(name=name, control_type=control_type, window_title=window_title)
+        if not elem:
+            log_warn(f"[CONTROLLER] UI element '{name}' not found.")
+            return False
+
+        log_info(f"[CONTROLLER] Clicking UI element '{elem.name}' ({elem.control_type}) at ({elem.center_x}, {elem.center_y})")
+        return self.click(x=elem.center_x, y=elem.center_y)

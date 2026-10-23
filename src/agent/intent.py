@@ -55,6 +55,7 @@ class ActionIntentType(str, Enum):
     DIAGNOSE_SCREEN_ERROR = "DIAGNOSE_SCREEN_ERROR"
     SUMMARIZE_DOCUMENT = "SUMMARIZE_DOCUMENT"
     FIND_UI_ELEMENT = "FIND_UI_ELEMENT"
+    CLICK_UI_ELEMENT = "CLICK_UI_ELEMENT"
     SET_VOLUME = "SET_VOLUME"
     GET_SYSTEM_INFO = "GET_SYSTEM_INFO"
 
@@ -438,6 +439,23 @@ class ActionIntentAnalyzer:
                 verification_required=True,
             )
 
+        # 4B.2 Click Interactive UI Element ("click on Submit button", "click on Close", "Submit button pe click karo")
+        m_click_ui = re.search(r"(?i)^(?:click(?:\s+on)?|press)\s+(?:the\s+)?([A-Za-z0-9_\-\s]+?)(?:\s+(?:button|input|icon|control|link|tab))?$", clean) or \
+                     re.search(r"(?i)^([A-Za-z0-9_\-\s]+?)\s+(?:button|icon|tab)?\s*(?:pe|par)?\s+click\s+karo$", clean)
+        if m_click_ui:
+            elem_name = m_click_ui.group(1).strip()
+            if elem_name.lower() not in ("here", "it", "this", "mouse", "left", "right"):
+                return ActionIntent(
+                    intent=ActionIntentType.CLICK_UI_ELEMENT,
+                    goal=f"Click '{elem_name}' control",
+                    channel="UI Automation",
+                    application="Screen Control",
+                    target=elem_name,
+                    parameters={"element": elem_name},
+                    execution_required=True,
+                    verification_required=True,
+                )
+
         # 4C. Document Summarization on Screen ("summarize document", "summarize open file", "document ke main points")
         is_document_summary = bool(
             re.search(r"(?i)\b(?:summarize\s+(?:the\s+|this\s+)?(?:open\s+)?(?:document|doc|pdf|file|page|article|notes|code|readme|roadmap)|document\s+summary|summarize\s+what\s+is\s+written)\b", clean) or
@@ -475,22 +493,83 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
-        # 5. BROWSER WEB SEARCH
+        # 5. BROWSER WEB & PLATFORM SEARCH
         # -------------------------------------------------------------
-        m_search = re.search(r"(?i)\b(?:open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+(.*))\b", clean) or \
-                   re.search(r"(?i)\b(?:search\s+(?:for\s+)?(.*)\s+on\s+(?:google|chrome|browser|web|bing))\b", clean) or \
-                   re.search(r"(?i)\b(?:google|search)\s+(?:for\s+)?(.*)\b", clean)
-        if m_search and not any(w in lower for w in ["create", "build", "make", "banao", "likho"]):
-            search_query = m_search.group(1).strip()
-            if search_query:
+        # Exclude project generation or direct coding commands
+        is_coding_cmd = any(clean_lower.startswith(w) for w in ["create", "build", "make", "banao", "likho", "generate", "code"])
+
+        # 5A. Compound: "open <platform> and search (for)? <query>"
+        # e.g. "open google and search for latest AI news", "open youtube and search for python tutorial", "open amazon and search for headphones"
+        m_open_search = re.search(
+            r"(?i)\bopen\s+([a-zA-Z0-9_\-\.]+)\s+(?:and|aur|,)?\s*(?:search(?:\s+for)?|find)\s+(.+)\b",
+            clean
+        )
+        # 5B. Inverted: "search (for)? <query> on/in <platform>"
+        # e.g. "search for latest AI news on google", "search python tutorial on youtube"
+        m_search_on = re.search(
+            r"(?i)\bsearch\s+(?:for\s+)?(.+?)\s+(?:on|in|pe|par)\s+([a-zA-Z0-9_\-\.]+)\b",
+            clean
+        )
+        # 5C. Hindi / Hinglish: "<platform> pe/par search karo/dhoondo <query>" or "<platform> pe/par <query> search karo"
+        m_hi_search = re.search(
+            r"(?i)\b([a-zA-Z0-9_\-\.]+)\s+(?:pe|par)\s+(?:search\s+karo|dhoondo)\s+(.+)\b",
+            clean
+        ) or re.search(
+            r"(?i)\b([a-zA-Z0-9_\-\.]+)\s+(?:pe|par)\s+(.+?)\s+(?:search\s+karo|dhoondo)\b",
+            clean
+        )
+        # 5D. Direct verb search: "google (for)? <query>", "search (the web|web|online)? (for)? <query>"
+        m_direct_google = re.search(r"(?i)^(?:\s*google\s+(?:for\s+)?)(.+)\b", clean)
+        m_direct_search = re.search(r"(?i)^(?:\s*search\s+(?:the\s+web\s+|web\s+|online\s+|internet\s+)?(?:for\s+)?)(.+)\b", clean)
+
+        if not is_coding_cmd and (m_open_search or m_search_on or m_hi_search or m_direct_google or m_direct_search):
+            if m_open_search:
+                platform_raw = m_open_search.group(1).strip()
+                query_raw = m_open_search.group(2).strip()
+            elif m_search_on:
+                query_raw = m_search_on.group(1).strip()
+                platform_raw = m_search_on.group(2).strip()
+            elif m_hi_search:
+                platform_raw = m_hi_search.group(1).strip()
+                query_raw = m_hi_search.group(2).strip()
+            elif m_direct_google:
+                platform_raw = "google"
+                query_raw = m_direct_google.group(1).strip()
+            else:
+                platform_raw = "google"
+                query_raw = m_direct_search.group(1).strip()
+
+            # Clean query
+            query_raw = re.sub(r"(?i)^for\s+", "", query_raw).strip()
+            query_raw = re.sub(r"(?i)\s+(?:(?:in|on)\s+(?:the\s+|my\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe))$", "", query_raw).strip()
+            query_raw = query_raw.strip("\"' ")
+
+            # Normalize platform
+            clean_plat = platform_raw.lower()
+            if clean_plat in ("chrome", "browser", "the browser", "edge", "internet", "web", "google chrome"):
+                platform_raw = "google"
+                platform_title = "Google"
+            elif clean_plat in ("yt", "youtube"):
+                platform_raw = "youtube"
+                platform_title = "YouTube"
+            elif clean_plat in ("wiki", "wikipedia"):
+                platform_raw = "wikipedia"
+                platform_title = "Wikipedia"
+            else:
+                platform_title = platform_raw.title()
+
+            if query_raw:
+                from src.agent.registry import ResourceDiscovery
+                target_url = ResourceDiscovery.build_search_url(platform_raw, query_raw)
                 return ActionIntent(
                     intent=ActionIntentType.SEARCH_WEB,
-                    goal=f"Search web for '{search_query}'",
+                    goal=f"Search {platform_title} for '{query_raw}'",
                     channel="Browser",
-                    application="Browser",
-                    target=search_query,
-                    content=search_query,
-                    parameters={"query": search_query},
+                    application=platform_title,
+                    target=query_raw,
+                    destination=target_url,
+                    content=query_raw,
+                    parameters={"query": query_raw, "platform": platform_raw.lower(), "url": target_url},
                     execution_required=True,
                     requires_browser=True,
                     verification_required=True,

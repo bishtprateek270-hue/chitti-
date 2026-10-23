@@ -109,9 +109,23 @@ class AgentPlanner:
         # 3. BROWSER WEB SEARCH COMMANDS
         if intent.intent == ActionIntentType.SEARCH_WEB:
             query = intent.parameters.get("query") or intent.target or clean
+            platform = intent.parameters.get("platform") or "google"
+            url = intent.destination or intent.parameters.get("url")
+            platform_name = intent.application or platform.title()
             state.steps = [
-                AgentStep(step_id=1, description=f"Open browser and search for '{query}'", action_type="SEARCH_WEB", parameters={"query": query}),
-                AgentStep(step_id=2, description="Verify browser opened", action_type="VERIFY_WINDOW", parameters={"title": "Chrome"}, depends_on=[1]),
+                AgentStep(
+                    step_id=1,
+                    description=f"Open browser and search for '{query}' on {platform_name}",
+                    action_type="SEARCH_WEB",
+                    parameters={"query": query, "platform": platform, "url": url},
+                ),
+                AgentStep(
+                    step_id=2,
+                    description=f"Verify {platform_name} search results loaded",
+                    action_type="VERIFY_PAGE_LOADED" if url else "VERIFY_WINDOW",
+                    parameters={"url": url} if url else {"title": "Chrome"},
+                    depends_on=[1],
+                ),
             ]
             state.status = TaskStatus.PLAN_READY
             return state
@@ -175,6 +189,16 @@ class AgentPlanner:
             state.steps = [
                 AgentStep(step_id=1, description="Capture active window frame", action_type="CAPTURE_ACTIVE_WINDOW", parameters={}),
                 AgentStep(step_id=2, description=f"Locate '{elem}' interactive element on screen", action_type="FIND_UI_ELEMENT", parameters={"element": elem}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
+            return state
+
+        # 5C2. UI AUTOMATION: LOCATE AND CLICK UI CONTROL
+        if intent.intent == ActionIntentType.CLICK_UI_ELEMENT:
+            elem = intent.parameters.get("element") or intent.target or "control"
+            state.steps = [
+                AgentStep(step_id=1, description=f"Locate and click '{elem}' control", action_type="CLICK_UI_ELEMENT", parameters={"element": elem}),
+                AgentStep(step_id=2, description="Verify UI interaction completed", action_type="INSPECT_SCREEN", parameters={}, depends_on=[1]),
             ]
             state.status = TaskStatus.PLAN_READY
             return state
@@ -1195,8 +1219,10 @@ class ComputerAgentLoop:
                 return True, f"Opened folder {p}", f"Folder {p} opened"
 
             elif act == "SEARCH_WEB":
-                query = params["query"]
-                res = self.tools.execute_tool("search_web", {"query": query})
+                query = params.get("query", "")
+                url = params.get("url")
+                platform = params.get("platform") or params.get("engine", "google")
+                res = self.tools.execute_tool("search_web", {"query": query, "url": url, "engine": platform})
                 return res.success, res.message, f"Browser opened search for '{query}'"
 
             elif act == "TYPE_TEXT":
@@ -1534,6 +1560,15 @@ class ComputerAgentLoop:
                 step._last_tool_args = {"query": q}
                 res = self.tools.execute_tool("find_ui_element", {"query": q})
                 return res.success, res.message, f"Found element matching '{q}'"
+
+            elif act == "CLICK_UI_ELEMENT":
+                elem = params.get("element", "")
+                ctype = params.get("control_type")
+                win_t = params.get("window_title")
+                step._last_tool_name = "click_ui_element"
+                step._last_tool_args = {"element": elem, "control_type": ctype, "window_title": win_t}
+                res = self.tools.execute_tool("click_ui_element", {"element": elem, "control_type": ctype, "window_title": win_t})
+                return res.success, res.message, f"Clicked UI element '{elem}'"
 
             elif act == "CLICK":
                 x = params.get("x")

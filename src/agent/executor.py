@@ -54,6 +54,8 @@ class ActionExecutor:
                 return cls._summarize_document(action)
             elif act_type == ActionType.FIND_UI_ELEMENT:
                 return cls._find_ui_element(action)
+            elif act_type == ActionType.CLICK_UI_ELEMENT:
+                return cls._click_ui_element(action)
             elif act_type == ActionType.RUN_CODE_TESTS:
                 return cls._run_code_tests(action)
             elif act_type == ActionType.SELF_HEAL_CODE:
@@ -415,9 +417,31 @@ class ActionExecutor:
 
     @classmethod
     def _find_ui_element(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.computer import ComputerController
         from src.agent.vision import VisionGroundingEngine
-        engine = VisionGroundingEngine()
+
         elem_name = action.parameters.get("element", "")
+        # 1. Native Windows UI Automation check
+        comp = ComputerController()
+        native_elem = comp.find_element_by_name(elem_name)
+        if native_elem:
+            msg = f"Found native control '{native_elem.name}' ({native_elem.control_type}) at coordinates ({native_elem.center_x}, {native_elem.center_y})."
+            return ActionResult(
+                success=True,
+                action=ActionType.FIND_UI_ELEMENT,
+                message=msg,
+                data={
+                    "found": True,
+                    "label": native_elem.name,
+                    "control_type": native_elem.control_type,
+                    "center_x": native_elem.center_x,
+                    "center_y": native_elem.center_y,
+                    "handle": native_elem.handle,
+                },
+            )
+
+        # 2. Vision multimodal screen OCR check
+        engine = VisionGroundingEngine()
         match = engine.find_ui_element(elem_name)
         if match:
             msg = f"Found '{match.label}' on screen at coordinates ({match.center_x}, {match.center_y})."
@@ -438,6 +462,38 @@ class ActionExecutor:
             action=ActionType.FIND_UI_ELEMENT,
             message=f"UI element matching '{elem_name}' was not detected in active window.",
             data={"found": False, "element": elem_name},
+        )
+
+    @classmethod
+    def _click_ui_element(cls, action: StructuredAction) -> ActionResult:
+        from src.agent.computer import ComputerController
+        from src.agent.vision import VisionGroundingEngine
+        comp = ComputerController()
+        elem_name = action.parameters.get("element", "")
+        ctype = action.parameters.get("control_type")
+        win_title = action.parameters.get("window_title")
+
+        # 1. Native UI automation click
+        ok = comp.click_element_by_name(elem_name, control_type=ctype, window_title=win_title)
+        if not ok:
+            # 2. Vision fallback
+            engine = VisionGroundingEngine()
+            match = engine.find_ui_element(elem_name)
+            if match:
+                ok = comp.click(x=match.center_x, y=match.center_y)
+
+        if ok:
+            return ActionResult(
+                success=True,
+                action=ActionType.CLICK_UI_ELEMENT,
+                message=f"Clicked on '{elem_name}' control.",
+                data={"element": elem_name, "clicked": True},
+            )
+        return ActionResult(
+            success=False,
+            action=ActionType.CLICK_UI_ELEMENT,
+            message=f"Could not locate or click '{elem_name}' control on screen.",
+            data={"element": elem_name, "clicked": False},
         )
 
     @classmethod

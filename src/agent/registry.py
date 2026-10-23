@@ -991,4 +991,59 @@ class ResourceDiscovery:
         # Fallback to web search
         return f"https://www.google.com/search?q={urllib.parse.quote_plus(clean)}"
 
+    SEARCH_PLATFORMS: Dict[str, str] = {
+        "google": "https://www.google.com/search?q={query}",
+        "youtube": "https://www.youtube.com/results?search_query={query}",
+        "yt": "https://www.youtube.com/results?search_query={query}",
+        "amazon": "https://www.amazon.in/s?k={query}",
+        "amazon.in": "https://www.amazon.in/s?k={query}",
+        "amazon.com": "https://www.amazon.com/s?k={query}",
+        "flipkart": "https://www.flipkart.com/search?q={query}",
+        "github": "https://github.com/search?q={query}",
+        "wikipedia": "https://en.wikipedia.org/wiki/Special:Search?search={query}",
+        "wiki": "https://en.wikipedia.org/wiki/Special:Search?search={query}",
+        "twitter": "https://x.com/search?q={query}",
+        "x": "https://x.com/search?q={query}",
+        "reddit": "https://www.reddit.com/search/?q={query}",
+        "spotify": "https://open.spotify.com/search/{query}",
+        "bing": "https://www.bing.com/search?q={query}",
+        "duckduckgo": "https://duckduckgo.com/?q={query}",
+        "ddg": "https://duckduckgo.com/?q={query}",
+        "linkedin": "https://www.linkedin.com/search/results/all/?keywords={query}",
+        "stackoverflow": "https://stackoverflow.com/search?q={query}",
+        "yahoo": "https://search.yahoo.com/search?p={query}",
+        "cricbuzz": "https://www.cricbuzz.com/search?q={query}",
+        "medium": "https://medium.com/search?q={query}",
+        "pinterest": "https://www.pinterest.com/search/pins/?q={query}",
+        "quora": "https://www.quora.com/search?q={query}",
+    }
+
+    @classmethod
+    def build_search_url(cls, platform: str, query: str) -> str:
+        """Constructs a direct search URL for the specified platform and query."""
+        if not query:
+            return cls.resolve_url(platform) or "https://www.google.com"
+        clean_plat = platform.lower().strip() if platform else "google"
+        encoded = urllib.parse.quote_plus(query.strip())
+
+        # Normalize platform aliases
+        if clean_plat in ("chrome", "browser", "the browser", "web", "internet", "google chrome", "edge", "microsoft edge"):
+            clean_plat = "google"
+        elif clean_plat in ("yt", "you tube"):
+            clean_plat = "youtube"
+        elif clean_plat in ("wiki",):
+            clean_plat = "wikipedia"
+
+        if clean_plat in cls.SEARCH_PLATFORMS:
+            return cls.SEARCH_PLATFORMS[clean_plat].format(query=encoded)
+
+        # Check if platform is a known website in DEFAULT_URL_MAP
+        base_url = cls.resolve_url(clean_plat)
+        if base_url:
+            domain = re.sub(r"^https?://(?:www\.)?", "", base_url).split("/")[0]
+            return f"https://www.google.com/search?q=site%3A{domain}+{encoded}"
+
+        # Default fallback to Google search
+        return f"https://www.google.com/search?q={encoded}"
+
 

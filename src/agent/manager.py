@@ -41,12 +41,14 @@ class LaptopAgentManager:
         screenshots_dir: Optional[str] = None,
         project_registry_path: Optional[str] = None,
         llm: Optional[BaseLLM] = None,
+        hud: Optional[Any] = None,
     ):
         cfg = get_config()
         self.workspace_dir = workspace_dir or cfg.agent.workspace_dir
         self.screenshots_dir = screenshots_dir or cfg.agent.screenshots_dir
         self.project_registry_path = project_registry_path or cfg.agent.project_registry_path
         self.llm = llm
+        self.hud = hud
 
         # Core Computer Controllers
         self.computer = ComputerController(screenshots_dir=self.screenshots_dir)
@@ -248,6 +250,10 @@ class LaptopAgentManager:
             log_chitti(f"[CHITTI] [TASK ROUTER] Intent: {class_res.intent.value}")
 
         # 3. Check for Multi-step Task Plan First
+        if self.hud:
+            from src.ui.visualizer import HUDMode
+            self.hud.set_mode(HUDMode.THINKING, f"Planning: {raw[:30]}...")
+
         task_plan = self.planner.plan_task(raw, context=self.session_context)
         if task_plan and task_plan.steps:
             log_chitti(f"[AGENT] Task detected: MULTI_STEP_PLAN ({len(task_plan.steps)} steps)")
@@ -255,8 +261,21 @@ class LaptopAgentManager:
                 dep_info = f" (depends on: {s.depends_on})" if s.depends_on else ""
                 log_info(f"  - [Step {s.step_id}: {s.action_type}] {s.description}{dep_info}")
 
+            def _on_progress(desc: str, cur: int, tot: int):
+                if self.hud:
+                    from src.ui.visualizer import HUDMode
+                    self.hud.set_progress(cur, tot, desc)
+                    self.hud.set_mode(HUDMode.EXECUTING, desc[:40])
+
             self.active_task_state = task_plan
-            success, msg = self.loop.execute_plan(task_plan)
+            success, msg = self.loop.execute_plan(task_plan, progress_callback=_on_progress)
+
+            if self.hud:
+                from src.ui.visualizer import HUDMode
+                if success:
+                    self.hud.set_mode(HUDMode.SUCCESS, "Task completed successfully")
+                else:
+                    self.hud.set_mode(HUDMode.ERROR, "Task failed or stopped")
 
             if task_plan.status in (TaskStatus.WAITING_FOR_CONFIRMATION, TaskStatus.WAITING_CONFIRMATION):
                 pending_step = task_plan.pending_confirmation_step or task_plan.current_step
@@ -316,7 +335,18 @@ class LaptopAgentManager:
         log_chitti(f"[SELECTED TOOL] {validated_action.action.value.lower()}")
         log_chitti(f"[TOOL ARGUMENTS] {validated_action.parameters}")
 
+        if self.hud:
+            from src.ui.visualizer import HUDMode
+            self.hud.set_mode(HUDMode.EXECUTING, f"Executing: {validated_action.action.value}")
+
         result = self.executor.execute(validated_action, default_workspace=self.workspace_dir, screenshots_dir=self.screenshots_dir)
+
+        if self.hud:
+            from src.ui.visualizer import HUDMode
+            if result.success:
+                self.hud.set_mode(HUDMode.SUCCESS, result.message[:40] if result.message else "Task completed")
+            else:
+                self.hud.set_mode(HUDMode.ERROR, result.message[:40] if result.message else "Action failed")
 
         log_chitti(f"[TOOL RESULT] success={'true' if result.success else 'false'}")
         log_chitti(f"[OBSERVATION] {result.message}")

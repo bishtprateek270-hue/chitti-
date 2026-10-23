@@ -181,6 +181,13 @@ class ToolEngine:
             self._tool_find_ui_element,
         )
         self._register(
+            "click_ui_element",
+            "Clicks on an interactive UI control, button, input box, or tab by name/label.",
+            {"element": {"type": "string", "description": "Text, label, or name of the control to click"},
+             "window_title": {"type": "string", "description": "Optional window title to focus before clicking"}},
+            self._tool_click_ui_element,
+        )
+        self._register(
             "list_windows",
             "Lists all currently visible desktop windows with titles and coordinates.",
             {},
@@ -645,10 +652,13 @@ class ToolEngine:
         return {"success": ok, "url": url, "message": f"Opened {url} in browser"}
 
 
-    def _tool_search_web(self, query: str) -> Dict[str, Any]:
-        log_info(f"[TOOL] search_web -> {query}")
-        ok = self.browser.search_web(query)
-        return {"success": ok, "query": query, "message": f"Searched web for '{query}'"}
+    def _tool_search_web(self, query: str, engine: str = "google", url: Optional[str] = None) -> Dict[str, Any]:
+        log_info(f"[TOOL] search_web -> query='{query}', engine='{engine}', url='{url}'")
+        if url:
+            ok = self.browser.open_url(url)
+        else:
+            ok = self.browser.search_web(query, engine=engine)
+        return {"success": ok, "query": query, "url": url, "engine": engine, "message": f"Searched {engine} for '{query}'"}
 
     def _tool_play_youtube(self, query: str) -> Dict[str, Any]:
         log_info(f"[TOOL] play_youtube -> {query}")
@@ -858,26 +868,56 @@ class ToolEngine:
         }
 
     def _tool_find_ui_element(self, query: str) -> Dict[str, Any]:
-        # Try finding via vision localization first
-        match = self.vision.find_ui_element(query)
-        if match:
+        # 1. Native Windows UI Automation check
+        native_elem = self.computer.find_element_by_name(query)
+        if native_elem:
             return {
                 "success": True,
                 "found": True,
                 "query": query,
-                "label": match.label,
-                "center_x": match.center_x,
-                "center_y": match.center_y,
-                "box": match.bounding_box,
-                "evidence": f"Found UI element '{match.label}' at ({match.center_x}, {match.center_y})",
+                "label": native_elem.name,
+                "control_type": native_elem.control_type,
+                "center_x": native_elem.center_x,
+                "center_y": native_elem.center_y,
+                "handle": native_elem.handle,
+                "evidence": f"Found native UI element '{native_elem.name}' ({native_elem.control_type}) at ({native_elem.center_x}, {native_elem.center_y})",
             }
 
+        # 2. Vision multimodal screen OCR localization
+        if self.vision:
+            match = self.vision.find_ui_element(query)
+            if match:
+                return {
+                    "success": True,
+                    "found": True,
+                    "query": query,
+                    "label": match.label,
+                    "center_x": match.center_x,
+                    "center_y": match.center_y,
+                    "box": match.bounding_box,
+                    "evidence": f"Found visual UI element '{match.label}' at ({match.center_x}, {match.center_y})",
+                }
+
+        # 3. Fallback to window title verification
         res = self.screen_analyzer.verify_window(query)
         return {
             "success": res.success,
             "found": res.success,
             "query": query,
             "evidence": res.evidence,
+        }
+
+    def _tool_click_ui_element(self, element: str, control_type: Optional[str] = None, window_title: Optional[str] = None) -> Dict[str, Any]:
+        log_info(f"[TOOL] click_ui_element -> '{element}'")
+        ok = self.computer.click_element_by_name(element, control_type=control_type, window_title=window_title)
+        if not ok and self.vision:
+            match = self.vision.find_ui_element(element)
+            if match:
+                ok = self.computer.click(x=match.center_x, y=match.center_y)
+        return {
+            "success": ok,
+            "element": element,
+            "message": f"Clicked UI element '{element}'" if ok else f"Failed to locate UI element '{element}'",
         }
 
     def _tool_get_active_window(self) -> Dict[str, Any]:

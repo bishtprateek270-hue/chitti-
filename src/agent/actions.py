@@ -21,6 +21,7 @@ class ActionType(str, Enum):
     DIAGNOSE_SCREEN_ERROR = "DIAGNOSE_SCREEN_ERROR"
     SUMMARIZE_DOCUMENT = "SUMMARIZE_DOCUMENT"
     FIND_UI_ELEMENT = "FIND_UI_ELEMENT"
+    CLICK_UI_ELEMENT = "CLICK_UI_ELEMENT"
     RUN_CODE_TESTS = "RUN_CODE_TESTS"
     SELF_HEAL_CODE = "SELF_HEAL_CODE"
     DEBUG_CODE = "DEBUG_CODE"
@@ -159,6 +160,14 @@ class ActionRegistry:
             risk_level=RiskLevel.LOW,
             requires_confirmation=False,
             required_parameters=["element"],
+        ),
+        ActionType.CLICK_UI_ELEMENT: ActionDefinition(
+            action_type=ActionType.CLICK_UI_ELEMENT,
+            description="Finds and clicks an interactive UI control (button, input, tab) by label or query.",
+            risk_level=RiskLevel.LOW,
+            requires_confirmation=False,
+            required_parameters=["element"],
+            optional_parameters=["control_type", "window_title"],
         ),
         ActionType.RUN_CODE_TESTS: ActionDefinition(
             action_type=ActionType.RUN_CODE_TESTS,

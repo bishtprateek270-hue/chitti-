@@ -224,6 +224,7 @@ class ChittiController:
                     workspace_dir=self.config.agent.workspace_dir,
                     screenshots_dir=self.config.agent.screenshots_dir,
                     llm=self.llm,
+                    hud=self.hud,
                 )
                 log_chitti("Laptop agent subsystem ready (Apps, Folders, Files, System Info, Volume).")
             except Exception as e:
