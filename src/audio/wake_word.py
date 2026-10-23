@@ -51,16 +51,12 @@ class WakeWordDetector:
         # English wake words
         "chitti", "hey chitti", "hello chitti", "ok chitti", "hi chitti",
         "wake up chitti", "chitti wake up", "chitti are you there",
-        # Phonetic & Accent variations (explicitly handling chitthi, chitii, chiti, chitty, chatti, cheeti)
+        # Phonetic & Accent variations (explicitly handling chitthi, chitii, chiti, chitty)
         "chitthi", "he chitthi", "hey chitthi", "hello chitthi", "hi chitthi", "ok chitthi", "wake up chitthi", "chitthi wake up",
         "he chitti", "hai chitthi", "hai chitti",
         "chitii", "hey chitii", "hello chitii", "hi chitii", "ok chitii", "wake up chitii", "chitii wake up",
         "chiti", "hey chiti", "hello chiti", "hi chiti", "ok chiti", "wake up chiti", "chiti wake up",
         "chitty", "hey chitty", "hello chitty", "hi chitty", "ok chitty",
-        "chatti", "hey chatti", "hello chatti", "hi chatti", "ok chatti", "wake up chatti", "chatti wake up",
-        "cheeti", "hey cheeti", "hello cheeti", "hi cheeti", "ok cheeti",
-        "chetti", "hey chetti",
-        "hey city", "ok city", "hello city", "hey kitty",
         # Hindi & Hinglish
         "chitti jaag ja", "chitti jaago", "chitti uth ja", "chitti utho", "chitti suno", "chitti sun",
         "jaag ja chitti", "suno chitti", "चिट्टी जाग जा", "चिट्टी उठ जा", "चिट्टी सुन", "चिट्टी",
@@ -286,8 +282,8 @@ class WakeWordDetector:
 
         # 3. Strict Verification via STT Engine when available
         if self.stt_engine is not None:
-            # Debounce STT checks to at most once per 0.35s
-            if now - self._last_stt_check_time < 0.35:
+            # Debounce STT checks to at most once per 0.75s to avoid continuous background transcription
+            if now - self._last_stt_check_time < 0.75:
                 return None
             self._last_stt_check_time = now
 
@@ -298,11 +294,11 @@ class WakeWordDetector:
 
                 # Normalize amplitude if voice is soft
                 peak = float(np.max(np.abs(speech_snippet)))
-                if 0.001 < peak < 0.65:
-                    speech_snippet = speech_snippet * min(15.0, 0.75 / peak)
+                if 0.003 < peak < 0.65:
+                    speech_snippet = speech_snippet * min(12.0, 0.75 / peak)
 
-                # Allow Whisper fallback if Google STT fails
-                allow_whisper = is_speech or (acoustic_score >= 0.35)
+                # Only allow Whisper if speech was clearly detected with vocal periodicity
+                allow_whisper = is_speech and (acoustic_score >= 0.40)
                 snippet_text = self.stt_engine.transcribe(speech_snippet, allow_whisper_fallback=allow_whisper)
                 snippet_text = snippet_text.lower().strip() if snippet_text else ""
 
@@ -379,7 +375,7 @@ class WakeWordDetector:
 
         # Absolute energy floor: reject low-level hiss / hum / silence immediately
         rms_total = float(np.sqrt(np.mean(audio**2) + 1e-12))
-        if rms_total < 0.0008:
+        if rms_total < 0.0035:
             return 0.0
 
         # 1. Human vocal pitch periodicity check (80Hz - 350Hz)

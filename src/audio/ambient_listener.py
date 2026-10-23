@@ -6,6 +6,7 @@ and authoritative SystemStateManager coordination for Mode A (Wake-Word) & Mode 
 """
 
 import enum
+import re
 import threading
 import time
 from typing import Any, Callable, Dict, Optional
@@ -20,6 +21,12 @@ from src.core.phrase_matcher import get_phrase_matcher, ControlCommand
 from src.core.state_manager import get_state_manager, SystemState
 from src.ui.hud_overlay import FloatingHUD, HUDMode
 from src.utils.logging import log_chitti, log_debug, log_info, log_warn
+
+# Regex matching explicit wake address prefixes in English, Hindi, Hinglish
+WAKE_PREFIX_PATTERN = re.compile(
+    r'^(?:(?:hey|he|hello|hi|hai|ok|okay|suno|arre|oye)\s+)?(?:(?:chitti|chitthi|chiti|chitii|chitty)\b|चिट्टी|चिट्ठी)(?:[:,-]|\s+suno)?\s*',
+    re.IGNORECASE
+)
 
 
 class AmbientState(str, enum.Enum):
@@ -66,6 +73,7 @@ class AmbientVoiceListener:
         self._is_running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._manual_or_wake_prompted_until: float = 0.0
 
         # Wire with authoritative state manager
         self.state_mgr.register_on_sleep(self._on_system_sleep)
@@ -170,8 +178,11 @@ class AmbientVoiceListener:
             )
             worker.start()
         else:
+            self._manual_or_wake_prompted_until = time.time() + 8.0
+
             def _wake_acknowledge_and_listen():
                 try:
+                    self._manual_or_wake_prompted_until = time.time() + 8.0
                     if self.hud:
                         self.hud.set_mode(HUDMode.LISTENING)
                         self.hud.set_progress("Haan, boliye... (Listening)")
@@ -245,11 +256,13 @@ class AmbientVoiceListener:
             if self.state == AmbientState.LISTENING:
                 return
             self.state = AmbientState.WAKING
+            self._manual_or_wake_prompted_until = time.time() + 15.0
 
         def _worker():
             try:
                 self.state_mgr.wake()
                 self.state_mgr.start_conversation_session(timeout_seconds=20.0)
+                self._manual_or_wake_prompted_until = time.time() + 15.0
                 if self.hud:
                     self.hud.show()
                     self.hud.set_mode(HUDMode.LISTENING)
@@ -275,7 +288,7 @@ class AmbientVoiceListener:
         """Directly processes a command captured alongside the wake word."""
         try:
             self.wake_detector.pause()
-            self._handle_incoming_transcript(command_text)
+            self._handle_incoming_transcript(command_text, from_wake=True)
         except Exception as e:
             log_warn(f"[AMBIENT] Direct command processing notice: {e}")
         finally:
@@ -363,11 +376,13 @@ class AmbientVoiceListener:
             self.state_mgr.end_conversation_session()
             self._return_to_standby()
 
-    def _handle_incoming_transcript(self, transcript: str):
+    def _handle_incoming_transcript(self, transcript: str, from_wake: bool = False):
         """
         HIGH-PRIORITY FAST PATH ROUTER:
         Evaluates commands against Priority Hierarchy (Stop > Sleep > Wake > Normal)
         BEFORE sending any audio or text to the LLM.
+        Enforces that commands MUST be addressed with 'Hey Chitti' or 'Chitti'
+        to prevent execution from room background noise or ambient talk.
         """
         raw = transcript.strip()
         log_chitti(f"[AMBIENT] 🗣️ User said: '{raw}'")
@@ -378,6 +393,7 @@ class AmbientVoiceListener:
         # ---------------- PRIORITY 1: GLOBAL STOP / INTERRUPT ----------------
         if match_res.command == ControlCommand.STOP:
             log_chitti(f"[CHITTI][CONTROL] 🛑 Immediate STOP command recognized: '{match_res.matched_phrase}'. Stopped listening.")
+            self._manual_or_wake_prompted_until = 0.0
             if self.tts and hasattr(self.tts, "stop"):
                 self.tts.stop()
             self.barge_in.stop_monitoring()
@@ -398,6 +414,7 @@ class AmbientVoiceListener:
         # ---------------- PRIORITY 2: SLEEP COMMAND ----------------
         if match_res.command == ControlCommand.SLEEP:
             log_chitti(f"[CHITTI][CONTROL] 😴 SLEEP command recognized: '{match_res.matched_phrase}'")
+            self._manual_or_wake_prompted_until = 0.0
             if self.tts and hasattr(self.tts, "stop"):
                 self.tts.stop()
             self.barge_in.stop_monitoring()
@@ -427,8 +444,9 @@ class AmbientVoiceListener:
 
             if match_res.extracted_tail:
                 # User said wake phrase + command together (e.g. "Chitti open Chrome")
-                self._handle_incoming_transcript(match_res.extracted_tail)
+                self._handle_incoming_transcript(match_res.extracted_tail, from_wake=True)
             else:
+                self._manual_or_wake_prompted_until = time.time() + 8.0
                 def _wake_listen():
                     try:
                         self._play_wake_sound()
@@ -441,10 +459,31 @@ class AmbientVoiceListener:
             return
 
         # ---------------- PRIORITY 4: NORMAL USER COMMAND ----------------
-        # Guard: If Chitti is SLEEPING, ignore ordinary speech entirely!
+        # Guard 1: If Chitti is SLEEPING, ignore ordinary speech entirely!
         if self.state_mgr.is_sleeping():
             log_debug(f"[CHITTI][SLEEP] Ignored ordinary conversation while SLEEPING: '{raw}'")
             return
+
+        # Check if the command was explicitly addressed to Chitti with a wake prefix
+        # (e.g. "hey chitti open vs code", "chitti open yt", "suno chitti chrome kholo")
+        prefix_match = WAKE_PREFIX_PATTERN.match(raw)
+        if prefix_match:
+            tail = raw[prefix_match.end():].strip(" ,.-!?")
+            if len(tail) >= 2:
+                raw = tail
+                from_wake = True
+
+        # Guard 2: Require explicit address ("Hey Chitti" / "Chitti") or actively prompted session
+        is_prompted = (time.time() < self._manual_or_wake_prompted_until) and self.state_mgr.is_in_conversation_session()
+        if not from_wake and not is_prompted:
+            log_info(f"[AMBIENT] 🔇 Ignored background speech without 'Chitti' address: '{raw}'")
+            if self.hud and self.hud.is_visible and self.state != AmbientState.SPEAKING:
+                self.hud.hide()
+            self._return_to_standby()
+            return
+
+        # Clear prompt window once consumed
+        self._manual_or_wake_prompted_until = 0.0
 
         request_id = self.state_mgr.new_request()
         self.state_mgr.begin_processing(request_id)
@@ -601,6 +640,7 @@ class AmbientVoiceListener:
         with self._lock:
             self.state = AmbientState.STANDBY
 
+        self._manual_or_wake_prompted_until = 0.0
         self.wake_detector.resume(cooldown=1.0)
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
