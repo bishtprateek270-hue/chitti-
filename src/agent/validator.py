@@ -39,19 +39,22 @@ class ActionValidator:
             # Strip redundant words like "application", "app", "the"
             import re
             clean_target = re.sub(r"(?i)^(?:application|app|the|my|a|an)\s+", "", app_target).strip()
+            clean_target = re.sub(r"(?i)^(?:website\s+(?:called|named|of|for|to|is)?|site\s+(?:called|named|of|for|to|is)?|webpage\s+(?:called|named|of|for|to|is)?|web\s+|page\s+(?:of|for)?|url\s+(?:of|for)?|link\s+(?:of|for)?)\s*", "", clean_target).strip()
+            clean_target = re.sub(r"(?i)\s+(?:website|site|webpage|page|portal|link|url|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe))$", "", clean_target).strip()
             action.parameters["target"] = clean_target
 
             resolved = AppDiscovery.resolve_application(clean_target)
             if not resolved:
                 # Check if target is a web URL, website, project repo, or mapped web service
                 from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
-                resolved_url = ResourceDiscovery.resolve_url(clean_target)
-                if resolved_url or ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP:
+                resolved_url = ResourceDiscovery.resolve_url(clean_target) or ResourceDiscovery.resolve_url(app_target)
+                if resolved_url or ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP or any(w in app_target.lower() for w in ["website", "site", "browser", "web", "http", ".com"]):
                     target_url = resolved_url or ResourceDiscovery.to_url(clean_target)
+                    display_title = clean_target.title() if clean_target.lower() not in ("website", "the website", "browser", "the browser", "web") else "Browser"
                     log_chitti(f"[AGENT] Re-routing web target '{clean_target}' from OPEN_APPLICATION to OPEN_URL: {target_url}")
                     action.action = ActionType.OPEN_URL
                     action.parameters["url"] = target_url
-                    action.parameters["site_name"] = clean_target.title()
+                    action.parameters["site_name"] = display_title
                     return True, "Validation successful.", action
 
                 log_warning(f"[AGENT] Validation: FAILED | Reason: Application '{clean_target}' could not be resolved on Windows.")

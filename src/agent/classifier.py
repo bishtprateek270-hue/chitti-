@@ -132,7 +132,9 @@ class TaskClassifier:
         """
         raw = cls._normalize_text(user_text.strip())
         lower = raw.lower()
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti\b,?\s*|hey chitti\b,?\s*|hd\b,?\s*|h\.d\.\s*|ac\b,?\s*|a\.c\.\s*|hey d\b,?\s*|hey dee\b,?\s*|bhai\b,?\s*|bro\b,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)^(?:browser\s+(?:me|mein|par|pe)\s+|(?:in|on)\s+(?:the\s+|my\s+)?browser\s+)", "", clean).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe)|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # 1. Check for Personal & Identity Queries

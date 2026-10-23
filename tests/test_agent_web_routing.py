@@ -56,7 +56,92 @@ def test_manager_handles_hd_open_youtube(monkeypatch):
     import webbrowser
     monkeypatch.setattr(webbrowser, "open", lambda url, *args, **kwargs: opened_urls.append(url) or True)
     
+    import subprocess
+    def mock_popen(cmd, *args, **kwargs):
+        if isinstance(cmd, list) and len(cmd) > 1 and any("http" in str(x) for x in cmd):
+            for x in cmd:
+                if "http" in str(x):
+                    opened_urls.append(str(x))
+        elif isinstance(cmd, str) and "http" in cmd:
+            opened_urls.append(cmd)
+        class DummyProc:
+            pid = 9999
+            def poll(self): return 0
+        return DummyProc()
+    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+    
     success, msg, res = mgr.handle_command("HD open YouTube")
     assert success is True
     assert "YouTube" in msg or "browser" in msg
     assert any("youtube.com" in u for u in opened_urls)
+
+
+def test_open_arbitrary_websites_by_name_and_domain():
+    """Verifies that queries asking to open websites or URLs resolve properly to OPEN_URL."""
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+    from src.agent.parser import ActionParser
+    from src.router.master_router import MasterRouter, MasterRoute
+
+    cases = [
+        ("open website google", "https://www.google.com"),
+        ("open website stackoverflow", "https://stackoverflow.com"),
+        ("open website cricbuzz", "https://www.cricbuzz.com"),
+        ("open the website of netflix", "https://www.netflix.com"),
+        ("open website https://news.ycombinator.com", "https://news.ycombinator.com"),
+        ("open cricbuzz on browser", "https://www.cricbuzz.com"),
+        ("open website wikipedia", "https://www.wikipedia.org"),
+        ("open nytimes.com on browser", "https://nytimes.com"),
+        ("browser me flipkart website kholo", "https://www.flipkart.com"),
+        ("open website", "https://www.google.com"),
+        ("open website leetcode", "https://leetcode.com"),
+        ("open flipkart in browser", "https://www.flipkart.com"),
+        ("open swiggy", "https://www.swiggy.com"),
+        ("open zomato", "https://www.zomato.com"),
+        ("open website nytimes", "https://www.nytimes.com"),
+        ("open amazon.in", "https://amazon.in"),
+    ]
+
+    for query, expected_url in cases:
+        intent = ActionIntentAnalyzer.extract_intent(query)
+        assert intent.intent == ActionIntentType.OPEN_URL, f"Failed intent for: {query}"
+        assert intent.destination == expected_url, f"Expected {expected_url}, got {intent.destination} for {query}"
+
+        parsed = ActionParser.parse_command(query)
+        assert parsed is not None, f"Failed parse for: {query}"
+        assert parsed.action == ActionType.OPEN_URL, f"Failed parsed action for: {query}"
+        assert parsed.parameters["url"] == expected_url, f"Expected {expected_url}, got {parsed.parameters['url']} for {query}"
+
+
+def test_manager_opens_websites_on_browser_command(monkeypatch):
+    """Verifies that LaptopAgentManager opens websites without errors."""
+    mgr = LaptopAgentManager()
+    opened_urls = []
+
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", lambda url, *args, **kwargs: opened_urls.append(url) or True)
+
+    import subprocess
+    def mock_popen(cmd, *args, **kwargs):
+        if isinstance(cmd, list) and len(cmd) > 1 and any("http" in str(x) for x in cmd):
+            for x in cmd:
+                if "http" in str(x):
+                    opened_urls.append(str(x))
+        elif isinstance(cmd, str) and "http" in cmd:
+            opened_urls.append(cmd)
+        class DummyProc:
+            pid = 9999
+            def poll(self): return 0
+        return DummyProc()
+    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+
+    for cmd, expected_domain in [
+        ("open website cricbuzz", "cricbuzz.com"),
+        ("browser me flipkart website kholo", "flipkart.com"),
+        ("open website leetcode", "leetcode.com"),
+    ]:
+        opened_urls.clear()
+        handled, msg, res = mgr.handle_command(cmd)
+        assert handled is True
+        assert any(expected_domain in u for u in opened_urls), f"Failed to open {expected_domain} for {cmd}"
+
+

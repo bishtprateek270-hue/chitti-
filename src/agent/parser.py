@@ -22,8 +22,9 @@ class ActionParser:
         lower = raw.lower()
 
         # Clean Chitti invocation prefix if present & trailing fillers
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
-        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
+        clean = re.sub(r"^(?:chitti\b,?\s*|hey chitti\b,?\s*|hd\b,?\s*|h\.d\.\s*|ac\b,?\s*|a\.c\.\s*|hey d\b,?\s*|hey dee\b,?\s*|bhai\b,?\s*|bro\b,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)^(?:browser\s+(?:me|mein|par|pe)\s+|(?:in|on)\s+(?:the\s+|my\s+)?browser\s+)", "", clean).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe)|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # Reject compound multi-step instructions that should be planned by AgentPlanner
@@ -181,25 +182,28 @@ class ActionParser:
                 raw_input=raw,
             )
 
-        # Check if requested target resolves to a URL, repository, or project link via ResourceDiscovery
+        # Check if requested target resolves to a URL, repository, website or project link via ResourceDiscovery
         m_open_dest = re.search(r"(?i)^(?:open|launch|visit|go\s+to|show)\s+(.*)$", clean) or \
                       re.search(r"(?i)^(.*?)\s+(?:kholo|chalao|open\s+karo|खोलो|चलाओ)(?:\s+|$|[.,!?])", clean)
         if m_open_dest:
             cand_dest = m_open_dest.group(1).strip().rstrip(".!? \t\n")
             cand_lower = cand_dest.lower()
             if not any(f in cand_lower for f in ["folder", "directory"]) and cand_lower not in ["downloads", "documents", "desktop", "pictures", "videos", "music", "workspace", "c drive", "d drive"]:
-                resolved_url = ResourceDiscovery.resolve_url(cand_dest)
+                clean_dest = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:application\s+|app\s+|website\s+(?:called|named|of|for|to|is)?|site\s+(?:called|named|of|for|to|is)?|webpage\s+(?:called|named|of|for|to|is)?|web\s+|page\s+(?:of|for)?|url\s+(?:of|for)?|link\s+(?:of|for)?)\s*", "", cand_dest).strip()
+                clean_dest = re.sub(r"(?i)\s+(?:website|site|webpage|page|portal|link|url|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe))$", "", clean_dest).strip()
+                resolved_url = ResourceDiscovery.resolve_url(cand_dest) or ResourceDiscovery.resolve_url(clean_dest)
                 if resolved_url:
+                    display_title = clean_dest.title() if clean_dest.lower() not in ("website", "the website", "browser", "the browser", "web") else "Browser"
                     return StructuredAction(
                         action=ActionType.OPEN_URL,
-                        parameters={"url": resolved_url, "site_name": cand_dest.title()},
+                        parameters={"url": resolved_url, "site_name": display_title},
                         risk_level=RiskLevel.LOW,
                         requires_confirmation=False,
                         raw_input=raw,
                     )
 
         for site_name, url in sorted(DEFAULT_URL_MAP.items(), key=lambda x: len(x[0]), reverse=True):
-            if re.search(rf"(?i)(?:^open\s+(?:the\s+|my\s+|application\s+|app\s+|website\s+|site\s+|link\s+of\s+|link\s+to\s+|repo\s+of\s+|repository\s+of\s+|github\s+of\s+)?{re.escape(site_name)}\b|\bopen\s+{re.escape(site_name)}\b|^{re.escape(site_name)}\s+(?:kholo|chalao|open\s+karo|खोलो))(?:\s+|$|[.,!?])", clean):
+            if re.search(rf"(?i)(?:^open\s+(?:the\s+|my\s+|application\s+|app\s+|website\s+|site\s+|link\s+of\s+|link\s+to\s+|repo\s+of\s+|repository\s+of\s+|github\s+of\s+)?{re.escape(site_name)}\s*[.!?]?$|\bopen\s+{re.escape(site_name)}\s*[.!?]?$|^{re.escape(site_name)}\s+(?:kholo|chalao|open\s+karo|खोलो)\s*[.!?]?$)", clean):
                 return StructuredAction(
                     action=ActionType.OPEN_URL,
                     parameters={"url": url, "site_name": site_name.title()},
@@ -209,7 +213,8 @@ class ActionParser:
                 )
 
         # 9. OPEN FOLDER COMMANDS
-        m_folder = re.search(
+        is_web_or_repo_folder = bool(re.search(r"(?i)\b(?:github|repo|repository|deployment|ldeployment|live|browser|website|link|url|vercel)\b", clean_lower))
+        m_folder = None if is_web_or_repo_folder else re.search(
             r"(?i)^(?:open\s+(?:the\s+|my\s+|a\s+|an\s+)?folder(?:\s+([A-Za-z0-9_\-\s]+))?|open\s+(?:the\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\s]+?)\s+folder|(?:the\s+|my\s+|a\s+|an\s+)?([A-Za-z0-9_\-\s]+?)\s+folder\s+(?:kholo|open\s+karo|dikhao|खोलो|दिखाओ)|folder\s+(?:kholo|open\s+karo|खोलो))(?:\s+|$|[.,!?])",
             clean
         )
@@ -249,7 +254,8 @@ class ActionParser:
         m_app_match = m_app_hi or m_app_en
         if m_app_match:
             target_str = m_app_match.group(1).strip().rstrip(".!? \t\n")
-            target_str = re.sub(r"(?i)^(?:application|app|the|my|a|an|link\s+(?:of|to|for)|url\s+(?:of|to|for)|repo\s+(?:of|to|for)|repository\s+(?:of|to|for)|github\s+(?:of|to|for)|website\s+(?:of|for)|site\s+(?:of|for)|page\s+(?:of|for))\s+", "", target_str).strip()
+            target_str = re.sub(r"(?i)^(?:application|app|the|my|a|an|link\s+(?:of|to|for)|url\s+(?:of|to|for)|(?:github\s+|git\s+)?(?:repo|repository)\s+(?:named|called|of|to|for)?|github\s+(?:of|to|for)|website\s+(?:called|named|of|for|to|is)?|site\s+(?:called|named|of|for|to|is)?|webpage\s+(?:called|named|of|for|to|is)?|web\s+|page\s+(?:of|for)?)\s*", "", target_str).strip()
+            target_str = re.sub(r"(?i)\s+(?:website|site|webpage|page|portal|link|url|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe))$", "", target_str).strip()
 
             # Exclude compound phrases containing conjunctions or complex sub-actions
             if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type)\b", target_str):
@@ -257,10 +263,17 @@ class ActionParser:
 
             # Check if target is a web URL/domain or known web service / user project link / repo
             resolved_url = ResourceDiscovery.resolve_url(target_str)
+            if not resolved_url:
+                alt_target = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:github\s+|git\s+)?(?:repo|repository|project)\s+(?:named|called|of|for|to)?\s*", "", target_str).strip()
+                if alt_target and alt_target != target_str:
+                    resolved_url = ResourceDiscovery.resolve_url(alt_target)
+
             if resolved_url:
+                clean_display = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:github\s+|git\s+)?(?:repo|repository|project)\s+(?:named|called|of|for|to)?\s*", "", target_str).strip()
+                display_name = f"{clean_display.title()} Repository" if any(w in clean_lower for w in ["repo", "repository", "github", "git"]) and clean_display else (clean_display.title() if clean_display and clean_display.lower() not in ("website", "the website", "browser", "the browser", "web") else "Browser")
                 return StructuredAction(
                     action=ActionType.OPEN_URL,
-                    parameters={"url": resolved_url, "site_name": target_str.title()},
+                    parameters={"url": resolved_url, "site_name": display_name},
                     risk_level=RiskLevel.LOW,
                     requires_confirmation=False,
                     raw_input=raw,

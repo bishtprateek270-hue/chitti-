@@ -62,8 +62,9 @@ class AgentPlanner:
         lower = raw.lower()
 
         # Clean invocation prefixes & trailing fillers
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
-        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
+        clean = re.sub(r"^(?:chitti\b,?\s*|hey chitti\b,?\s*|hd\b,?\s*|h\.d\.\s*|ac\b,?\s*|a\.c\.\s*|hey d\b,?\s*|hey dee\b,?\s*|bhai\b,?\s*|bro\b,?\s*|please\s+|can\s+you\s+)", "", raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)^(?:browser\s+(?:me|mein|par|pe)\s+|(?:in|on)\s+(?:the\s+|my\s+)?browser\s+)", "", clean).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe)|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # 0. Extract structured action intent and user goal
@@ -213,15 +214,21 @@ class AgentPlanner:
             state.status = TaskStatus.PLAN_READY
             return state
 
-        m_vscode_proj = re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\b", clean) or \
-                        re.search(r"(?i)\bopen\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+project\s+in\s+(?:vs\s*code|vscode)\b", clean) or \
-                        re.search(r"(?i)\bmera\s+([A-Za-z0-9_\-]+)\s+project\s+vs\s*code\s+me(?:in)?\s+kholo\b", clean)
+        m_vscode_proj = (
+            re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?(.+?)\s*$", clean) or
+            re.search(r"(?i)\bopen\s+(?:my\s+)?(.+?)\s+(?:in|using|with)\s+(?:vs\s*code|vscode|code)\s*$", clean) or
+            re.search(r"(?i)\bmera\s+(?:bhi\s+)?(.+?)\s*(?:ko\s+)?vs\s*code\s+me(?:in)?\s+kholo\s*$", clean)
+        )
         if m_vscode_proj:
-            proj_name = m_vscode_proj.group(1).strip()
-            proj_path = self.projects.get_project_path(proj_name) or str(Path.cwd().resolve())
+            raw_pname = m_vscode_proj.group(1).strip()
+            clean_proj_name = re.sub(r"(?i)\b(?:project|repo|repository|codebase|workspace)\b", "", raw_pname).strip()
+            clean_proj_name = re.sub(r"(?i)\b(?:my|the|a|an)\b", "", clean_proj_name).strip()
+            if not clean_proj_name or clean_proj_name.lower() in ("repo", "repository", "project", "codebase", "workspace"):
+                clean_proj_name = "Chitti"
+            proj_path = self.projects.get_project_path(clean_proj_name) or str(Path.cwd().resolve())
             state.steps = [
-                AgentStep(step_id=1, description=f"Resolve project path for {proj_name}", action_type="RESOLVE_PROJECT", parameters={"name": proj_name, "path": proj_path}),
-                AgentStep(step_id=2, description=f"Launch VS Code with project {proj_name}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [proj_path]}, depends_on=[1]),
+                AgentStep(step_id=1, description=f"Resolve project path for {clean_proj_name}", action_type="RESOLVE_PROJECT", parameters={"name": clean_proj_name, "path": proj_path}),
+                AgentStep(step_id=2, description=f"Launch VS Code with project {clean_proj_name}", action_type="OPEN_APPLICATION", parameters={"target": "VS Code", "args": [proj_path]}, depends_on=[1]),
                 AgentStep(step_id=3, description="Verify VS Code is open", action_type="VERIFY_WINDOW", parameters={"title": "Visual Studio Code"}, depends_on=[2]),
             ]
             state.status = TaskStatus.PLAN_READY

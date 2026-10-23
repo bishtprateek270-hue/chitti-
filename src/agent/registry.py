@@ -10,6 +10,7 @@ import re
 import shutil
 import platform
 import difflib
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, List, Any
@@ -106,29 +107,102 @@ DEFAULT_APP_MAP: Dict[str, List[str]] = {
 
 # Standard URL mappings for popular services
 DEFAULT_URL_MAP: Dict[str, str] = {
+    # Search & AI
     "google": "https://www.google.com",
     "gemini": "https://gemini.google.com",
-    "github": "https://www.github.com",
-    "youtube": "https://www.youtube.com",
-    "yt": "https://www.youtube.com",
-    "whatsapp": "https://web.whatsapp.com",
-    "whatsapp web": "https://web.whatsapp.com",
     "chatgpt": "https://chatgpt.com",
     "claude": "https://claude.ai",
+    "deepseek": "https://www.deepseek.com",
+    "perplexity": "https://www.perplexity.ai",
+    "openai": "https://openai.com",
+    "bing": "https://www.bing.com",
+    "yahoo": "https://www.yahoo.com",
+    "duckduckgo": "https://duckduckgo.com",
+
+    # Social, Streaming & Media
+    "youtube": "https://www.youtube.com",
+    "yt": "https://www.youtube.com",
+    "twitter": "https://www.x.com",
+    "x": "https://www.x.com",
+    "x.com": "https://www.x.com",
+    "instagram": "https://www.instagram.com",
+    "facebook": "https://www.facebook.com",
+    "reddit": "https://www.reddit.com",
+    "linkedin": "https://www.linkedin.com",
+    "spotify": "https://open.spotify.com",
+    "netflix": "https://www.netflix.com",
+    "prime video": "https://www.primevideo.com",
+    "hotstar": "https://www.hotstar.com",
+    "jiocinema": "https://www.jiocinema.com",
+    "twitch": "https://www.twitch.tv",
+    "pinterest": "https://www.pinterest.com",
+    "imdb": "https://www.imdb.com",
+
+    # Messaging & Productivity
+    "whatsapp": "https://web.whatsapp.com",
+    "whatsapp web": "https://web.whatsapp.com",
     "telegram": "https://web.telegram.org",
     "discord": "https://discord.com/app",
     "slack": "https://app.slack.com",
     "teams": "https://teams.microsoft.com",
     "gmail": "https://mail.google.com",
+    "outlook": "https://outlook.live.com",
+    "notion": "https://www.notion.so",
+    "figma": "https://www.figma.com",
+    "canva": "https://www.canva.com",
+
+    # Developer, Knowledge & Coding Platforms
+    "github": "https://www.github.com",
+    "gitlab": "https://gitlab.com",
+    "bitbucket": "https://bitbucket.org",
     "stackoverflow": "https://stackoverflow.com",
     "wikipedia": "https://www.wikipedia.org",
-    "reddit": "https://www.reddit.com",
-    "twitter": "https://www.x.com",
-    "x": "https://www.x.com",
-    "linkedin": "https://www.linkedin.com",
-    "spotify": "https://open.spotify.com",
-    "netflix": "https://www.netflix.com",
+    "quora": "https://www.quora.com",
+    "medium": "https://medium.com",
+    "substack": "https://substack.com",
+    "leetcode": "https://leetcode.com",
+    "geeksforgeeks": "https://www.geeksforgeeks.org",
+    "gfg": "https://www.geeksforgeeks.org",
+    "hackerrank": "https://www.hackerrank.com",
+    "codechef": "https://www.codechef.com",
+    "codeforces": "https://codeforces.com",
+    "huggingface": "https://huggingface.co",
+    "kaggle": "https://www.kaggle.com",
+    "arxiv": "https://arxiv.org",
+    "npm": "https://www.npmjs.com",
+    "pypi": "https://pypi.org",
+    "vercel": "https://vercel.com",
+    "netlify": "https://www.netlify.com",
+
+    # E-Commerce, Food, Cricket & Lifestyle
     "amazon": "https://www.amazon.com",
+    "amazon india": "https://www.amazon.in",
+    "amazon in": "https://www.amazon.in",
+    "amazon.in": "https://www.amazon.in",
+    "flipkart": "https://www.flipkart.com",
+    "myntra": "https://www.myntra.com",
+    "swiggy": "https://www.swiggy.com",
+    "zomato": "https://www.zomato.com",
+    "cricbuzz": "https://www.cricbuzz.com",
+    "espn": "https://www.espn.com",
+    "espncricinfo": "https://www.espncricinfo.com",
+    "bookmyshow": "https://in.bookmyshow.com",
+
+    # Learning & Courses
+    "coursera": "https://www.coursera.org",
+    "udemy": "https://www.udemy.com",
+    "khan academy": "https://www.khanacademy.org",
+
+    # Generic Browser / Website Landing Targets
+    "browser": "https://www.google.com",
+    "the browser": "https://www.google.com",
+    "my browser": "https://www.google.com",
+    "website": "https://www.google.com",
+    "the website": "https://www.google.com",
+    "a website": "https://www.google.com",
+    "web": "https://www.google.com",
+    "homepage": "https://www.google.com",
+
 
     # User's Portfolio & GitHub Links
     "portfolio": "https://bishtprateek270-hue.github.io/Portfolio/",
@@ -142,10 +216,59 @@ DEFAULT_URL_MAP: Dict[str, str] = {
     "my github profile": "https://github.com/bishtprateek270-hue",
     "github profile": "https://github.com/bishtprateek270-hue",
     "my repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my repo": "https://github.com/bishtprateek270-hue?tab=repositories",
     "my repositories": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my repository": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my github repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my github repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my github repository": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my github repositories": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "github repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "github repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "github repository": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "github repositories": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my git repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "git repo": "https://github.com/bishtprateek270-hue?tab=repositories",
     "repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "repo": "https://github.com/bishtprateek270-hue?tab=repositories",
     "repositories": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "repository": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "folder of github repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "the folder of github repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "folder of github repo in browser": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "the folder of github repo in browser": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "folder of repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "the folder of repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "github repo folder": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "github folder": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "repo folder": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "the repo folder": "https://github.com/bishtprateek270-hue?tab=repositories",
     "my linkedin": "https://linkedin.com/in/prateek-singh-bisht",
+
+    # Generic Live Deployment Links
+    "deployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "deployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "the deployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "live deployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "live deployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "the live deployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "deployment link of the project": "https://3-d-ulpin-mvp.vercel.app/",
+    "deployment link of project": "https://3-d-ulpin-mvp.vercel.app/",
+    "live deployment link of the project": "https://3-d-ulpin-mvp.vercel.app/",
+    "live deployment link of project": "https://3-d-ulpin-mvp.vercel.app/",
+    "the deployment link of the project": "https://3-d-ulpin-mvp.vercel.app/",
+    "the live deployment link of the project": "https://3-d-ulpin-mvp.vercel.app/",
+    "ldeployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "ldeployment link of the project": "https://3-d-ulpin-mvp.vercel.app/",
+    "the ldeployment link of the project": "https://3-d-ulpin-mvp.vercel.app/",
+    "live link": "https://3-d-ulpin-mvp.vercel.app/",
+    "live link of the project": "https://3-d-ulpin-mvp.vercel.app/",
+    "live link of project": "https://3-d-ulpin-mvp.vercel.app/",
+    "live demo": "https://3-d-ulpin-mvp.vercel.app/",
+    "project deployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "project live link": "https://3-d-ulpin-mvp.vercel.app/",
+    "project demo": "https://3-d-ulpin-mvp.vercel.app/",
+    "project demo link": "https://3-d-ulpin-mvp.vercel.app/",
 
     # User's Projects (Demos & Repositories)
     "chitti": "https://github.com/bishtprateek270-hue/chitti-",
@@ -155,22 +278,49 @@ DEFAULT_URL_MAP: Dict[str, str] = {
 
     "3d-ulpin": "https://3-d-ulpin-mvp.vercel.app/",
     "3d ulpin": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d unplin": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d-unplin": "https://3-d-ulpin-mvp.vercel.app/",
     "3d usb": "https://3-d-ulpin-mvp.vercel.app/",
     "3d-ulpin demo": "https://3-d-ulpin-mvp.vercel.app/",
     "3d ulpin demo": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d unplin demo": "https://3-d-ulpin-mvp.vercel.app/",
     "3d usb demo": "https://3-d-ulpin-mvp.vercel.app/",
     "3d-ulpin website": "https://3-d-ulpin-mvp.vercel.app/",
     "3d ulpin website": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d unplin website": "https://3-d-ulpin-mvp.vercel.app/",
     "3d usb website": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin deployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin deployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin live": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin live link": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin live deployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin live deployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin ldeployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d ulpin ldeployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d-ulpin deployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d-ulpin deployment link": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d-ulpin live": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d-ulpin live link": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d unplin deployment": "https://3-d-ulpin-mvp.vercel.app/",
+    "3d unplin deployment link": "https://3-d-ulpin-mvp.vercel.app/",
     "3d-ulpin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d ulpin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d unplin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d-unplin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d usb repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d-ulpin repository": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d ulpin repository": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d unplin repository": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d usb repository": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d-ulpin github": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d ulpin github": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d unplin github": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
     "3d usb github": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "3d ulpin github folder": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "folder of github repo of 3d ulpin": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "folder of github repo for 3d ulpin": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "folder of 3d ulpin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
+    "folder of 3d unplin repo": "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP",
 
     "karigarai": "https://karigar-ai-amber.vercel.app",
     "karigar ai": "https://karigar-ai-amber.vercel.app",
@@ -596,27 +746,30 @@ class ResourceDiscovery:
     @classmethod
     def resolve_url(cls, target: str) -> Optional[str]:
         """
-        Intelligently resolves arbitrary user phrases (including 'repo of X', 'link of X',
-        'X ka repo', 'project X', etc.) to a verified URL from DEFAULT_URL_MAP or valid web scheme.
+        Intelligently resolves arbitrary user phrases (including 'website X', 'open X on browser',
+        'the website of X', 'X ka repo', 'project X', etc.) to a verified URL or valid web scheme.
         """
         if not target or not isinstance(target, str):
             return None
+        from src.utils.text import normalize_typos
         raw = target.strip()
-        clean = raw.lower()
+        normalized_raw = normalize_typos(raw)
+        clean = normalized_raw.lower().strip()
 
         # 1. Direct web scheme or domain check
         if clean.startswith("http://") or clean.startswith("https://"):
             return raw
         if clean.startswith("www."):
             return f"https://{raw}"
-        if re.search(r"\b[a-zA-Z0-9_\-]+\.(?:com|org|net|io|in|co|ai|app|dev|edu|gov|xyz|tech|tv)(?:/\S*)?$", clean):
-            return f"https://{raw}"
+        domain_pattern = r"^(?:https?://)?(?:[a-zA-Z0-9_\-]+\.)+[a-zA-Z]{2,}(?::\d+)?(?:/\S*)?$"
+        if re.search(domain_pattern, clean):
+            return f"https://{raw}" if not clean.startswith(("http://", "https://")) else raw
 
         # 2. Direct match in DEFAULT_URL_MAP
         if clean in DEFAULT_URL_MAP:
             return DEFAULT_URL_MAP[clean]
 
-        # 3. Handle Hinglish / Hindi postpositions: e.g. "3d ulpin ka repo", "shikshasetu ki link", "karigar ai ka github"
+        # 3. Handle Hinglish / Hindi postpositions: e.g. "3d ulpin ka repo", "flipkart ki website", "cricbuzz ki site"
         m_hinglish = re.search(r"(?i)^([a-z0-9_\-\s]+?)\s+(?:ka|ki|ke)\s+(repo|repository|github|git|link|website|site|url|demo|live)\b", clean)
         if m_hinglish:
             h_subj = m_hinglish.group(1).strip()
@@ -629,23 +782,121 @@ class ResourceDiscovery:
                 return DEFAULT_URL_MAP[cand_key]
             clean = f"{h_type} of {h_subj}"
 
-        # 4. Check if request is specifically asking for a REPO vs DEMO/WEBSITE
-        is_repo_request = bool(re.search(r"(?i)\b(?:repo|repository|github|git)\b", clean))
+        # 4. Check if request is asking for general user repos or profile
+        generic_repo_queries = {
+            "my repo", "repo", "my repos", "repos", "my repository", "repository",
+            "my repositories", "repositories", "my github repo", "my github repos",
+            "github repo", "github repos", "my github repository", "github repository",
+            "my git repo", "git repo", "my git repos", "git repos",
+            "my github", "github", "github profile", "my github profile",
+            "folder of github repo", "the folder of github repo",
+            "folder of github repo in browser", "the folder of github repo in browser",
+            "folder of repo", "the folder of repo", "github repo folder", "github folder",
+            "repo folder", "the repo folder",
+        }
+        if clean in generic_repo_queries:
+            if clean in ("my github", "github", "github profile", "my github profile"):
+                return "https://github.com/bishtprateek270-hue"
+            return "https://github.com/bishtprateek270-hue?tab=repositories"
 
-        # 5. Normalize target by stripping prefix noise:
-        # e.g. "repo of 3D USB", "the link of 3D-ULPIN", "link to karigar ai", "github of shikshasetu", "project shikshasetu"
-        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:repo|repository|github|git|link|live\s+link|demo\s+link|website|site|webpage|page|url|project|demo)\s+(?:of|for|to)\s+", "", clean).strip()
-        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:project)\s+", "", clean_norm).strip()
+        # 4B. Check if request is asking for general deployment link
+        generic_deploy_queries = {
+            "deployment", "deployment link", "the deployment link",
+            "live deployment", "live deployment link", "the live deployment link",
+            "deployment link of the project", "deployment link of project",
+            "live deployment link of the project", "live deployment link of project",
+            "the deployment link of the project", "the live deployment link of the project",
+            "ldeployment link", "ldeployment link of the project", "the ldeployment link of the project",
+            "live link", "live link of the project", "live link of project",
+            "live demo", "project deployment", "project live link", "project demo",
+            "the deployment link of the projects that i have created",
+            "deployment link of the projects that i have created",
+            "live deployment link of the projects that i have created",
+            "deployment link of the projects", "live deployment link of the projects",
+        }
+        if clean in generic_deploy_queries:
+            return "https://3-d-ulpin-mvp.vercel.app/"
+
+        # 4C. Check generic browser / website requests
+        generic_web_queries = {
+            "website", "the website", "a website", "websites", "the websites",
+            "browser", "the browser", "my browser", "web", "the web",
+            "internet", "homepage", "home page", "new tab", "browser tab",
+            "open website", "open the website", "open browser",
+        }
+        if clean in generic_web_queries:
+            return "https://www.google.com"
+
+        # 5. Check if request is specifically asking for a REPO vs DEPLOYMENT/DEMO vs WEBSITE
+        is_repo_request = bool(re.search(
+            r"(?i)\b(?:folder\s+of\s+github\s+repo|folder\s+of\s+repo|github\s+repo\s+folder|repo\s+folder|github\s+folder|github\s+repo|github\s+repository|github|repo|repository|git\s+repo|source\s+code)\b",
+            clean
+        ))
+        is_deployment_request = bool(re.search(
+            r"(?i)\b(?:live\s+deployment\s+link|deployment\s+link|live\s+deployment|deployment|ldeployment\s+link|ldeployment|live\s+link|live\s+url|live\s+site|live\s+demo|live\s+app|production\s+link|demo\s+link|live)\b",
+            clean
+        ))
+        is_website_request = bool(re.search(
+            r"(?i)\b(?:website|site|webpage|web|portal|page|in\s+browser|on\s+browser|browser\s+me|browser\s+mein|browser\s+par|browser\s+pe)\b",
+            clean
+        ))
+
+        # 6. Normalize target by stripping prefix noise:
+        clean_norm = clean
+        # Strip "browser me / on browser" prefixes
+        clean_norm = re.sub(r"(?i)^(?:browser\s+(?:me|mein|par|pe)\s+|(?:in|on)\s+(?:the\s+|my\s+)?browser\s+)", "", clean_norm).strip()
+        # Strip leading phrases like "website called X", "website of X", "folder of github repo of X"
+        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:folder\s+of\s+github\s+repo|folder\s+of\s+repo|github\s+repo\s+folder|repo\s+folder|github\s+folder|github\s+|git\s+)?(?:repo|repository|live\s+deployment\s+link|deployment\s+link|live\s+deployment|deployment|ldeployment\s+link|ldeployment|live\s+link|demo\s+link|website|site|webpage|page|url|project|demo)\s+(?:named|called|of|for|to|is|with\s+name|by\s+name)\s*", "", clean_norm).strip()
+        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:folder\s+of\s+github\s+repo|folder\s+of\s+repo|github\s+repo\s+folder|repo\s+folder|github\s+folder|github\s+|git\s+)?(?:repo|repository|live\s+deployment\s+link|deployment\s+link|live\s+deployment|deployment|ldeployment\s+link|ldeployment|website|site|webpage|page|web|portal|link|url)\s+", "", clean_norm).strip()
+        clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:project)\s+(?:named|called|of|for|to)?\s*", "", clean_norm).strip()
         clean_norm = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)", "", clean_norm).strip()
+        clean_norm = clean_norm.strip("\"' ")
 
-        # Strip suffix noise: e.g. "3d-ulpin repo", "karigar ai github", "shikshasetu project"
-        core_name = re.sub(r"(?i)\s+(?:repo|repository|github|git|link|live\s+link|demo\s+link|website|site|webpage|page|url|project|demo|live)$", "", clean_norm).strip()
+        # Check if clean_norm is already an explicit domain
+        if re.search(domain_pattern, clean_norm):
+            return f"https://{clean_norm}" if not clean_norm.startswith(("http://", "https://")) else clean_norm
+
+        # Strip suffix noise: e.g. "3d-ulpin repo", "karigar ai github", "3d ulpin deployment link", "cricbuzz on browser", "flipkart website"
+        core_name = re.sub(r"(?i)\s+(?:repo|repository|github|git|folder\s+of\s+github\s+repo|github\s+folder|live\s+deployment\s+link|deployment\s+link|live\s+deployment|deployment|ldeployment\s+link|ldeployment|link|live\s+link|demo\s+link|website|site|webpage|page|portal|url|project|demo|live|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe))$", "", clean_norm).strip().strip("\"' ")
+        core_name = re.sub(r"(?i)^(?:of\s+the\s+projects?\s+that\s+i\s+(?:have\s+)?created|of\s+the\s+project|of\s+project|of\s+the\s+app|of\s+app|of\s+|for\s+)\s*", "", core_name).strip()
+
+        # Check if core_name is an explicit domain
+        if re.search(domain_pattern, core_name):
+            return f"https://{core_name}" if not core_name.startswith(("http://", "https://")) else core_name
+
+        # Check clean_norm and core_name for generic repo keywords after stripping
+        if not core_name or core_name in generic_repo_queries or core_name in ("project", "the project", "my project", "app", "the app", "projects", "my projects"):
+            if is_deployment_request:
+                return "https://3-d-ulpin-mvp.vercel.app/"
+            if is_repo_request:
+                return "https://github.com/bishtprateek270-hue?tab=repositories"
+            if is_website_request:
+                return "https://www.google.com"
+
+        # If deployment link is requested, prioritize demo/deployment keys
+        if is_deployment_request:
+            deploy_candidates = [
+                f"{core_name} deployment link",
+                f"{core_name} deployment",
+                f"{core_name} live link",
+                f"{core_name} live",
+                f"{core_name} demo",
+                f"{core_name} website",
+                core_name,
+                f"{core_name.replace('-', ' ')} demo",
+                f"{core_name.replace(' ', '-')} demo",
+            ]
+            for cand in deploy_candidates:
+                if cand and cand in DEFAULT_URL_MAP:
+                    return DEFAULT_URL_MAP[cand]
 
         # If repo is specifically requested, prioritize repo keys
         if is_repo_request:
             repo_candidates = [
                 f"{core_name} repo",
                 f"{clean_norm} repo" if clean_norm != core_name else None,
+                f"{core_name.replace('-', ' ')} repo",
+                f"{core_name.replace(' ', '-')} repo",
                 f"{core_name} repository",
                 f"{core_name} github",
             ]
@@ -653,13 +904,13 @@ class ResourceDiscovery:
                 if cand and cand in DEFAULT_URL_MAP:
                     return DEFAULT_URL_MAP[cand]
 
-        # Check if clean or core_name is known to be a desktop app (and not explicitly asking for repo/link)
-        if not is_repo_request and not bool(re.search(r"(?i)\b(?:link|website|site|url|demo|live)\b", clean)):
+        # Check if clean or core_name is known to be a desktop app (and not explicitly asking for repo/link/website)
+        if not is_repo_request and not is_website_request and not bool(re.search(r"(?i)\b(?:link|website|site|url|demo|live)\b", clean)):
             if clean in DEFAULT_APP_MAP or core_name in DEFAULT_APP_MAP or clean in ("vscode", "vs code", "code", "notepad", "calculator", "calc", "cmd", "terminal", "powershell", "paint", "explorer"):
                 return None
 
-        # Check clean_norm and core_name directly
-        for cand in [clean_norm, core_name]:
+        # Check clean_norm and core_name directly in DEFAULT_URL_MAP
+        for cand in [clean_norm, core_name, core_name.replace('-', ' '), core_name.replace(' ', '-')]:
             if cand in DEFAULT_URL_MAP:
                 return DEFAULT_URL_MAP[cand]
 
@@ -673,27 +924,41 @@ class ResourceDiscovery:
             if cand in DEFAULT_URL_MAP:
                 return DEFAULT_URL_MAP[cand]
 
-        # 6. Fuzzy matching on keys (strict cutoff to avoid matching vscode to discord)
+        # 7. Fuzzy matching on keys (strict cutoff to avoid matching vscode to discord)
         all_keys = list(DEFAULT_URL_MAP.keys())
         if is_repo_request:
-            m = difflib.get_close_matches(f"{core_name} repo", all_keys, n=1, cutoff=0.75)
+            m = difflib.get_close_matches(f"{core_name} repo", all_keys, n=1, cutoff=0.7)
             if m:
                 return DEFAULT_URL_MAP[m[0]]
+            m_core = difflib.get_close_matches(f"{core_name}", all_keys, n=1, cutoff=0.7)
+            if m_core:
+                if f"{m_core[0]} repo" in DEFAULT_URL_MAP:
+                    return DEFAULT_URL_MAP[f"{m_core[0]} repo"]
+                return DEFAULT_URL_MAP[m_core[0]]
 
         m = difflib.get_close_matches(core_name, all_keys, n=1, cutoff=0.82)
         if m:
             return DEFAULT_URL_MAP[m[0]]
 
+        # 8. Dynamic Website Target Resolution:
+        # If the user explicitly commanded to open a website or browser ("open website X", "open X on browser", "X website kholo")
+        # and core_name is a single alphanumeric brand/service name (e.g. "cricbuzz", "nytimes", "flipkart"):
+        if is_website_request and re.match(r"^[a-zA-Z0-9_\-]+$", core_name) and len(core_name) >= 2:
+            return f"https://www.{core_name}.com"
+
         return None
 
     @classmethod
     def is_url(cls, target: str) -> bool:
-        if cls.resolve_url(target) is not None:
-            return True
+        if not target or not isinstance(target, str):
+            return False
         clean = target.strip().lower()
         if clean.startswith("http://") or clean.startswith("https://") or clean.startswith("www."):
             return True
-        if re.search(r"\b[a-zA-Z0-9_\-]+\.(?:com|org|net|io|in|co|ai|app|dev|edu|gov|xyz|tech|tv)(?:/\S*)?$", clean):
+        domain_pattern = r"^(?:https?://)?(?:[a-zA-Z0-9_\-]+\.)+[a-zA-Z]{2,}(?::\d+)?(?:/\S*)?$"
+        if re.search(domain_pattern, clean):
+            return True
+        if cls.resolve_url(target) is not None:
             return True
         return False
 
@@ -707,5 +972,23 @@ class ResourceDiscovery:
             return clean
         if clean.lower().startswith("www."):
             return f"https://{clean}"
-        return f"https://{clean}"
+        domain_pattern = r"^(?:https?://)?(?:[a-zA-Z0-9_\-]+\.)+[a-zA-Z]{2,}(?::\d+)?(?:/\S*)?$"
+        if re.search(domain_pattern, clean.lower()):
+            return f"https://{clean}"
+
+        # If asking for a repo/github, open repositories list or search GitHub
+        if re.search(r"(?i)\b(?:repo|repository|github|git)\b", clean):
+            core = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:github\s+|git\s+)?(?:repo|repository)\s+(?:named|called|of|for|to)?\s*", "", clean).strip()
+            if core and core != clean:
+                return f"https://github.com/bishtprateek270-hue?tab=repositories&q={urllib.parse.quote_plus(core)}"
+            return "https://github.com/bishtprateek270-hue?tab=repositories"
+
+        # If single alphanumeric token without spaces, construct standard domain
+        clean_lower = clean.lower()
+        if re.match(r"^[a-zA-Z0-9_\-]+$", clean_lower) and len(clean_lower) >= 2:
+            return f"https://www.{clean_lower}.com"
+
+        # Fallback to web search
+        return f"https://www.google.com/search?q={urllib.parse.quote_plus(clean)}"
+
 

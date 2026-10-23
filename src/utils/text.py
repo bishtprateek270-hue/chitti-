@@ -105,8 +105,11 @@ def normalize_typos(text: str) -> str:
     normalized = re.sub(r"(?i)\b(?:gmaill|gmai|gmil|g\s*mail)\b", "gmail", normalized)
     normalized = re.sub(r"(?i)\b(?:spotfiy|spoty|spotfy|spotifi)\b", "spotify", normalized)
     normalized = re.sub(r"(?i)\b(?:telegrram|telegrm|tg)\b", "telegram", normalized)
-    normalized = re.sub(r"(?i)\b(?:disocrd|disord|dc)\b", "discord", normalized)
-    normalized = re.sub(r"(?i)\b(?:chatgbt|chat\s+gpt|cgtp|chatgpd)\b", "chatgpt", normalized)
+    # GitHub & Repository typos
+    normalized = re.sub(r"(?i)\b(?:guthub|gethub|githun|githib|git\s*hub|githhub|gthub|gihub)\b", "github", normalized)
+    normalized = re.sub(r"(?i)\b(?:reposetory|repostory|reopsitory|repostories|reposetories|repositry|repositries)\b", "repository", normalized)
+    normalized = re.sub(r"(?i)\b(?:reop|repp|repoo)\b", "repo", normalized)
+    normalized = re.sub(r"(?i)\bunplin\b", "ulpin", normalized)
     
     return normalized
 

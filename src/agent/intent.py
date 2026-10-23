@@ -132,8 +132,9 @@ class ActionIntentAnalyzer:
         lower = normalized.lower()
 
         # Clean conversational prefixes and trailing fillers
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
-        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
+        clean = re.sub(r"^(?:chitti\b,?\s*|hey chitti\b,?\s*|hd\b,?\s*|h\.d\.\s*|ac\b,?\s*|a\.c\.\s*|hey d\b,?\s*|hey dee\b,?\s*|bhai\b,?\s*|bro\b,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)^(?:browser\s+(?:me|mein|par|pe)\s+|(?:in|on)\s+(?:the\s+|my\s+)?browser\s+)", "", clean).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe)|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # -------------------------------------------------------------
@@ -144,19 +145,21 @@ class ActionIntentAnalyzer:
             sem = NaturalIntentEngine.analyze(user_text)
 
             if sem.intent == IntentType.OPEN_PROJECT:
-                proj_name = sem.target or "Project"
-                proj_path = sem.parameters.get("project_path") or proj_name
-                return ActionIntent(
-                    intent=ActionIntentType.OPEN_APPLICATION,
-                    goal=sem.goal,
-                    channel="Desktop",
-                    application="Visual Studio Code",
-                    target=proj_name,
-                    destination=str(proj_path),
-                    parameters={"application": "Visual Studio Code", "target": proj_name, "path": str(proj_path)},
-                    execution_required=True,
-                    verification_required=True,
-                )
+                is_web_or_repo = bool(re.search(r"(?i)\b(?:repo|repository|github|git|deployment|ldeployment|live|browser|website|link|url|vercel)\b", clean_lower))
+                if not is_web_or_repo:
+                    proj_name = sem.target or "Project"
+                    proj_path = sem.parameters.get("project_path") or proj_name
+                    return ActionIntent(
+                        intent=ActionIntentType.OPEN_APPLICATION,
+                        goal=sem.goal,
+                        channel="Desktop",
+                        application="Visual Studio Code",
+                        target=proj_name,
+                        destination=str(proj_path),
+                        parameters={"application": "Visual Studio Code", "target": proj_name, "path": str(proj_path)},
+                        execution_required=True,
+                        verification_required=True,
+                    )
 
             if sem.intent == IntentType.DEBUG_CODE:
                 return ActionIntent(
@@ -372,8 +375,8 @@ class ActionIntentAnalyzer:
         # -------------------------------------------------------------
         is_media = bool(
             re.search(r"(?i)\b(?:play\s+.*(?:song|music|track)|play\s+.*on\s+youtube|play\s+.*on\s+yt|youtube\s+(?:pe|par).*chalao|yt\s+(?:pe|par).*chalao|gaana\s+chalao|search\s+youtube\s+for|search\s+yt\s+for)\b", clean) or
-            ("youtube" in lower and any(w in lower for w in ["play", "search", "song", "gaana", "music"])) or
-            ("yt" in lower and any(w in lower for w in ["play", "search", "song", "gaana", "music"]))
+            ("youtube" in lower and any(w in lower for w in ["play", "song", "gaana", "music"])) or
+            (bool(re.search(r"(?i)\byt\b", lower)) and any(w in lower for w in ["play", "song", "gaana", "music"]))
         )
         if is_media:
             m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+(?:youtube|yt)\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+(?:youtube|yt)|(?:youtube|yt)\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|search\s+(?:youtube|yt)\s+for\s+(.*)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
@@ -649,6 +652,36 @@ class ActionIntentAnalyzer:
             )
 
         # -------------------------------------------------------------
+        # 7B. EXPLICIT VS CODE / CODE PROJECT OPENING
+        # -------------------------------------------------------------
+        m_vscode_proj = (
+            re.search(r"(?i)\bopen\s+(?:vs\s*code|vscode)\s+(?:and|aur)\s+open\s+(?:my\s+)?(.+?)\s*$", clean) or
+            re.search(r"(?i)\bopen\s+(?:my\s+)?(.+?)\s+(?:in|using|with)\s+(?:vs\s*code|vscode|code)\s*$", clean) or
+            re.search(r"(?i)\bmera\s+(?:bhi\s+)?(.+?)\s*(?:ko\s+)?vs\s*code\s+me(?:in)?\s+kholo\s*$", clean)
+        )
+        if m_vscode_proj:
+            raw_pname = m_vscode_proj.group(1).strip()
+            clean_pname = re.sub(r"(?i)\b(?:project|repo|repository|codebase|workspace)\b", "", raw_pname).strip()
+            clean_pname = re.sub(r"(?i)\b(?:my|the|a|an)\b", "", clean_pname).strip()
+            if not clean_pname or clean_pname.lower() in ("repo", "repository", "project", "codebase", "workspace"):
+                clean_pname = "Chitti"
+            from src.agent.projects import ProjectRegistry
+            from pathlib import Path
+            pr = ProjectRegistry()
+            proj_path = pr.get_project_path(clean_pname) or str(Path.cwd().resolve())
+            return ActionIntent(
+                intent=ActionIntentType.OPEN_APPLICATION,
+                goal=f"Open {clean_pname.title()} in Visual Studio Code",
+                channel="Desktop",
+                application="Visual Studio Code",
+                target=clean_pname.title(),
+                destination=proj_path,
+                parameters={"application": "vscode", "target": clean_pname.title(), "path": proj_path},
+                execution_required=True,
+                verification_required=True,
+            )
+
+        # -------------------------------------------------------------
         # 8. DYNAMIC RESOURCE & APPLICATION OPENING ("open X", "launch X", "start X", "X kholo", "X chalao")
         # -------------------------------------------------------------
         # English verb-first pattern: "open X", "launch X", "start X", "run X"
@@ -660,6 +693,10 @@ class ActionIntentAnalyzer:
         if m_open:
             raw_target = m_open.group(1).strip().rstrip(".!? \t\n")
             raw_target = re.sub(r"(?i)^(?:application|app|the|my|a|an)\s+", "", raw_target).strip()
+            # Also clean website / site prefixes and browser suffixes from raw_target
+            raw_target = re.sub(r"(?i)^(?:website\s+(?:called|named|of|for|to|is)?|site\s+(?:called|named|of|for|to|is)?|webpage\s+(?:called|named|of|for|to|is)?|web\s+|page\s+(?:of|for)?|url\s+(?:of|for)?|link\s+(?:of|for)?|portal\s+(?:of|for)?)\s*", "", raw_target).strip()
+            raw_target = re.sub(r"(?i)\s+(?:website|site|webpage|page|portal|link|url|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe))$", "", raw_target).strip()
+            raw_target = re.sub(r"(?i)^(?:the|my|a|an)\s+", "", raw_target).strip()
 
             # Reject compound instructions that belong to multi-step planning or project generation
             if re.search(r"(?i)\b(?:and|aur|with|to|saying|build|create|make|develop|write|run|search|type|implement|banao|likho)\b", raw_target):
@@ -667,11 +704,14 @@ class ActionIntentAnalyzer:
 
         if m_open and raw_target:
             # Check if this target is explicitly a folder / directory
+            is_folder_of_repo_or_web = bool(re.search(r"(?i)\b(?:github|repo|repository|browser|deployment|ldeployment|live|link|url|vercel|website|site)\b", clean_lower))
             is_explicit_folder = (
-                "folder" in clean_lower
-                or "directory" in clean_lower
-                or raw_target.lower().strip() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home", "explorer", "file explorer"]
-                or raw_target.startswith(("/", "\\", "C:", "./", "../"))
+                not is_folder_of_repo_or_web and (
+                    "folder" in clean_lower
+                    or "directory" in clean_lower
+                    or raw_target.lower().strip() in ["downloads", "documents", "desktop", "pictures", "videos", "music", "home", "explorer", "file explorer"]
+                    or raw_target.startswith(("/", "\\", "C:", "./", "../"))
+                )
             )
             if is_explicit_folder:
                 f_name = re.sub(r"(?i)\b(?:folder|directory|a|an|the|my|this|some)\b", "", raw_target).strip()
@@ -691,16 +731,34 @@ class ActionIntentAnalyzer:
             # Check if this target is a URL / Website / Web Service / Repo / Project link
             from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
             clean_target_lower = raw_target.lower()
-            resolved_url = ResourceDiscovery.resolve_url(raw_target)
+            resolved_url = ResourceDiscovery.resolve_url(raw_target) or ResourceDiscovery.resolve_url(clean)
+            if not resolved_url:
+                alt_target = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:folder\s+of\s+github\s+repo|folder\s+of\s+repo|github\s+repo\s+folder|repo\s+folder|github\s+folder|github\s+|git\s+)?(?:repo|repository|project|live\s+deployment\s+link|deployment\s+link|live\s+deployment|deployment|ldeployment\s+link|ldeployment|live\s+link|demo\s+link)(?:\s+(?:named|called|of|for|to|is))?\b\s*", "", raw_target).strip()
+                if alt_target and alt_target != raw_target:
+                    resolved_url = ResourceDiscovery.resolve_url(alt_target)
+
             is_web_or_repo = (
                 resolved_url is not None
                 or ResourceDiscovery.is_url(raw_target)
                 or clean_target_lower in DEFAULT_URL_MAP
-                or any(w in clean_lower for w in ["browser", "website", "site", "web", "repo", "repository", "github", "git", "portfolio", "link", "url", "demo", "live"])
+                or any(w in clean_lower for w in ["browser", "website", "site", "web", "repo", "repository", "github", "git", "portfolio", "link", "url", "demo", "live", "deployment", "ldeployment", "vercel"])
             )
             if is_web_or_repo:
                 target_url = resolved_url or ResourceDiscovery.to_url(raw_target)
-                site_name = raw_target.title()
+                site_name = raw_target.title() if raw_target.lower() not in ("website", "the website", "browser", "the browser", "web") else "Browser"
+                if resolved_url:
+                    clean_raw = re.sub(r"(?i)\s+(?:in\s+browser|in\s+my\s+browser|browser\s+me(?:in)?)$", "", raw_target).strip()
+                    clean_display = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:folder\s+of\s+(?:github\s+)?(?:repo|repository)|(?:github\s+)?repo\s+folder|github\s+folder)(?:\s+(?:named|called|of|for|to|is))?\s*(?:the\s+project|project|the\s+app|app)?\s*", "", clean_raw).strip()
+                    clean_display = re.sub(r"(?i)^(?:the\s+|my\s+|a\s+|an\s+)?(?:github\s+|git\s+)?(?:repo|repository|project|live\s+deployment\s+link|deployment\s+link|live\s+deployment|deployment|ldeployment\s+link|ldeployment|live\s+link|demo\s+link)(?:\s+(?:named|called|of|for|to|is))?\s*(?:the\s+project|project|the\s+app|app)?\s*", "", clean_display).strip()
+                    clean_display = re.sub(r"(?i)\s*\b(?:github\s+|git\s+)?(?:repo|repository|project|live\s+deployment\s+link|deployment\s+link|live\s+deployment|deployment|ldeployment\s+link|ldeployment|live\s+link|demo\s+link|live|demo)\b\s*$", "", clean_display).strip()
+                    clean_display = re.sub(r"(?i)^(?:the|my|a|an)\s+", "", clean_display).strip()
+                    clean_display = re.sub(r"(?i)^(?:of\s+the\s+projects?\s+that\s+i\s+(?:have\s+)?created|of\s+the\s+project|of\s+project|of\s+the\s+app|of\s+app|of\s+|for\s+)\s*", "", clean_display).strip()
+                    if any(w in clean_lower for w in ["deployment", "live link", "live site", "live demo", "ldeployment"]):
+                        site_name = f"{clean_display.title()} Live Deployment" if clean_display and clean_display.lower() not in ("project", "app", "the project", "the live deployment", "live deployment", "the deployment link", "deployment link") else "Project Live Deployment"
+                    elif clean_display and clean_display.lower() not in ("repo", "repository", "project", "folder", "of github repo", "github repo", "folder of repository", "folder of", "folder of repo", ""):
+                        site_name = f"{clean_display.title()} Repository" if any(w in clean_lower for w in ["repo", "repository", "github", "git"]) else clean_display.title()
+                    elif any(w in clean_lower for w in ["repo", "repository", "github", "git"]):
+                        site_name = "My GitHub Repositories"
                 return ActionIntent(
                     intent=ActionIntentType.OPEN_URL,
                     goal=f"Open {site_name} in browser",

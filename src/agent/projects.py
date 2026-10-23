@@ -62,10 +62,16 @@ class ProjectRegistry:
         if clean_name in self.projects:
             return self.projects[clean_name]
         
-        # Substring / fuzzy match
+        # Substring match
         for key, p in self.projects.items():
             if clean_name in key or key in clean_name:
                 return p
+
+        # Difflib close match in registered projects
+        import difflib
+        matches = difflib.get_close_matches(clean_name, list(self.projects.keys()), n=1, cutoff=0.7)
+        if matches:
+            return self.projects[matches[0]]
 
         # Check if project folder exists in user's home or standard development directories
         user_home = Path.home()
@@ -82,6 +88,32 @@ class ProjectRegistry:
                 resolved = str(cand.resolve())
                 self.register_project(name, resolved)
                 return resolved
+
+        # Scan subdirectories of desktop and standard bases for fuzzy match
+        search_bases = [
+            user_home / "OneDrive" / "Desktop",
+            user_home / "Desktop",
+            user_home / "Projects",
+            user_home / "source" / "repos",
+            user_home / "Documents",
+        ]
+        for base in search_bases:
+            if not base.exists():
+                continue
+            try:
+                for child in base.iterdir():
+                    if child.is_dir():
+                        c_lower = child.name.lower()
+                        if c_lower == clean_name or clean_name in c_lower or c_lower in clean_name:
+                            resolved = str(child.resolve())
+                            self.register_project(name, resolved)
+                            return resolved
+                        if difflib.SequenceMatcher(None, clean_name, c_lower).ratio() > 0.75:
+                            resolved = str(child.resolve())
+                            self.register_project(name, resolved)
+                            return resolved
+            except Exception:
+                continue
 
         return None
 

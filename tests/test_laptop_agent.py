@@ -252,12 +252,16 @@ def test_terminal_command_execution(tmp_path):
 
 def test_browser_controller():
     browser = BrowserController()
-    with patch("webbrowser.open", return_value=True) as mock_open:
+    with patch.object(browser, "resolve_browser_executable", return_value=None), \
+         patch("platform.system", return_value="Linux"), \
+         patch("webbrowser.open", return_value=True) as mock_open:
         ok = browser.open_url("https://www.python.org")
         assert ok is True
         mock_open.assert_called_once()
 
-    with patch("webbrowser.open", return_value=True) as mock_search:
+    with patch.object(browser, "resolve_browser_executable", return_value=None), \
+         patch("platform.system", return_value="Linux"), \
+         patch("webbrowser.open", return_value=True) as mock_search:
         ok_search = browser.search_web("Python documentation")
         assert ok_search is True
         mock_search.assert_called_once()
@@ -340,7 +344,9 @@ def test_plan_notepad_and_type(tmp_path):
 
 
 def test_plan_and_execute_youtube_song(agent_manager):
-    with patch("webbrowser.open", return_value=True) as mock_open:
+    with patch.object(BrowserController, "resolve_browser_executable", return_value=None), \
+         patch("platform.system", return_value="Linux"), \
+         patch("webbrowser.open", return_value=True) as mock_open:
         handled, msg, result = agent_manager.handle_command("play a Sonu Nigam song", lang="en")
         assert handled is True
         assert "youtube" in msg.lower()
@@ -353,7 +359,9 @@ def test_plan_and_execute_youtube_song(agent_manager):
 
 
 def test_plan_and_execute_youtube_shreya_ghosal_normalization(agent_manager):
-    with patch("webbrowser.open", return_value=True) as mock_open:
+    with patch.object(BrowserController, "resolve_browser_executable", return_value=None), \
+         patch("platform.system", return_value="Linux"), \
+         patch("webbrowser.open", return_value=True) as mock_open:
         handled, msg, result = agent_manager.handle_command("play a shreya ghosal song", lang="en")
         assert handled is True
         assert "shreya ghoshal" in msg.lower()
@@ -614,4 +622,109 @@ def test_coding_agent_test_h_unseen_task_sha256_duplicates(agent_manager):
     content = f.read_text(encoding="utf-8")
     assert "hashlib.sha256" in content
     assert "find_duplicates" in content
+
+
+# -------------------------------------------------------------
+# 9. REPOSITORY AND CODEBASE OPENING TESTS
+# -------------------------------------------------------------
+
+def test_open_repository_web_commands(agent_manager):
+    """Verifies that repository opening commands resolve to correct GitHub URLs."""
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+
+    # 1. Generic repo
+    intent = ActionIntentAnalyzer.extract_intent("open my repo")
+    assert intent.intent == ActionIntentType.OPEN_URL
+    assert intent.destination == "https://github.com/bishtprateek270-hue?tab=repositories"
+
+    # 2. Typo: "guthub repo named 3d ulpin"
+    intent_typo = ActionIntentAnalyzer.extract_intent("open my guthub repo named 3d ulpin")
+    assert intent_typo.intent == ActionIntentType.OPEN_URL
+    assert intent_typo.destination == "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP"
+    assert "3D Ulpin" in intent_typo.target
+
+    # 3. Phrasing variations
+    for query in ["open repo named 3d ulpin", "open 3d ulpin repo", "open 3d unplin repo"]:
+        res = ActionIntentAnalyzer.extract_intent(query)
+        assert res.intent == ActionIntentType.OPEN_URL
+        assert res.destination == "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP"
+
+    # 4. Chitti repo
+    intent_chitti = ActionIntentAnalyzer.extract_intent("open chitti repo")
+    assert intent_chitti.intent == ActionIntentType.OPEN_URL
+    assert intent_chitti.destination == "https://github.com/bishtprateek270-hue/chitti-"
+
+
+def test_open_repository_vscode_commands(agent_manager):
+    """Verifies that 'open repo in vs code' resolves to local project and launches VS Code."""
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+
+    intent_my_repo = ActionIntentAnalyzer.extract_intent("open my repo in vs code")
+    assert intent_my_repo.intent == ActionIntentType.OPEN_APPLICATION
+    assert intent_my_repo.application == "Visual Studio Code"
+    assert "chitti" in intent_my_repo.destination.lower()
+
+    intent_ulpin = ActionIntentAnalyzer.extract_intent("open 3d ulpin in vs code")
+    assert intent_ulpin.intent == ActionIntentType.OPEN_APPLICATION
+    assert intent_ulpin.application == "Visual Studio Code"
+    assert "3d unplin" in intent_ulpin.destination.lower() or "3d ulpin" in intent_ulpin.destination.lower()
+
+
+def test_open_folder_of_github_repo_in_browser(agent_manager):
+    """Verifies queries asking for 'folder of github repo' open the repo in browser, NOT VS Code or local explorer."""
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+
+    for query in [
+        "open the folder of github repo in browser",
+        "open folder of github repo",
+        "open the folder of github repo",
+    ]:
+        intent = ActionIntentAnalyzer.extract_intent(query)
+        assert intent.intent == ActionIntentType.OPEN_URL
+        assert intent.destination == "https://github.com/bishtprateek270-hue?tab=repositories"
+
+    # Specific repo folder
+    intent_ulpin_folder = ActionIntentAnalyzer.extract_intent("open folder of github repo of 3d ulpin")
+    assert intent_ulpin_folder.intent == ActionIntentType.OPEN_URL
+    assert intent_ulpin_folder.destination == "https://github.com/harsh3011dev-oops/3D-ULPIN-MVP"
+
+
+def test_open_project_deployment_links_in_browser(agent_manager):
+    """Verifies queries asking for deployment/live links open the hosted site in browser."""
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+
+    # Generic deployment links for current/active project
+    for query in [
+        "open the deployment link of the project",
+        "open live deployment link of the project",
+        "open ldeployment link of the project",
+        "open deployment link",
+        "open live deployment link",
+    ]:
+        intent = ActionIntentAnalyzer.extract_intent(query)
+        assert intent.intent == ActionIntentType.OPEN_URL
+        assert intent.destination == "https://3-d-ulpin-mvp.vercel.app/"
+
+    # Named project deployments
+    ulpin_queries = [
+        "open the deployment link of 3d ulpin",
+        "open live deployment link of 3d ulpin",
+        "open 3d ulpin live deployment link",
+        "open 3d ulpin deployment",
+    ]
+    for q in ulpin_queries:
+        intent = ActionIntentAnalyzer.extract_intent(q)
+        assert intent.intent == ActionIntentType.OPEN_URL
+        assert intent.destination == "https://3-d-ulpin-mvp.vercel.app/"
+
+    # Karigar AI & DocForensics
+    intent_karigar = ActionIntentAnalyzer.extract_intent("open deployment link of karigar ai")
+    assert intent_karigar.intent == ActionIntentType.OPEN_URL
+    assert intent_karigar.destination == "https://karigar-ai-amber.vercel.app"
+
+    intent_docforensics = ActionIntentAnalyzer.extract_intent("open deployment link of docforensics")
+    assert intent_docforensics.intent == ActionIntentType.OPEN_URL
+    assert intent_docforensics.destination == "https://doc-forensics-ai.vercel.app"
+
+
 

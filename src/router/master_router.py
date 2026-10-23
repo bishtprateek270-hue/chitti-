@@ -137,6 +137,9 @@ class MasterRouter:
         (r"(?i)\b(?:open\s+.*(?:whatsapp|telegram|slack|discord|gmail|email|messages?)|whatsapp\s+(?:web\s+)?(?:kholo|open|chalao)|(?:message|msg|send\s+message)\s+.*to\s+.*|.*ko\s+.*(?:message|bhejo|msg))\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|x\.com|github|wikipedia|amazon|flipkart|netflix|spotify|chatgpt|youtube|yt)\b.*(?:kholo|open|chalao|visit|message|send|search|browse|play)", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+.*(?:whatsapp|telegram|slack|discord|gmail|reddit|twitter|github|wikipedia|amazon|netflix|spotify|chatgpt|youtube|yt|browser|web)\b", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:open|launch|visit|navigate|go\s+to|kholo|chalao)\s+.*(?:website|site|webpage|web|portal|browser|link|url)\b", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:browser\s+(?:me|mein|par|pe)|on\s+browser|in\s+browser)\b.*(?:open|kholo|chalao|visit|browse|go\s+to)", MasterRoute.BROWSER_TASK),
+        (r"(?i)\b(?:website|site)\s+.*(?:kholo|open|chalao)", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:search\s+(?:for\s+)?.*on\s+(?:google|chrome|browser|bing|youtube|web)|open\s+(?:chrome|browser|edge)\s+(?:and|aur)\s+search(?:\s+for)?\s+.*)\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:open|launch|visit|navigate|go\s+to)\s+(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)(?:\s+in\s+browser)?\b", MasterRoute.BROWSER_TASK),
         (r"(?i)\b(?:https?://\S+|www\.\S+|[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,}(?:/\S*)?)\s+(?:kholo|open|chalao|visit|open\s+karo)\b", MasterRoute.BROWSER_TASK),
@@ -220,8 +223,9 @@ class MasterRouter:
         lower = normalized_raw.lower()
 
         # Clean invocation prefix & trailing filler
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|hd,?\s*|h\.d\.,?\s*|ac,?\s*|a\.c\.,?\s*|hey d,?\s*|hey dee,?\s*|bhai,?\s*|bro,?\s*|please\s+|can\s+you\s+)", "", normalized_raw, flags=re.IGNORECASE).strip()
-        clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
+        clean = re.sub(r"^(?:chitti\b,?\s*|hey chitti\b,?\s*|hd\b,?\s*|h\.d\.\s*|ac\b,?\s*|a\.c\.\s*|hey d\b,?\s*|hey dee\b,?\s*|bhai\b,?\s*|bro\b,?\s*|please\s+|can\s+you\s+)", "", normalized_raw, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"(?i)^(?:browser\s+(?:me|mein|par|pe)\s+|(?:in|on)\s+(?:the\s+|my\s+)?browser\s+)", "", clean).strip()
+        clean = re.sub(r"(?i)\s+(?:for\s+me|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe)|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
 
         # 0. Check for Immediate Sleep / Stop / Silence Commands

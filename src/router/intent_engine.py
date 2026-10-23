@@ -267,7 +267,8 @@ class NaturalIntentEngine:
         # -------------------------------------------------------------
         # 2. CONTEXTUAL PROJECT OPENING ("Yaar, kal jo Python project banaya tha, usko kholna")
         # -------------------------------------------------------------
-        is_open_past_project = (
+        is_web_or_repo_query = bool(re.search(r"(?i)\b(?:repo|repository|github|git|deployment|ldeployment|live|browser|website|link|url|vercel)\b", clean_lower))
+        is_open_past_project = not is_web_or_repo_query and (
             bool(re.search(r"(?i)\b(?:kal|pichla|purana|previous|yesterday|earlier|last)\b.*(?:project|code|work)\b.*(?:kholna|kholo|open|chalao|dikhao)", clean_lower))
             or bool(re.search(r"(?i)\b(?:project|code)\b.*(?:banaya\s+tha|bana\s+tha|created|worked\s+on)\b.*(?:kholna|kholo|open|bring\s+up)", clean_lower))
             or bool(re.search(r"(?i)\b(?:open|bring\s+up|load)\s+(?:that|the|my)?\s*(?:recent|previous|yesterday'?s?|last|same)\s+(?:project|code)\b", clean_lower))
