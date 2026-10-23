@@ -396,8 +396,13 @@ class PhraseMatcher:
             phrase = wake_match.group(0).lower()
             idx = cleaned.find(phrase)
             prefix = cleaned[:idx].strip()
-            # If preceded by natural conversational greeting or filler ('hey', 'he', 'suno', etc.)
-            if prefix in ("", "hey", "he", "hello", "hi", "ok", "arre", "oye", "suno", "yo"):
+            prefix_words = prefix.split() if prefix else []
+            # Allow clean start or natural conversational lead-ins (up to 2 words before wake phrase)
+            is_valid_prefix = (
+                len(prefix_words) == 0
+                or (len(prefix_words) <= 2 and not any(w in ("don't", "dont", "not", "never", "mat", "bina") for w in prefix_words))
+            )
+            if is_valid_prefix:
                 tail = cleaned[idx + len(phrase):].strip()
                 conf = 1.0 if not tail else 0.95
                 log_debug(f"[CONTROL] Match WAKE: '{phrase}', tail='{tail}' (Priority 3)")

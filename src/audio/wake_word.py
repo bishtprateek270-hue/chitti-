@@ -324,19 +324,20 @@ class WakeWordDetector:
                         confidence = phrase_res.confidence
                         extracted_command = phrase_res.extracted_tail
                     else:
-                        # Strictly require that the wake word was spoken FIRST (at start of speech or after greeting)
+                        # Fallback keyword match near beginning of snippet (within first 2 words)
                         import re
                         for kw in self.keywords:
-                            pattern = r"^(?:hey|he|hello|hi|ok|arre|oye|suno|yo)?\s*\b" + re.escape(kw) + r"\b"
-                            match = re.search(pattern, snippet_text)
+                            match = re.search(r"\b" + re.escape(kw) + r"\b", snippet_text)
                             if match:
-                                matched = True
-                                matched_kw = kw.title()
-                                confidence = 0.95
-                                after_kw = snippet_text[match.end():].strip(" ,.-!?")
-                                if len(after_kw) >= 2:
-                                    extracted_command = after_kw
-                                break
+                                leading = snippet_text[:match.start()].strip().split()
+                                if len(leading) <= 2:
+                                    matched = True
+                                    matched_kw = kw.title()
+                                    confidence = 0.95
+                                    after_kw = snippet_text[match.end():].strip(" ,.-!?")
+                                    if len(after_kw) >= 2:
+                                        extracted_command = after_kw
+                                    break
             except Exception:
                 pass
             finally:
