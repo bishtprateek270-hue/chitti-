@@ -97,8 +97,8 @@ class WakeWordDetector:
         self._audio_queue: queue.Queue = queue.Queue(maxsize=100)
         self._worker_thread: Optional[threading.Thread] = None
 
-        # Ring buffer for sliding audio window (2.0 seconds)
-        self._buffer_size = int(self.sample_rate * 2.0)
+        # Ring buffer for sliding audio window (2.5 seconds)
+        self._buffer_size = int(self.sample_rate * 2.5)
         self._audio_buffer = np.zeros(self._buffer_size, dtype=np.float32)
         self._buffer_lock = threading.Lock()
 
@@ -268,11 +268,11 @@ class WakeWordDetector:
             or vad_decision.state in (VADState.SPEECH, VADState.SPEECH_HANGOVER)
         )
 
-        # 2. Evaluate acoustic signature
+        # 2. Evaluate acoustic signature (pitch autocorrelation + syllabic envelope)
         acoustic_score = self._evaluate_acoustic_signature(current_window)
 
-        # Drop immediately if neither VAD speech nor acoustic score matches
-        if not is_speech and acoustic_score < 0.30:
+        # Drop immediately if NOT speech or if human vocal pitch periodicity is absent
+        if not is_speech or acoustic_score < 0.20:
             return None
 
         matched = False
@@ -285,16 +285,17 @@ class WakeWordDetector:
             # Responsive STT debounce (~0.35s)
             if now - self._last_stt_check_time < 0.35:
                 return None
-            self._last_stt_check_time = now
 
             try:
-                # Extract the active recent audio window (~1.4s) to maximize STT accuracy on wake words
-                snippet_len = min(len(current_window), int(self.sample_rate * 1.4))
+                # Extract active recent audio window (~2.2s) to capture wake word and any trailing command
+                snippet_len = min(len(current_window), int(self.sample_rate * 2.2))
                 speech_snippet = current_window[-snippet_len:].copy()
 
-                # Normalize amplitude if voice is soft
+                # Guard against ambient noise amplification
                 peak = float(np.max(np.abs(speech_snippet)))
-                if 0.001 < peak < 0.65:
+                if peak < 0.006:
+                    return None
+                if peak < 0.65:
                     speech_snippet = speech_snippet * min(15.0, 0.75 / peak)
 
                 # Allow Whisper fallback so 'Hey Chitti' and 'Chitti' are reliably recognized
@@ -338,6 +339,8 @@ class WakeWordDetector:
                                 break
             except Exception:
                 pass
+            finally:
+                self._last_stt_check_time = time.time()
 
             # CRITICAL: Strict STT verification.
             # When speech recognition is active, Chitti MUST ONLY wake up if an explicit
@@ -421,12 +424,14 @@ class WakeWordDetector:
             return 0.0
 
         score = 0.0
-        if pitch_corr > 0.35:
-            score += 0.30
-        if pitch_corr > 0.55:
+        if pitch_corr >= 0.20:
             score += 0.20
-        if p_max > 0.001:
+        if pitch_corr > 0.35:
             score += 0.25
-        if p_min < p_max * 0.75:
-            score += 0.25
+        if pitch_corr > 0.55:
+            score += 0.15
+        if p_max > 0.0008:
+            score += 0.20
+        if p_min < p_max * 0.85:
+            score += 0.20
         return score

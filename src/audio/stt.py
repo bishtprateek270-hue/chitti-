@@ -265,12 +265,12 @@ class WhisperSTT(STTEngine):
             # Guard against silence / faint background hiss to prevent hallucinations
             peak_val = float(np.max(np.abs(audio)))
             rms_val = float(np.sqrt(np.mean(audio**2) + 1e-12))
-            if peak_val < 0.002 or rms_val < 0.0006:
+            if peak_val < 0.006 or rms_val < 0.0015:
                 log_debug(f"[WHISPER] Audio energy too faint (peak={peak_val:.4f}, rms={rms_val:.4f}). Returning empty.")
                 return ""
 
             # Normalize speech peak if quiet to ensure reliable acoustic recognition
-            if peak_val >= 0.002 and peak_val < 0.65:
+            if peak_val >= 0.006 and peak_val < 0.65:
                 gain = min(20.0, 0.75 / peak_val)
                 audio = audio * gain
 
@@ -286,8 +286,7 @@ class WhisperSTT(STTEngine):
             "condition_on_previous_text": False,
             "compression_ratio_threshold": 2.4,
             "logprob_threshold": -1.0,
-            "no_speech_threshold": 0.60,
-            "initial_prompt": "Chitti, Hey Chitti, Chitti suno, Stop, Ruk ja, Bas kar, Chup ho ja, Chitti stop",
+            "no_speech_threshold": 0.45,
         }
         if self.language and self.language.lower() not in ("auto", "none", ""):
             # Whisper expects 2-letter ISO 639-1 language code (e.g. 'en', 'hi')
