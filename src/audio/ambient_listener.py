@@ -24,7 +24,7 @@ from src.utils.logging import log_chitti, log_debug, log_info, log_warn
 
 # Regex matching explicit wake address prefixes in English, Hindi, Hinglish
 WAKE_PREFIX_PATTERN = re.compile(
-    r'^(?:(?:hey|he|hello|hi|hai|ok|okay|suno|arre|oye)\s+)?(?:(?:chitti|chitthi|chiti|chitii|chitty)\b|चिट्टी|चिट्ठी)(?:[:,-]|\s+suno)?\s*',
+    r'^(?:(?:hey|he|hello|hi|hai|hd|ok|okay|suno|arre|oye)\s+)?(?:(?:chitti|chitthi|chiti|chitii|chitty)\b|चिट्टी|चिट्ठी)(?:[:,-]|\s+suno)?\s*|^(?:hd\s+)',
     re.IGNORECASE
 )
 
@@ -326,7 +326,7 @@ class AmbientVoiceListener:
                 return
 
             self.state_mgr.begin_transcribing()
-            self._handle_incoming_transcript(transcribed_text)
+            self._handle_incoming_transcript(transcribed_text, from_wake=True)
 
         except Exception as e:
             log_warn(f"[AMBIENT] Speech processing notice: {e}")
@@ -474,8 +474,8 @@ class AmbientVoiceListener:
                 from_wake = True
 
         # Guard 2: Require explicit address ("Hey Chitti" / "Chitti") or actively prompted session
-        is_prompted = (time.time() < self._manual_or_wake_prompted_until) and self.state_mgr.is_in_conversation_session()
-        if not from_wake and not is_prompted:
+        is_prompted = from_wake or (self.state_mgr.is_in_conversation_session()) or (time.time() < self._manual_or_wake_prompted_until)
+        if not is_prompted:
             log_info(f"[AMBIENT] 🔇 Ignored background speech without 'Chitti' address: '{raw}'")
             if self.hud and self.hud.is_visible and self.state != AmbientState.SPEAKING:
                 self.hud.hide()

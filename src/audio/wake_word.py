@@ -282,8 +282,8 @@ class WakeWordDetector:
 
         # 3. Strict Verification via STT Engine when available
         if self.stt_engine is not None:
-            # Debounce STT checks to at most once per 0.75s to avoid continuous background transcription
-            if now - self._last_stt_check_time < 0.75:
+            # Responsive STT debounce (~0.35s)
+            if now - self._last_stt_check_time < 0.35:
                 return None
             self._last_stt_check_time = now
 
@@ -294,11 +294,11 @@ class WakeWordDetector:
 
                 # Normalize amplitude if voice is soft
                 peak = float(np.max(np.abs(speech_snippet)))
-                if 0.003 < peak < 0.65:
-                    speech_snippet = speech_snippet * min(12.0, 0.75 / peak)
+                if 0.001 < peak < 0.65:
+                    speech_snippet = speech_snippet * min(15.0, 0.75 / peak)
 
-                # Only allow Whisper if speech was clearly detected with vocal periodicity
-                allow_whisper = is_speech and (acoustic_score >= 0.40)
+                # Allow Whisper fallback so 'Hey Chitti' and 'Chitti' are reliably recognized
+                allow_whisper = is_speech or (acoustic_score >= 0.30)
                 snippet_text = self.stt_engine.transcribe(speech_snippet, allow_whisper_fallback=allow_whisper)
                 snippet_text = snippet_text.lower().strip() if snippet_text else ""
 
@@ -375,7 +375,7 @@ class WakeWordDetector:
 
         # Absolute energy floor: reject low-level hiss / hum / silence immediately
         rms_total = float(np.sqrt(np.mean(audio**2) + 1e-12))
-        if rms_total < 0.0035:
+        if rms_total < 0.0010:
             return 0.0
 
         # 1. Human vocal pitch periodicity check (80Hz - 350Hz)

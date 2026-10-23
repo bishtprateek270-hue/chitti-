@@ -12,11 +12,13 @@ class TestAmbientWakeFiltering(unittest.TestCase):
     def setUp(self):
         self.state_mgr = get_state_manager()
         self.state_mgr.reset_interrupt()
+        self.state_mgr.end_conversation_session()
         self.state_mgr.wake()
         self.matcher = get_phrase_matcher()
 
     def tearDown(self):
         self.state_mgr.reset_interrupt()
+        self.state_mgr.end_conversation_session()
         self.state_mgr.wake()
 
     def test_phrase_matcher_wake_words_and_city_rejection(self):

@@ -360,17 +360,21 @@ class PhraseMatcher:
             phrase = stop_match.group(0).lower()
             # Verify it's not a negated query like "don't stop"
             if not re.search(r"\b(?:don'?t|do\s+not|never|mat)\s+" + re.escape(phrase), cleaned):
-                # High confidence if exact match or standalone utterance
-                conf = 1.0 if cleaned == phrase else 0.95
-                log_debug(f"[CONTROL] Match STOP: '{phrase}' in '{cleaned}' (Priority 1)")
-                return MatchResult(
-                    command=ControlCommand.STOP,
-                    priority=CommandPriority.PRIORITY_1_INTERRUPT.value,
-                    matched_phrase=phrase,
-                    confidence=conf,
-                    original_text=raw_text,
-                    cleaned_text=cleaned,
-                )
+                # If phrase does not mention Chitti, require that it is a direct command (not buried in an ambient sentence)
+                is_addressed = any(name in cleaned for name in ("chitti", "chitthi", "chiti", "chitii", "चिट्टी"))
+                word_count = len(cleaned.split())
+                is_standalone = (cleaned == phrase) or (word_count <= 3) or cleaned.startswith(phrase) or cleaned.endswith(phrase)
+                if is_addressed or is_standalone:
+                    conf = 1.0 if cleaned == phrase else 0.95
+                    log_debug(f"[CONTROL] Match STOP: '{phrase}' in '{cleaned}' (Priority 1)")
+                    return MatchResult(
+                        command=ControlCommand.STOP,
+                        priority=CommandPriority.PRIORITY_1_INTERRUPT.value,
+                        matched_phrase=phrase,
+                        confidence=conf,
+                        original_text=raw_text,
+                        cleaned_text=cleaned,
+                    )
 
         # ---------------- PRIORITY 2: SLEEP ----------------
         if sleep_match:
