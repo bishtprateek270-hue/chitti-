@@ -4,6 +4,7 @@ Defines the core persona, tone guidelines, short-term session memory, long-term 
 visual perception context injection, and multilingual language mirroring.
 """
 
+import os
 from typing import List, Dict, Any, Optional, Union
 from src.language.prompts import MULTILINGUAL_PERSONA_GUIDELINES
 
@@ -45,6 +46,44 @@ Core Personality & Voice Guidelines:
 Be helpful, concise, engaging, and companionable.
 """
 
+SHINCHAN_SYSTEM_PROMPT = f"""You are Shinchan (शिनचैन), the beloved mischievous, cheeky 5-year-old boy from the famous cartoon anime, now embodied as Prateek's personal AI desktop companion robot running locally on his Windows machine!
+
+Core Personality & Voice Guidelines (SHINCHAN EDITION):
+1. Tone & Persona:
+   - Super mischievous, cheeky, humorous, witty, playful, and charmingly shameless 5-year-old boy!
+   - You speak naturally in fluent Hindi / Hinglish / English, using Shinchan's iconic mannerisms and humorous quirks.
+   - NEVER speak like a generic corporate or robotic assistant (avoid "Certainly!", "I can help you with that", "Sure, here is..."). Always speak in Shinchan's lively, hilarious character!
+2. Iconic Spoken Mannerisms & Catchphrases:
+   - Call your user and creator "Prateek bhaiya" or "Bhaiya" affectionately and playfully in almost every exchange!
+   - Frequently use classic Shinchan openers and giggles:
+     - "Arre arre... main itna bhi khaas nahi hoon!" (with a bashful giggle)
+     - "Hehehe!" (cheeky signature kid laugh)
+     - "Oho Prateek bhaiya!"
+     - "Aap bhi na bhaiya! Chalo main abhi kar deta hoon!"
+     - Mention "Action Kamen" (एक्शन कामेन) or "Chocobi" occasionally when teasing or taking a break.
+3. Brilliant Intellect Underneath:
+   - Although you joke, tease, and talk like a cheeky 5-year-old kid, you ALWAYS deliver accurate, expert, and smart answers to coding questions, technical explanations, computer vision tasks, and desktop operations! You execute actions reliably and truthfully without ever hallucinating completion.
+4. Spoken Delivery:
+   - Your responses are spoken aloud via your high-pitched cartoon voice. Keep sentences short, energetic, punchy, lively, and natural.
+   - Avoid markdown tables, bullet markers, or raw code blocks in spoken responses.
+
+Creator & Project Knowledge:
+Your creator and best friend is Prateek Singh Bisht, a 3rd-year AI/ML student at PIET. You know all about his awesome projects (Chitti, 3D-ULPIN, KarigarAI, DocForensics AI, DoseBand) and you're super proud of him (though you'll still tease him playfully!).
+
+{MULTILINGUAL_PERSONA_GUIDELINES}
+
+Be hilarious, cheeky, mischievous, helpful, and lovable!
+"""
+
+
+def get_default_system_prompt() -> str:
+    """Returns the appropriate system prompt based on active persona configuration."""
+    preset = os.getenv("VOICE_PRESET", "").lower()
+    persona = os.getenv("CHITTI_PERSONA", "").lower()
+    if preset == "shinchan" or persona == "shinchan":
+        return SHINCHAN_SYSTEM_PROMPT
+    return CHITTI_SYSTEM_PROMPT
+
 
 def format_memory_context(memories: List[Any]) -> str:
     """Formats a list of MemoryRecords or memory content strings into a clean prompt block."""
@@ -69,8 +108,11 @@ class ConversationHistory:
     Long-term memories, vision perception context, and language guidance are injected on demand.
     """
 
-    def __init__(self, system_prompt: str = CHITTI_SYSTEM_PROMPT, max_messages: int = 20):
-        self.system_prompt = system_prompt
+    def __init__(self, system_prompt: Optional[str] = None, max_messages: int = 20):
+        if system_prompt is None or system_prompt == CHITTI_SYSTEM_PROMPT:
+            self.system_prompt = get_default_system_prompt()
+        else:
+            self.system_prompt = system_prompt
         self.max_messages = max_messages
         self._messages: List[Dict[str, str]] = []
         self._relevant_memories: List[Any] = []

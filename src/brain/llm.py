@@ -80,8 +80,32 @@ class OllamaLLM(BaseLLM):
         self.base_url = cfg.base_url.rstrip("/")
         self.model = cfg.model
         self.timeout = cfg.timeout_seconds
+        self.keep_alive = getattr(cfg, "keep_alive", "-1")
         self.chat_endpoint = f"{self.base_url}/api/chat"
         self.tags_endpoint = f"{self.base_url}/api/tags"
+
+    @property
+    def resolved_keep_alive(self):
+        """Returns numeric -1 for permanent 24/7 in-memory retention, or custom duration."""
+        val = str(self.keep_alive).strip().lower()
+        if val in ("-1", "infinite", "forever", "permanent", "24/7", "24h"):
+            return -1
+        return self.keep_alive
+
+    def preload_brain(self) -> bool:
+        """Preloads the LLM brain model into GPU VRAM with indefinite keep-alive for 24/7 readiness."""
+        try:
+            payload = {
+                "model": self.model,
+                "keep_alive": self.resolved_keep_alive
+            }
+            resp = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=30)
+            if resp.status_code == 200:
+                log_info(f"[CHITTI][BRAIN] AI Brain model ({self.model}) successfully preloaded in VRAM for 24/7 operation.")
+                return True
+        except Exception as e:
+            log_warning(f"[CHITTI][BRAIN] Brain preload notice: {e}")
+        return False
 
     def check_connection(self) -> bool:
         """Pings the Ollama server to check reachability."""
@@ -143,6 +167,7 @@ class OllamaLLM(BaseLLM):
             time.sleep(0.5)
             if self.check_connection():
                 log_info("[CHITTI][BRAIN] Ollama background service connected successfully.")
+                self.preload_brain()
                 return True
 
         return False
@@ -182,7 +207,7 @@ class OllamaLLM(BaseLLM):
             "model": self.model,
             "messages": bounded,
             "stream": False,
-            "keep_alive": "30m",
+            "keep_alive": self.resolved_keep_alive,
             "options": {
                 "temperature": 0.7,
                 "top_p": 0.9,
@@ -265,7 +290,7 @@ class OllamaLLM(BaseLLM):
             "model": self.model,
             "messages": bounded,
             "stream": True,
-            "keep_alive": "30m",
+            "keep_alive": self.resolved_keep_alive,
             "options": {
                 "temperature": 0.7,
                 "top_p": 0.9,

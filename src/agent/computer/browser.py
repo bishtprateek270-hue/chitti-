@@ -123,7 +123,7 @@ class BrowserController:
         return clean.title() if clean else "Trending Songs"
 
     def open_url(self, url: str, browser: Optional[str] = None, site_name: Optional[str] = None) -> bool:
-        """Opens a URL visibly in the user's running or default desktop browser."""
+        """Opens a URL visibly in the user's running or default desktop browser and brings it to focus."""
         target_url = url.strip()
         if not target_url.startswith(("http://", "https://", "file:///")):
             if target_url.startswith("file:/"):
@@ -133,39 +133,70 @@ class BrowserController:
             else:
                 target_url = f"https://{target_url}"
 
-        try:
-            # 1. Direct browser executable invocation via subprocess
-            # This guarantees that Windows opens an interactive desktop window/tab
-            browser_exe = self.resolve_browser_executable(preferred=browser)
-            if browser_exe:
-                subprocess.Popen([browser_exe, target_url])
-                self.state.current_url = target_url
-                self.state.browser_name = os.path.basename(browser_exe)
-                self.state.is_open = True
-                log_info(f"[BROWSER] Successfully launched URL in {self.state.browser_name}: {target_url}")
-                return True
+        launched = False
+        browser_name = "default"
 
-            # 2. Windows shell 'start "" "<url>"' fallback
-            if platform.system() == "Windows":
-                subprocess.Popen(f'start "" "{target_url}"', shell=True)
-                self.state.current_url = target_url
-                self.state.is_open = True
-                log_info(f"[BROWSER] Launched URL via Windows start command: {target_url}")
-                return True
+        # 1. Resolve browser executable
+        browser_exe = self.resolve_browser_executable(preferred=browser)
+        if browser_exe and os.path.exists(browser_exe):
+            browser_name = os.path.basename(browser_exe)
+            try:
+                # Launch directly without shell=True to avoid cmd.exe '&' truncation in URLs
+                subprocess.Popen([browser_exe, target_url], shell=False)
+                launched = True
+                log_info(f"[BROWSER] Successfully launched URL via {browser_name}: {target_url}")
+            except Exception as e:
+                log_warn(f"[BROWSER] Executable launch failed: {e}")
 
-            # 3. Standard Python webbrowser fallback
-            webbrowser.open(target_url, new=2)
-            self.state.current_url = target_url
-            self.state.is_open = True
-            log_info(f"[BROWSER] Opened URL via webbrowser: {target_url}")
-            return True
-        except Exception as e:
-            log_warn(f"[BROWSER] Failed to open URL {target_url}: {e}")
+        # 2. Windows shell protocol handler (os.startfile) fallback
+        if not launched and platform.system() == "Windows":
+            try:
+                os.startfile(target_url)
+                launched = True
+                log_info(f"[BROWSER] Launched URL via os.startfile: {target_url}")
+            except Exception as e:
+                log_warn(f"[BROWSER] os.startfile failed: {e}")
+
+        # 3. Standard Python webbrowser fallback
+        if not launched:
             try:
                 webbrowser.open(target_url, new=2)
-                return True
-            except Exception:
-                return False
+                launched = True
+                log_info(f"[BROWSER] Opened URL via webbrowser fallback: {target_url}")
+            except Exception as e:
+                log_warn(f"[BROWSER] webbrowser fallback failed: {e}")
+
+        if launched:
+            self.state.current_url = target_url
+            self.state.browser_name = browser_name
+            self.state.is_open = True
+
+            # 4. Bring browser window to the active foreground so the user sees it immediately
+            time.sleep(0.5)
+            try:
+                from src.agent.computer.controller import ComputerController
+                ctrl = ComputerController()
+                clean_name = re.sub(r"(?i)\.exe$", "", browser_name).title()
+                focus_targets = [
+                    site_name,
+                    "YouTube" if "youtube" in target_url.lower() else None,
+                    clean_name,
+                    "Brave",
+                    "Chrome",
+                    "Edge",
+                    "Microsoft Edge",
+                    "Firefox",
+                ]
+                for ft in focus_targets:
+                    if ft and ctrl.focus_window(ft):
+                        log_info(f"[BROWSER] Brought window '{ft}' to foreground.")
+                        break
+            except Exception as e:
+                log_debug(f"[BROWSER] Window focus notice: {e}")
+
+            return True
+
+        return False
 
     def verify_page_loaded(self, url: str, expected_keywords: Optional[List[str]] = None) -> Tuple[bool, str]:
         """Verifies that the target page loaded without browser error pages (e.g. Connection Refused)."""
@@ -212,10 +243,22 @@ class BrowserController:
         if video_id:
             video_url = f"https://www.youtube.com/watch?v={video_id}&autoplay=1"
             log_info(f"[BROWSER] Direct YouTube video resolved: {video_url} (ID: {video_id})")
-            ok = self.open_url(video_url)
+            ok = self.open_url(video_url, site_name="YouTube")
             self.state.active_video_id = video_id
             self.state.current_url = video_url
             self.state.playback_verified = ok
+
+            # Also trigger unpause / play key if needed after browser tab activates
+            if ok:
+                time.sleep(1.2)
+                try:
+                    from src.agent.computer.controller import ComputerController
+                    ctrl = ComputerController()
+                    ctrl.focus_window("YouTube") or ctrl.focus_window("Brave") or ctrl.focus_window("Chrome") or ctrl.focus_window("Edge") or ctrl.focus_window("Microsoft Edge")
+                    time.sleep(0.3)
+                    ctrl.press_key("k")  # YouTube standard play/pause toggle (unpauses autoplay blocks)
+                except Exception as e:
+                    log_debug(f"[BROWSER] Playback trigger notice: {e}")
 
             return ok, f"Playing '{artist}' song on YouTube: {video_url}", {
                 "artist": artist,
@@ -228,7 +271,7 @@ class BrowserController:
         encoded_query = urllib.parse.quote(f"{artist} songs")
         search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
         log_info(f"[BROWSER] Opening YouTube search results: {search_url}")
-        ok = self.open_url(search_url)
+        ok = self.open_url(search_url, site_name="YouTube")
         self.state.current_url = search_url
         self.state.playback_verified = ok
 

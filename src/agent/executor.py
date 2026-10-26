@@ -89,57 +89,99 @@ class ActionExecutor:
     @classmethod
     def _open_application(cls, action: StructuredAction) -> ActionResult:
         target = action.parameters["target"]
-        resolved = action.parameters.get("resolved_app", target)
+        args = action.parameters.get("args", [])
+        clean_target = target.strip().lower()
 
-        try:
-            # On Windows, os.startfile opens registered apps safely without shell injection
-            if platform.system() == "Windows" and os.path.exists(resolved):
-                os.startfile(resolved)
-            else:
-                subprocess.Popen([resolved], shell=False)
-
-            log_chitti(f"[AGENT] Execution: SUCCESS | Launched application: {target}")
+        # 1. Web / Browser targets
+        if clean_target in ("browser", "the browser", "my browser", "web browser"):
+            from src.agent.computer.browser import BrowserController
+            ok = BrowserController().open_url("https://www.google.com", site_name="Browser")
             return ActionResult(
-                success=True,
+                success=ok,
                 action=ActionType.OPEN_APPLICATION,
                 target=target,
-                message=f"{target} has been opened.",
-                data={"resolved_path": resolved},
+                message="Browser opened successfully." if ok else "Could not open browser.",
             )
-        except Exception as e:
-            # Fallback for built-in tools like notepad, calc, explorer
+
+        if clean_target in ("youtube", "yt"):
+            from src.agent.computer.browser import BrowserController
+            ok = BrowserController().open_url("https://www.youtube.com", site_name="YouTube")
+            return ActionResult(
+                success=ok,
+                action=ActionType.OPEN_URL,
+                target="YouTube",
+                message="YouTube opened in browser." if ok else "Could not open YouTube in browser.",
+                data={"url": "https://www.youtube.com"},
+            )
+
+        # 2. Resolve via AppDiscovery
+        from src.agent.registry import AppDiscovery
+        resolved = action.parameters.get("resolved_app") or AppDiscovery.resolve_app(target)
+        if not resolved and os.path.exists(target):
+            resolved = target
+
+        if resolved and os.path.exists(resolved):
             try:
-                subprocess.Popen(f"start {target}", shell=True)
-                log_chitti(f"[AGENT] Execution: SUCCESS | Launched {target} via start wrapper")
+                cmd = [resolved] + (args or [])
+                is_shell = str(resolved).lower().endswith((".cmd", ".bat"))
+                subprocess.Popen(cmd, shell=is_shell)
+                time.sleep(0.4)
+
+                # Bring window to foreground
+                from src.agent.computer.controller import ComputerController
+                ctrl = ComputerController()
+                ctrl.focus_window(target)
+
+                log_chitti(f"[AGENT] Execution: SUCCESS | Launched application: {target} ({resolved})")
+                return ActionResult(
+                    success=True,
+                    action=ActionType.OPEN_APPLICATION,
+                    target=target,
+                    message=f"{target} has been opened.",
+                    data={"resolved_path": resolved},
+                )
+            except Exception as e:
+                log_warn(f"[AGENT] Launch failed for {resolved}: {e}")
+
+        # 3. Check if target is a known URL
+        from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
+        if ResourceDiscovery.is_url(target) or clean_target in DEFAULT_URL_MAP:
+            url = ResourceDiscovery.to_url(target)
+            from src.agent.computer.browser import BrowserController
+            ok = BrowserController().open_url(url, site_name=target)
+            return ActionResult(
+                success=ok,
+                action=ActionType.OPEN_URL,
+                target=url,
+                message=f"Opened {target} in your browser.",
+                data={"url": url},
+            )
+
+        # 4. Windows protocol / registered app fallback (e.g. calc, notepad)
+        if platform.system() == "Windows":
+            try:
+                os.startfile(target)
+                time.sleep(0.3)
+                from src.agent.computer.controller import ComputerController
+                ComputerController().focus_window(target)
+                log_chitti(f"[AGENT] Execution: SUCCESS | Launched {target} via os.startfile")
                 return ActionResult(
                     success=True,
                     action=ActionType.OPEN_APPLICATION,
                     target=target,
                     message=f"{target} has been opened.",
                 )
-            except Exception as e2:
-                from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
-                clean_t = target.strip()
-                if ResourceDiscovery.is_url(clean_t) or clean_t.lower() in DEFAULT_URL_MAP:
-                    url = ResourceDiscovery.to_url(clean_t)
-                    from src.agent.computer.browser import BrowserController
-                    ok = BrowserController().open_url(url, site_name=clean_t)
-                    log_chitti(f"[AGENT] Execution: {'SUCCESS' if ok else 'FAILED'} | Opened URL fallback: {url}")
-                    return ActionResult(
-                        success=ok,
-                        action=ActionType.OPEN_URL,
-                        target=url,
-                        message=f"Opened {target} in your browser.",
-                        data={"url": url},
-                    )
+            except Exception as e:
+                log_debug(f"[AGENT] os.startfile fallback notice for {target}: {e}")
 
-                return ActionResult(
-                    success=False,
-                    action=ActionType.OPEN_APPLICATION,
-                    target=target,
-                    message=f"Could not open {target}.",
-                    error=str(e2),
-                )
+        log_warn(f"[AGENT] Execution: FAILED | Could not find or launch application: {target}")
+        return ActionResult(
+            success=False,
+            action=ActionType.OPEN_APPLICATION,
+            target=target,
+            message=f"Could not find or open application '{target}'. Please check if it is installed.",
+            error=f"Application '{target}' could not be resolved to an executable.",
+        )
 
     @classmethod
     def _close_application(cls, action: StructuredAction) -> ActionResult:

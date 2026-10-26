@@ -56,40 +56,59 @@ class ProjectRegistry:
         return True
 
     def get_project_path(self, name: str) -> Optional[str]:
-        """Resolves a project name to its path."""
+        """Resolves a project name, repo name, or speech transcription to its absolute path."""
+        import re
+        import difflib
+
         clean_name = name.strip().lower()
-        # Direct lookup
+
+        # Handle generic 'project repo', 'my repo', 'the project', 'current project'
+        if clean_name in ("project repo", "my repo", "the repo", "repo", "project", "the project", "current project", "chitti repo", "chitti"):
+            curr = str(Path.cwd().resolve())
+            return curr
+
+        # Direct lookup in registry
         if clean_name in self.projects:
             return self.projects[clean_name]
-        
-        # Substring match
+
+        # Strip generic stopwords: project, repo, repository, code, app, folder
+        stripped = re.sub(r"(?i)\b(?:the\s+|my\s+|a\s+|an\s+)?(?:project|repo|repository|code|app|folder|workspace|program|application)\b", "", clean_name).strip()
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+
+        # Speech recognition typo normalizations
+        STT_PROJECT_ALIASES = {
+            "3d wallpaper": "3d unplin",
+            "wallpaper": "3d unplin",
+            "3d ulpin": "3d unplin",
+            "3d-ulpin": "3d unplin",
+            "ulpin": "3d unplin",
+            "unplin": "3d unplin",
+            "karigar": "karigarai",
+            "doc forensic": "DocForencic AI",
+            "doc forensics": "DocForencic AI",
+            "document tampering": "document tempring",
+        }
+        for alias_key, mapped in STT_PROJECT_ALIASES.items():
+            if alias_key in clean_name or alias_key in stripped:
+                stripped = mapped.lower()
+                break
+
+        # Check stripped against registry
+        if stripped in self.projects:
+            return self.projects[stripped]
+
+        # Substring match in registry
         for key, p in self.projects.items():
-            if clean_name in key or key in clean_name:
+            if (stripped and (stripped in key or key in stripped)) or clean_name in key or key in clean_name:
                 return p
 
         # Difflib close match in registered projects
-        import difflib
-        matches = difflib.get_close_matches(clean_name, list(self.projects.keys()), n=1, cutoff=0.7)
+        matches = difflib.get_close_matches(stripped or clean_name, list(self.projects.keys()), n=1, cutoff=0.6)
         if matches:
             return self.projects[matches[0]]
 
-        # Check if project folder exists in user's home or standard development directories
+        # Search bases
         user_home = Path.home()
-        candidates = [
-            user_home / "OneDrive" / "Desktop" / name,
-            user_home / "Desktop" / name,
-            user_home / "Projects" / name,
-            user_home / "source" / "repos" / name,
-            user_home / "Documents" / name,
-            Path("C:/Projects") / name,
-        ]
-        for cand in candidates:
-            if cand.exists() and cand.is_dir():
-                resolved = str(cand.resolve())
-                self.register_project(name, resolved)
-                return resolved
-
-        # Scan subdirectories of desktop and standard bases for fuzzy match
         search_bases = [
             user_home / "OneDrive" / "Desktop",
             user_home / "Desktop",
@@ -97,6 +116,20 @@ class ProjectRegistry:
             user_home / "source" / "repos",
             user_home / "Documents",
         ]
+
+        # Direct existence checks
+        for query in (stripped, clean_name):
+            if not query:
+                continue
+            for base in search_bases:
+                cand = base / query
+                if cand.exists() and cand.is_dir():
+                    resolved = str(cand.resolve())
+                    self.register_project(query, resolved)
+                    return resolved
+
+        # Scan subdirectories for token overlap or fuzzy match
+        target_tokens = set(re.findall(r"[a-zA-Z0-9]+", (stripped or clean_name).lower()))
         for base in search_bases:
             if not base.exists():
                 continue
@@ -104,13 +137,23 @@ class ProjectRegistry:
                 for child in base.iterdir():
                     if child.is_dir():
                         c_lower = child.name.lower()
-                        if c_lower == clean_name or clean_name in c_lower or c_lower in clean_name:
+                        child_tokens = set(re.findall(r"[a-zA-Z0-9]+", c_lower))
+
+                        # If tokens overlap strongly
+                        if target_tokens and target_tokens.issubset(child_tokens):
                             resolved = str(child.resolve())
-                            self.register_project(name, resolved)
+                            self.register_project(clean_name, resolved)
                             return resolved
-                        if difflib.SequenceMatcher(None, clean_name, c_lower).ratio() > 0.75:
+
+                        # Substring or fuzzy sequence matcher
+                        if (stripped and stripped in c_lower) or c_lower in clean_name:
                             resolved = str(child.resolve())
-                            self.register_project(name, resolved)
+                            self.register_project(clean_name, resolved)
+                            return resolved
+
+                        if difflib.SequenceMatcher(None, stripped or clean_name, c_lower).ratio() > 0.65:
+                            resolved = str(child.resolve())
+                            self.register_project(clean_name, resolved)
                             return resolved
             except Exception:
                 continue

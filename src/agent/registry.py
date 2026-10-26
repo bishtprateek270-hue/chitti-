@@ -78,14 +78,16 @@ SEMANTIC_APP_ALIASES: Dict[str, str] = {
     "the paint": "mspaint",
 }
 
-# Backward compatibility alias map
 DEFAULT_APP_MAP: Dict[str, List[str]] = {
     "chrome": ["chrome.exe", "google chrome", "chrome"],
     "google chrome": ["chrome.exe", "google chrome"],
-    "vs code": ["code.cmd", "code.exe", "code"],
-    "vscode": ["code.cmd", "code.exe", "code"],
-    "code": ["code.cmd", "code.exe", "code"],
-    "visual studio code": ["code.cmd", "code.exe", "code"],
+    "brave": ["brave.exe", "brave"],
+    "edge": ["msedge.exe", "msedge", "microsoft edge"],
+    "msedge": ["msedge.exe", "msedge"],
+    "vs code": ["Code.exe", "code.exe", "code.cmd", "code"],
+    "vscode": ["Code.exe", "code.exe", "code.cmd", "code"],
+    "code": ["Code.exe", "code.exe", "code.cmd", "code"],
+    "visual studio code": ["Code.exe", "code.exe", "code.cmd", "code"],
     "notepad": ["notepad.exe", "notepad"],
     "calculator": ["calc.exe", "calculator"],
     "calc": ["calc.exe", "calculator"],
@@ -243,6 +245,16 @@ DEFAULT_URL_MAP: Dict[str, str] = {
     "github folder": "https://github.com/bishtprateek270-hue?tab=repositories",
     "repo folder": "https://github.com/bishtprateek270-hue?tab=repositories",
     "the repo folder": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "project repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "project repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "the project repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "the project repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "project repository": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "project repositories": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "the project repository": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my project repo": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my project repos": "https://github.com/bishtprateek270-hue?tab=repositories",
+    "my project repository": "https://github.com/bishtprateek270-hue?tab=repositories",
     "my linkedin": "https://linkedin.com/in/prateek-singh-bisht",
 
     # Generic Live Deployment Links
@@ -553,12 +565,53 @@ class AppDiscovery:
                 return shutil.which(b_target)
             return b_target
 
-        # 1. Check system PATH via shutil.which
+        # 1. Direct known executable locations on Windows
+        if platform.system() == "Windows":
+            if clean in ("vs code", "vscode", "visual studio code", "code"):
+                vscode_paths = [
+                    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"),
+                    r"C:\Program Files\Microsoft VS Code\Code.exe",
+                    r"C:\Program Files (x86)\Microsoft VS Code\Code.exe",
+                ]
+                for vp in vscode_paths:
+                    if os.path.exists(vp):
+                        return vp
+            elif clean in ("chrome", "google chrome"):
+                chrome_paths = [
+                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                    os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+                ]
+                for cp in chrome_paths:
+                    if os.path.exists(cp):
+                        return cp
+            elif clean in ("brave", "brave browser"):
+                brave_paths = [
+                    r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+                    os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\Application\brave.exe"),
+                ]
+                for bp in brave_paths:
+                    if os.path.exists(bp):
+                        return bp
+            elif clean in ("edge", "msedge", "microsoft edge"):
+                edge_paths = [
+                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                ]
+                for ep in edge_paths:
+                    if os.path.exists(ep):
+                        return ep
+
+        # 2. Check system PATH via shutil.which
         candidate_names = [clean, f"{clean}.exe", f"{clean}.cmd", f"{clean}.bat", clean_no_ext, f"{clean_no_ext}.exe"]
-        if clean in ("vs code", "vscode", "visual studio code"):
-            candidate_names = ["code.cmd", "code.exe", "code"] + candidate_names
+        if clean in ("vs code", "vscode", "visual studio code", "code"):
+            candidate_names = ["Code.exe", "code.exe", "code.cmd", "code"] + candidate_names
         elif clean in ("chrome", "google chrome"):
             candidate_names = ["chrome.exe", "chrome"] + candidate_names
+        elif clean in ("brave", "brave browser"):
+            candidate_names = ["brave.exe", "brave"] + candidate_names
+        elif clean in ("edge", "msedge", "microsoft edge"):
+            candidate_names = ["msedge.exe", "msedge"] + candidate_names
 
         for c in candidate_names:
             resolved = shutil.which(c)

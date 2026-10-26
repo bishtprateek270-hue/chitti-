@@ -201,6 +201,8 @@ class ChittiController:
                     f"Configured model '{self.config.llm.model}' was not found in Ollama. "
                     f"If needed, run `ollama pull {self.config.llm.model}` in another terminal."
                 )
+            elif hasattr(self.llm, "preload_brain"):
+                self.llm.preload_brain()
         else:
             log_warning(
                 f"Ollama server is not responding at {self.config.llm.base_url}. "

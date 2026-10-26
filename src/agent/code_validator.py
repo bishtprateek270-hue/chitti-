@@ -33,6 +33,17 @@ class CodeValidator:
         r"(?i)\bunimplemented!\(\)",
     ]
 
+    REFUSAL_PATTERNS = [
+        r"(?i)\b(?:sorry|apologies)\b.*?\b(?:can't|cannot|unable to|not able to|beyond my)\b",
+        r"(?i)\bbeyond my capabilities\b",
+        r"(?i)\bas an ai\b.*?(?:cannot|can't|unable)",
+        r"(?i)\bi cannot assist\b",
+        r"(?i)\bi can't assist\b",
+        r"(?i)\bi am sorry\b",
+        r"(?i)\bi'm sorry\b",
+        r"(?i)\bif you have any other questions\b",
+    ]
+
     @classmethod
     def validate_code(
         cls,
@@ -50,12 +61,18 @@ class CodeValidator:
         if not code or not code.strip():
             return ValidationReport(valid=False, issues=["Code content is completely empty."], requirements_covered=False, language=lang)
 
-        # 2. Check for lazy placeholders
+        # 2. Check for AI refusal strings
+        for pat in cls.REFUSAL_PATTERNS:
+            if re.search(pat, code):
+                issues.append("Generated text contains an AI refusal or conversational apology instead of valid code.")
+                break
+
+        # 3. Check for lazy placeholders
         for pat in cls.PLACEHOLDER_PATTERNS:
             if re.search(pat, code):
                 issues.append(f"Code contains unresolved placeholder pattern: '{pat}'")
 
-        # 3. Language-specific syntax / structure checks
+        # 4. Language-specific syntax / structure checks
         if lang in ("python", "py"):
             try:
                 tree = ast.parse(code)
@@ -66,6 +83,14 @@ class CodeValidator:
                             issues.append(f"Function '{node.name}' has empty body ('pass').")
             except SyntaxError as e:
                 issues.append(f"Python syntax error at line {e.lineno}: {e.msg}")
+
+        elif lang in ("html", "htm"):
+            # HTML structural integrity check
+            lower_code = code.lower()
+            if not any(tag in lower_code for tag in ("<!doctype html", "<html", "<body", "<div", "<script", "<style")):
+                issues.append("HTML code is missing fundamental markup tags (<!DOCTYPE html>, <html>, or <body>).")
+            if len(code.strip()) < 100:
+                issues.append("HTML code is abnormally short (<100 characters) and lacks necessary structure.")
 
         elif lang in ("cpp", "c", "java", "javascript", "typescript", "rust", "csharp"):
             # Bracket balance check
@@ -81,11 +106,11 @@ class CodeValidator:
 
             # Check language-specific essential keywords
             if lang in ("cpp", "c") and "#include" not in code:
-                issues.append(f"C/C++ code is missing standard library #include header.")
+                issues.append("C/C++ code is missing standard library #include header.")
             elif lang == "java" and "class " not in code:
-                issues.append(f"Java code is missing class definition.")
+                issues.append("Java code is missing class definition.")
             elif lang == "rust" and "fn " not in code:
-                issues.append(f"Rust code is missing function definitions.")
+                issues.append("Rust code is missing function definitions.")
 
         # 4. Marker presence check
         missing_markers = []

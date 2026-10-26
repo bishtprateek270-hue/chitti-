@@ -62,20 +62,20 @@ class ScreenAnalyzer:
         )
 
     APP_PROCESS_ALIASES = {
-        "visual studio code": ["code.exe", "code", "visual studio code", "vscode"],
-        "vs code": ["code.exe", "code", "visual studio code", "vscode"],
-        "vscode": ["code.exe", "code", "visual studio code", "vscode"],
-        "chrome": ["chrome.exe", "chrome", "google chrome"],
-        "google chrome": ["chrome.exe", "chrome", "google chrome"],
-        "edge": ["msedge.exe", "msedge", "microsoft edge"],
-        "msedge": ["msedge.exe", "msedge", "microsoft edge"],
+        "visual studio code": ["code.exe", "visual studio code", "vscode.exe"],
+        "vs code": ["code.exe", "visual studio code", "vscode.exe"],
+        "vscode": ["code.exe", "visual studio code", "vscode.exe"],
+        "chrome": ["chrome.exe", "google chrome"],
+        "google chrome": ["chrome.exe", "google chrome"],
+        "edge": ["msedge.exe", "microsoft edge"],
+        "msedge": ["msedge.exe", "microsoft edge"],
         "brave": ["brave.exe", "brave"],
         "notepad": ["notepad.exe", "notepad"],
         "calculator": ["calculator.exe", "calculatorapp.exe", "calc.exe"],
         "terminal": ["powershell.exe", "cmd.exe", "windowsterminal.exe", "wt.exe"],
         "youtube": ["youtube"],
-        "browser": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
-        "web": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "chrome", "msedge", "firefox", "brave", "opera", "google chrome", "microsoft edge"],
+        "browser": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe"],
+        "web": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe"],
         "whatsapp web": ["whatsapp", "whatsapp web"],
         "whatsapp": ["whatsapp", "whatsapp.exe"],
         "gmail / webmail": ["gmail", "inbox", "mail.google.com"],
@@ -116,30 +116,46 @@ class ScreenAnalyzer:
                     target=title_query,
                 )
 
-        # 2. For website targets (e.g. YouTube), verify via browser controller state
+        # 2. For website targets (e.g. YouTube), verify via browser controller state and running browser
         if query in ("youtube", "whatsapp web", "gmail", "gmail / webmail", "webmail"):
             from src.agent.computer.browser import BrowserController
             b_state = BrowserController().get_browser_state()
             site_key = "youtube" if query == "youtube" else ("whatsapp" if "whatsapp" in query else "google.com")
             if b_state.is_open and b_state.current_url and site_key in b_state.current_url.lower():
-                log_info(f"[VERIFY] Active browser state verified for '{title_query}': {b_state.current_url}")
-                return VerificationResult(
-                    success=True,
-                    evidence=f"Browser tab actively open at '{b_state.current_url}'.",
-                    target=title_query,
-                )
+                has_browser_proc = False
+                try:
+                    for proc in psutil.process_iter(['name']):
+                        p_name = (proc.info.get('name') or '').lower()
+                        if any(b == p_name for b in ('brave.exe', 'chrome.exe', 'msedge.exe', 'firefox.exe')):
+                            has_browser_proc = True
+                            break
+                except Exception:
+                    has_browser_proc = True
+
+                if has_browser_proc:
+                    log_info(f"[VERIFY] Active browser state verified for '{title_query}': {b_state.current_url}")
+                    return VerificationResult(
+                        success=True,
+                        evidence=f"Browser tab actively open at '{b_state.current_url}'.",
+                        target=title_query,
+                    )
             return VerificationResult(
                 success=False,
-                evidence=f"No window or active tab for '{title_query}' was found.",
+                evidence=f"No active browser window or tab for '{title_query}' was found.",
                 target=title_query,
             )
 
-        # 3. Check running processes as secondary verification for native desktop apps
+        # 3. Check running processes as secondary verification for native desktop apps (strict exact matching)
         expected_aliases = self.APP_PROCESS_ALIASES.get(query, [query])
         for proc in psutil.process_iter(['name']):
             try:
                 pname = (proc.info['name'] or "").lower()
-                if query in pname or any(alias in pname for alias in expected_aliases) or (tokens and any(t in pname for t in tokens)):
+                is_match = (
+                    pname in expected_aliases
+                    or any(pname == alias or pname == f"{alias}.exe" for alias in expected_aliases)
+                    or (pname.endswith(".exe") and pname[:-4] in expected_aliases)
+                )
+                if is_match:
                     log_info(f"[VERIFY] Running process '{pname}' detected matching '{title_query}'")
                     return VerificationResult(
                         success=True,
@@ -225,7 +241,8 @@ class ScreenAnalyzer:
         if resolved_file.exists():
             try:
                 disk_content = resolved_file.read_text(encoding="utf-8", errors="ignore")
-                file_on_disk_valid = all(m.lower() in disk_content.lower() for m in markers)
+                matching_count = sum(1 for m in markers if m.lower() in disk_content.lower())
+                file_on_disk_valid = matching_count >= max(1, len(markers) // 2) if markers else len(disk_content.strip()) > 50
             except Exception:
                 pass
 

@@ -45,7 +45,18 @@ class ActionValidator:
 
             resolved = AppDiscovery.resolve_application(clean_target)
             if not resolved:
-                # Check if target is a web URL, website, project repo, or mapped web service
+                # 1. Check if target is a local project or repository folder
+                from src.agent.projects import ProjectRegistry
+                proj_path = ProjectRegistry().get_project_path(clean_target) or ProjectRegistry().get_project_path(app_target)
+                if proj_path and os.path.exists(proj_path):
+                    log_chitti(f"[AGENT] Re-routing project target '{clean_target}' to OPEN_FOLDER: {proj_path}")
+                    action.action = ActionType.OPEN_FOLDER
+                    action.parameters["resolved_path"] = Path(proj_path)
+                    action.parameters["target"] = clean_target
+                    action.parameters["open_in_vscode"] = True
+                    return True, "Validation successful.", action
+
+                # 2. Check if target is a web URL, website, project repo, or mapped web service
                 from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
                 resolved_url = ResourceDiscovery.resolve_url(clean_target) or ResourceDiscovery.resolve_url(app_target)
                 if resolved_url or ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP or any(w in app_target.lower() for w in ["website", "site", "browser", "web", "http", ".com"]):

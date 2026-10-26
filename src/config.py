@@ -40,6 +40,9 @@ class LLMConfig:
     timeout_seconds: int = field(
         default_factory=lambda: int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
     )
+    keep_alive: str = field(
+        default_factory=lambda: os.getenv("OLLAMA_KEEP_ALIVE", "-1").strip()
+    )
 
     def __post_init__(self):
         if self.base_url:
@@ -80,6 +83,24 @@ class TTSConfig:
     )
     voice_gender: str = field(
         default_factory=lambda: os.getenv("TTS_VOICE_GENDER", "male").strip().lower()
+    )
+    pitch: str = field(
+        default_factory=lambda: os.getenv("TTS_PITCH", "+0Hz").strip()
+    )
+    rate_percentage: str = field(
+        default_factory=lambda: os.getenv("TTS_RATE_PERCENTAGE", "+0%").strip()
+    )
+    voice_preset: str = field(
+        default_factory=lambda: os.getenv("VOICE_PRESET", "default").strip().lower()
+    )
+    rvc_enabled: bool = field(
+        default_factory=lambda: os.getenv("RVC_ENABLED", "false").lower() in ("true", "1", "yes")
+    )
+    rvc_model: str = field(
+        default_factory=lambda: os.getenv("RVC_MODEL", "models/rvc/shinchan/Shinchan RVC/manamarushin.pth")
+    )
+    rvc_pitch_shift: int = field(
+        default_factory=lambda: int(os.getenv("RVC_PITCH_SHIFT", "0"))
     )
 
 

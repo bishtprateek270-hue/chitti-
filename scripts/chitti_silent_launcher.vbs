@@ -12,7 +12,7 @@ WshShell.Run "cmd /c tasklist /FI ""IMAGENAME eq ollama.exe"" 2>NUL | find /I /N
 
 ' Run Chitti in 24/7 background mode
 WshShell.CurrentDirectory = projectDir
-WshShell.Run "python src\main.py --daemon", 0, False
+WshShell.Run "pythonw src\main.py --daemon", 0, False
 
 Set WshShell = Nothing
 Set fso = Nothing

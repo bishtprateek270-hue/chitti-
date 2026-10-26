@@ -114,9 +114,33 @@ class EdgeNeuralTTS(TTSEngine):
     def __init__(self, config: Optional[TTSConfig] = None, fallback_engine: Optional[TTSEngine] = None):
         self.config = config or get_config().tts
         self.fallback_engine = fallback_engine
-        self.voice_id = self.config.voice_id or self.DEFAULT_HINDI_VOICE
+
+        # Voice preset handling (e.g. shinchan)
+        preset = getattr(self.config, "voice_preset", "default").lower()
+        if preset == "shinchan":
+            self.voice_id = "hi-IN-SwaraNeural"
+            self.pitch = getattr(self.config, "pitch", "+70Hz") or "+70Hz"
+            if self.pitch == "+0Hz":
+                self.pitch = "+70Hz"
+            self.rate_percentage = getattr(self.config, "rate_percentage", "+16%") or "+16%"
+            if self.rate_percentage == "+0%":
+                self.rate_percentage = "+16%"
+            log_chitti("[TTS] Initialized with Shinchan voice preset (SwaraNeural @ +70Hz, +16% rate).")
+        else:
+            self.voice_id = self.config.voice_id or self.DEFAULT_HINDI_VOICE
+            self.pitch = getattr(self.config, "pitch", "+0Hz")
+            self.rate_percentage = getattr(self.config, "rate_percentage", "+0%")
+
         self.volume = self.config.volume
         self.rate = self.config.rate
+        self.rvc_engine = None
+        if getattr(self.config, "rvc_enabled", False):
+            try:
+                from src.audio.rvc_engine import get_rvc_engine
+                self.rvc_engine = get_rvc_engine(model_path=getattr(self.config, "rvc_model", None))
+            except Exception as e:
+                log_debug(f"[TTS] RVC initialization notice: {e}")
+
         self._is_playing = False
         self._lock = threading.Lock()
         self._alias = f"chitti_tts_{os.getpid()}"
@@ -125,6 +149,22 @@ class EdgeNeuralTTS(TTSEngine):
         self._current_gen_id = 0
         self._cancel_requested = threading.Event()
         self._last_interrupt_latency_ms = 0.0
+
+    def set_preset(self, preset_name: str):
+        """Applies a named voice and pitch preset (e.g. 'shinchan', 'default')."""
+        preset = preset_name.strip().lower()
+        if preset == "shinchan":
+            self.voice_id = "hi-IN-SwaraNeural"
+            self.pitch = "+45Hz"
+            self.rate_percentage = "+10%"
+            self.config.voice_preset = "shinchan"
+            log_chitti("[TTS] Shinchan voice preset activated! (SwaraNeural @ +45Hz pitch, +10% rate)")
+        else:
+            self.voice_id = self.DEFAULT_HINDI_VOICE
+            self.pitch = "+0Hz"
+            self.rate_percentage = "+0%"
+            self.config.voice_preset = "default"
+            log_chitti("[TTS] Voice preset reset to default.")
 
     def set_voice(self, voice_id: str):
         """Switches the active neural voice on the fly."""
@@ -192,9 +232,18 @@ class EdgeNeuralTTS(TTSEngine):
         # Close any previous instance
         winmm_api.mciSendStringW(f'close {alias}', None, 0, 0)
 
-        # Open
-        open_cmd = f'open "{file_path}" type mpegvideo alias {alias}'
+        # Open with appropriate device type (waveaudio for .wav, mpegvideo for .mp3, or auto)
+        if file_path.lower().endswith(".wav"):
+            open_cmd = f'open "{file_path}" type waveaudio alias {alias}'
+        elif file_path.lower().endswith(".mp3"):
+            open_cmd = f'open "{file_path}" type mpegvideo alias {alias}'
+        else:
+            open_cmd = f'open "{file_path}" alias {alias}'
         res = winmm_api.mciSendStringW(open_cmd, None, 0, 0)
+        if res != 0:
+            # Fallback to auto-detect
+            open_cmd = f'open "{file_path}" alias {alias}'
+            res = winmm_api.mciSendStringW(open_cmd, None, 0, 0)
         if res != 0:
             log_warning(f"[TTS] MCI open failed (code: {res})")
             return
@@ -232,7 +281,8 @@ class EdgeNeuralTTS(TTSEngine):
         communicate = edge_tts.Communicate(
             text=text,
             voice=voice,
-            rate="+0%",
+            rate=getattr(self, "rate_percentage", "+0%"),
+            pitch=getattr(self, "pitch", "+0Hz"),
             volume="+0%",
         )
         await communicate.save(output_path)
@@ -276,6 +326,11 @@ class EdgeNeuralTTS(TTSEngine):
                 if self._cancel_requested.is_set() or gen_id != self._current_gen_id or not state_mgr.can_speak(request_id):
                     log_debug(f"[TTS] Speech discarded after synthesis: Stop was requested for request #{request_id}.")
                     return
+
+                # Post-process with RVC voice conversion if enabled and available
+                if self.rvc_engine and self.rvc_engine.is_available:
+                    pitch_shift = getattr(self.config, "rvc_pitch_shift", 0)
+                    temp_file = self.rvc_engine.convert_audio(temp_file, pitch_shift=pitch_shift)
 
                 self._play_audio_file(temp_file, gen_id)
 

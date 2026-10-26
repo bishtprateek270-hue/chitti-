@@ -456,7 +456,7 @@ class AgentPlanner:
             curr_id += 1
 
             # Execution & verification steps
-            if spec.execution_requested or "run" in clean_lower or "test" in clean_lower:
+            if spec.execution_requested or "run" in clean_lower or "test" in clean_lower or spec.project_type == "web_app" or spec.ui_required or "website" in clean_lower:
                 is_web_project = (
                     spec.project_type in ("web_app", "rest_api")
                     or spec.ui_required
@@ -645,6 +645,17 @@ class AgentPlanner:
             state.steps = steps
             state.status = TaskStatus.PLAN_READY
             log_chitti("[CHITTI] [AGENT] Project plan created")
+            return state
+
+        # 10. General Application Launching (e.g. "open brave", "open chrome", "open notepad")
+        if intent.intent == ActionIntentType.OPEN_APPLICATION:
+            app_target = intent.application or intent.target or "Application"
+            args = intent.parameters.get("args", [])
+            state.steps = [
+                AgentStep(step_id=1, description=f"Launch application '{app_target}'", action_type="OPEN_APPLICATION", parameters={"target": app_target, "args": args}),
+                AgentStep(step_id=2, description=f"Verify {app_target} is open and active", action_type="VERIFY_WINDOW", parameters={"title": app_target}, depends_on=[1]),
+            ]
+            state.status = TaskStatus.PLAN_READY
             return state
 
         return None

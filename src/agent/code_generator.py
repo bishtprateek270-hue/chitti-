@@ -353,7 +353,9 @@ class CodeGenerator:
         ext = ToolchainManager.get_extension_for_language(language)
 
         if language in ("html", "htm") or (ui_required and language == "html"):
-            if "calculator" in slug:
+            if any(k in slug for k in ("commerce", "commerece", "shop", "store", "cart", "market", "ecommerce", "e_commerce")):
+                return "commerce_website.html"
+            elif "calculator" in slug:
                 return "calculator.html"
             elif "todo" in slug:
                 return "todo.html"
@@ -474,10 +476,18 @@ class CodeGenerator:
         markers = []
         symbol = "main"
 
-        fn_matches = re.findall(r"(?:def|fn|function|class|public static void|void)\s+([A-Za-z0-9_]+)", code)
-        if fn_matches:
-            symbol = fn_matches[0]
-            markers.extend([f"{symbol}", f"{fn_matches[-1]}"] if len(fn_matches) > 1 else [f"{symbol}"])
+        if spec.language.lower() in ("html", "htm"):
+            symbol = "DOCTYPE"
+            markers = ["<!DOCTYPE html>", "<html", "<script>"]
+            # Extract key JS function or class names if present
+            fn_matches = re.findall(r"function\s+([A-Za-z0-9_]+)", code)
+            if fn_matches:
+                markers.extend(fn_matches[:3])
+        else:
+            fn_matches = re.findall(r"(?:def|fn|function|class|public static void|void)\s+([A-Za-z0-9_]+)", code)
+            if fn_matches:
+                symbol = fn_matches[0]
+                markers.extend([f"{symbol}", f"{fn_matches[-1]}"] if len(fn_matches) > 1 else [f"{symbol}"])
 
         spec.expected_symbol = symbol
         spec.expected_markers = markers or [symbol]
@@ -486,24 +496,37 @@ class CodeGenerator:
     @classmethod
     def _generate_with_llm(cls, spec: ProgrammingTaskSpec, llm: BaseLLM) -> Optional[str]:
         """Prompts the LLM to generate production-grade code for the task."""
-        prompt = (
-            f"You are Chitti's expert code generator. Generate complete, production-ready, fully functional working code for:\n"
-            f"Project: {spec.problem_description}\n"
-            f"Language: {spec.language}\n"
-            f"Framework: {spec.framework or 'None'}\n"
-            f"Project Type: {spec.project_type}\n"
-            f"Requirements:\n" + "\n".join(f"- {r}" for r in spec.requirements) + "\n\n"
-            f"STRICT RULES:\n"
-            f"1. NO placeholders (no 'TODO', no 'pass', no fake print messages).\n"
-            f"2. Implement full real logic.\n"
-            f"3. Include a runnable self-test / entry point.\n"
-            f"Output ONLY the code in a markdown block ```{spec.language} ... ```."
-        )
+        if spec.language.lower() in ("html", "htm"):
+            prompt = (
+                f"You are an expert web developer. Write a clean, self-contained, working single-page HTML file (with embedded CSS and JS) for: {spec.problem_description}.\n"
+                f"Requirements:\n" + "\n".join(f"- {r}" for r in spec.requirements) + "\n\n"
+                f"Ensure the application is fully functional, modern, responsive, and works completely offline.\n"
+                f"Output ONLY valid HTML starting with <!DOCTYPE html> in a markdown block ```html ... ```."
+            )
+        else:
+            prompt = (
+                f"You are Chitti's expert code generator. Generate complete, production-ready, fully functional working code for:\n"
+                f"Project: {spec.problem_description}\n"
+                f"Language: {spec.language}\n"
+                f"Framework: {spec.framework or 'None'}\n"
+                f"Project Type: {spec.project_type}\n"
+                f"Requirements:\n" + "\n".join(f"- {r}" for r in spec.requirements) + "\n\n"
+                f"Implement full logic with a runnable self-test / entry point.\n"
+                f"Output ONLY the code in a markdown block ```{spec.language} ... ```."
+            )
         resp = llm.generate_response([{"role": "user", "content": prompt}])
         m = re.search(r"```(?:[a-zA-Z0-9_\-]+)?\n(.*?)```", resp, flags=re.DOTALL)
         if m:
-            return m.group(1).strip()
-        return resp.strip()
+            candidate = m.group(1).strip()
+        else:
+            candidate = resp.strip()
+
+        # Reject AI conversational refusals or trivial stub text
+        lower_cand = candidate.lower()
+        if any(ref in lower_cand for ref in ("sorry", "can't assist", "cannot assist", "beyond my capabilities", "as an ai")):
+            log_debug("[CODE_GEN] LLM returned a refusal string. Discarding in favor of dynamic synthesizer.")
+            return None
+        return candidate
 
     # =========================================================================
     # DYNAMIC ARCHITECTURAL SYNTHESIS ENGINES (Zero hardcoded project branching)
@@ -550,6 +573,8 @@ class CodeGenerator:
         # Route to domain-specific isolated dynamic synthesizer
         if "calculator" in slug or "calc" in slug or "math" in slug or "arithmetic" in req_text:
             return cls._synthesize_calculator_web_app(spec)
+        elif any(k in slug or k in req_text for k in ("commerce", "commerece", "shop", "store", "cart", "product", "market", "ecommerce", "e_commerce")):
+            return cls._synthesize_ecommerce_web_app(spec)
         elif "quiz" in slug or "trivia" in slug or "question" in req_text:
             return cls._synthesize_quiz_web_app(spec)
         elif "weather" in slug or "forecast" in req_text or "temperature" in req_text:
@@ -564,6 +589,1197 @@ class CodeGenerator:
             return cls._synthesize_todo_web_app(spec)
         else:
             return cls._synthesize_custom_interactive_web_app(spec)
+
+    @classmethod
+    def _synthesize_ecommerce_web_app(
+        cls, spec: ProgrammingTaskSpec
+    ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
+        """Generates a complete, production-grade, modern responsive E-Commerce Web Application."""
+        title = spec.problem_description.strip().title() or "Aura Luxe E-Commerce"
+        symbol = "DOCTYPE"
+        markers = [
+            "<!DOCTYPE html>",
+            "<html",
+            "<style>",
+            "<script>",
+            "addToCart",
+            "renderCart",
+            "renderProducts",
+            "toggleCart",
+            "checkout",
+            "localStorage",
+        ]
+
+        html_code = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - NextGen Online Store</title>
+    <style>
+        :root {{
+            --bg-base: #0b0f19;
+            --bg-card: rgba(22, 28, 45, 0.85);
+            --bg-glass: rgba(30, 41, 69, 0.6);
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --primary-glow: rgba(99, 102, 241, 0.35);
+            --accent: #a855f7;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --shadow-card: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }}
+
+        body {{
+            background: radial-gradient(circle at 10% 20%, #171c2f 0%, #0b0f19 90%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }}
+
+        /* Header & Navigation */
+        header {{
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            background: rgba(11, 15, 25, 0.85);
+            border-bottom: 1px solid var(--border-glass);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1.5rem;
+        }}
+
+        .logo {{
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 1.4rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            cursor: pointer;
+            text-decoration: none;
+        }}
+
+        .search-container {{
+            flex: 1;
+            max-width: 500px;
+            position: relative;
+        }}
+
+        .search-container input {{
+            width: 100%;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 999px;
+            padding: 0.75rem 1.25rem;
+            color: var(--text-main);
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.25s ease;
+        }}
+
+        .search-container input:focus {{
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+            background: rgba(30, 41, 69, 0.9);
+        }}
+
+        .header-actions {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }}
+
+        .cart-trigger-btn {{
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            border: none;
+            padding: 0.7rem 1.4rem;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }}
+
+        .cart-trigger-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+        }}
+
+        .badge {{
+            background: white;
+            color: var(--primary);
+            font-size: 0.8rem;
+            font-weight: 800;
+            border-radius: 999px;
+            padding: 0.15rem 0.55rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }}
+
+        /* Hero Promo Banner */
+        .promo-banner {{
+            background: linear-gradient(90deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
+            border-bottom: 1px solid var(--border-glass);
+            text-align: center;
+            padding: 0.65rem 1rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #c7d2fe;
+        }}
+
+        .promo-code-tag {{
+            background: rgba(99, 102, 241, 0.4);
+            border: 1px dashed #a5b4fc;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 700;
+            color: white;
+            letter-spacing: 0.5px;
+        }}
+
+        /* Main Container & Category Tabs */
+        main {{
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+            flex: 1;
+            width: 100%;
+        }}
+
+        .category-filters {{
+            display: flex;
+            gap: 0.75rem;
+            overflow-x: auto;
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
+            scrollbar-width: none;
+        }}
+
+        .category-filters::-webkit-scrollbar {{
+            display: none;
+        }}
+
+        .cat-btn {{
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            color: var(--text-muted);
+            padding: 0.6rem 1.25rem;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }}
+
+        .cat-btn:hover, .cat-btn.active {{
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px var(--primary-glow);
+        }}
+
+        /* Product Catalog Grid */
+        .products-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+            gap: 1.75rem;
+        }}
+
+        .product-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            box-shadow: var(--shadow-card);
+        }}
+
+        .product-card:hover {{
+            transform: translateY(-6px);
+            border-color: rgba(99, 102, 241, 0.4);
+            box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.7), 0 0 20px rgba(99, 102, 241, 0.2);
+        }}
+
+        .product-thumb {{
+            width: 100%;
+            height: 190px;
+            background: radial-gradient(circle at center, rgba(99, 102, 241, 0.15), rgba(15, 23, 42, 0.8));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 1.5rem;
+        }}
+
+        .product-thumb svg {{
+            width: 90px;
+            height: 90px;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+            transition: transform 0.3s ease;
+        }}
+
+        .product-card:hover .product-thumb svg {{
+            transform: scale(1.08);
+        }}
+
+        .tag-badge {{
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+        }}
+
+        .product-body {{
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            gap: 0.5rem;
+        }}
+
+        .product-category {{
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }}
+
+        .product-title {{
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-main);
+            line-height: 1.35;
+        }}
+
+        .product-rating {{
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.85rem;
+            color: #fbbf24;
+        }}
+
+        .product-desc {{
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            flex: 1;
+            margin-top: 0.25rem;
+        }}
+
+        .product-footer {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 1rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border-glass);
+        }}
+
+        .product-price {{
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: white;
+            letter-spacing: -0.5px;
+        }}
+
+        .btn-add-cart {{
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            padding: 0.6rem 1rem;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }}
+
+        .btn-add-cart:hover {{
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px var(--primary-glow);
+        }}
+
+        /* Sliding Cart Drawer */
+        .cart-overlay {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }}
+
+        .cart-overlay.open {{
+            opacity: 1;
+            pointer-events: auto;
+        }}
+
+        .cart-drawer {{
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 100%;
+            max-width: 440px;
+            height: 100%;
+            background: #111625;
+            border-left: 1px solid var(--border-glass);
+            z-index: 101;
+            transform: translateX(100%);
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.7);
+        }}
+
+        .cart-drawer.open {{
+            transform: translateX(0);
+        }}
+
+        .cart-header {{
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border-glass);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+
+        .cart-header h2 {{
+            font-size: 1.25rem;
+            font-weight: 700;
+        }}
+
+        .btn-close {{
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.4rem;
+            cursor: pointer;
+            padding: 0.2rem;
+            line-height: 1;
+            transition: color 0.2s ease;
+        }}
+
+        .btn-close:hover {{
+            color: white;
+        }}
+
+        .cart-items-container {{
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }}
+
+        .cart-item {{
+            background: var(--bg-card);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md);
+            padding: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }}
+
+        .cart-item-icon {{
+            width: 50px;
+            height: 50px;
+            background: rgba(99, 102, 241, 0.15);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+
+        .cart-item-icon svg {{
+            width: 28px;
+            height: 28px;
+        }}
+
+        .cart-item-details {{
+            flex: 1;
+        }}
+
+        .cart-item-title {{
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }}
+
+        .cart-item-price {{
+            font-size: 0.85rem;
+            color: #a5b4fc;
+            font-weight: 600;
+            margin-top: 0.2rem;
+        }}
+
+        .cart-qty-ctrls {{
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-glass);
+            border-radius: 6px;
+            padding: 0.2rem 0.4rem;
+        }}
+
+        .qty-btn {{
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+
+        .qty-num {{
+            font-size: 0.85rem;
+            font-weight: 700;
+            min-width: 18px;
+            text-align: center;
+        }}
+
+        .btn-remove-item {{
+            background: transparent;
+            border: none;
+            color: var(--accent-red);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 0.3rem;
+            opacity: 0.8;
+            transition: opacity 0.2s ease;
+        }}
+
+        .btn-remove-item:hover {{
+            opacity: 1;
+        }}
+
+        .cart-footer {{
+            padding: 1.25rem 1.5rem;
+            border-top: 1px solid var(--border-glass);
+            background: rgba(15, 20, 35, 0.95);
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }}
+
+        .coupon-row {{
+            display: flex;
+            gap: 0.5rem;
+        }}
+
+        .coupon-row input {{
+            flex: 1;
+            background: rgba(30, 41, 69, 0.6);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            padding: 0.5rem 0.75rem;
+            color: white;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }}
+
+        .coupon-row button {{
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            color: #c7d2fe;
+            padding: 0.5rem 0.9rem;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }}
+
+        .coupon-row button:hover {{
+            background: rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }}
+
+        .summary-row {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }}
+
+        .summary-total {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: white;
+            border-top: 1px solid var(--border-glass);
+            padding-top: 0.6rem;
+            margin-top: 0.2rem;
+        }}
+
+        .btn-checkout {{
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            border: none;
+            padding: 0.9rem;
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px var(--primary-glow);
+            margin-top: 0.5rem;
+        }}
+
+        .btn-checkout:hover {{
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }}
+
+        /* Checkout Modal */
+        .modal {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+        }}
+
+        .modal.open {{
+            opacity: 1;
+            pointer-events: auto;
+        }}
+
+        .modal-content {{
+            background: #151b2e;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 520px;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            position: relative;
+        }}
+
+        .modal-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }}
+
+        .modal-header h3 {{
+            font-size: 1.35rem;
+            font-weight: 700;
+        }}
+
+        .form-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }}
+
+        .form-group {{
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }}
+
+        .form-group.full {{
+            grid-column: span 2;
+        }}
+
+        .form-group label {{
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }}
+
+        .form-group input, .form-group select {{
+            background: rgba(30, 41, 69, 0.6);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 0.9rem;
+            color: white;
+            font-size: 0.9rem;
+            outline: none;
+        }}
+
+        .form-group input:focus, .form-group select:focus {{
+            border-color: var(--primary);
+        }}
+
+        .payment-options {{
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 0.5rem;
+        }}
+
+        .payment-label {{
+            flex: 1;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            padding: 0.6rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            background: rgba(30, 41, 69, 0.4);
+        }}
+
+        .btn-confirm-order {{
+            background: linear-gradient(135deg, var(--accent-green), #059669);
+            color: white;
+            border: none;
+            padding: 0.85rem;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 1.5rem;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);
+        }}
+
+        .btn-confirm-order:hover {{
+            filter: brightness(1.1);
+        }}
+
+        /* Success Confirmation Box */
+        .success-box {{
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }}
+
+        .success-icon {{
+            width: 64px;
+            height: 64px;
+            background: rgba(16, 185, 129, 0.2);
+            border: 2px solid var(--accent-green);
+            color: var(--accent-green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+        }}
+
+        /* Toast Notifications */
+        .toast {{
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid var(--primary);
+            color: white;
+            padding: 0.9rem 1.4rem;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px var(--primary-glow);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }}
+
+        .toast.show {{
+            transform: translateY(0);
+            opacity: 1;
+        }}
+
+        footer {{
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border-glass);
+            margin-top: 3rem;
+        }}
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <a href="#" class="logo">⚡ {title}</a>
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="Search gadgets, audio, wearables..." oninput="filterProducts()" />
+        </div>
+        <div class="header-actions">
+            <button class="cart-trigger-btn" onclick="toggleCart()">
+                <span>🛒 Cart</span>
+                <span class="badge" id="cart-badge">0</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Promo Banner -->
+    <div class="promo-banner">
+        🔥 Special Launch Offer: Get 20% OFF your entire order with code <span class="promo-code-tag">CHITTI20</span> at checkout!
+    </div>
+
+    <!-- Main Storefront -->
+    <main>
+        <!-- Category Filters -->
+        <div class="category-filters">
+            <button class="cat-btn active" onclick="setCategory('All', this)">All Products</button>
+            <button class="cat-btn" onclick="setCategory('Tech', this)">Tech & Gadgets</button>
+            <button class="cat-btn" onclick="setCategory('Audio', this)">Audio & Sound</button>
+            <button class="cat-btn" onclick="setCategory('Wearables', this)">Wearables</button>
+            <button class="cat-btn" onclick="setCategory('Accessories', this)">Accessories</button>
+        </div>
+
+        <!-- Product Grid -->
+        <div class="products-grid" id="products-grid"></div>
+    </main>
+
+    <!-- Slide-in Cart Drawer -->
+    <div class="cart-overlay" id="cart-overlay" onclick="toggleCart()"></div>
+    <div class="cart-drawer" id="cart-drawer">
+        <div class="cart-header">
+            <h2>Your Shopping Cart (<span id="cart-items-count">0</span>)</h2>
+            <button class="btn-close" onclick="toggleCart()">✕</button>
+        </div>
+        <div class="cart-items-container" id="cart-items">
+            <!-- Dynamic Cart Items -->
+        </div>
+        <div class="cart-footer">
+            <div class="coupon-row">
+                <input type="text" id="coupon-input" placeholder="Promo code (e.g. CHITTI20)" />
+                <button onclick="applyCoupon()">Apply</button>
+            </div>
+            <div class="summary-row">
+                <span>Subtotal</span>
+                <span id="summary-subtotal">$0.00</span>
+            </div>
+            <div class="summary-row" id="discount-row" style="display:none; color: var(--accent-green);">
+                <span>Discount (CHITTI20)</span>
+                <span id="summary-discount">-$0.00</span>
+            </div>
+            <div class="summary-row">
+                <span>Estimated Tax (8%)</span>
+                <span id="summary-tax">$0.00</span>
+            </div>
+            <div class="summary-row">
+                <span>Shipping</span>
+                <span style="color: var(--accent-green); font-weight:700;">FREE</span>
+            </div>
+            <div class="summary-total">
+                <span>Total</span>
+                <span id="summary-total">$0.00</span>
+            </div>
+            <button class="btn-checkout" onclick="openCheckoutModal()">Proceed to Checkout</button>
+        </div>
+    </div>
+
+    <!-- Checkout Modal -->
+    <div class="modal" id="checkout-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Express Secure Checkout</h3>
+                <button class="btn-close" onclick="closeCheckoutModal()">✕</button>
+            </div>
+            <form id="checkout-form" onsubmit="event.preventDefault(); placeOrder();">
+                <div class="form-grid">
+                    <div class="form-group full">
+                        <label>Full Name</label>
+                        <input type="text" id="cust-name" required placeholder="Alex Johnson" />
+                    </div>
+                    <div class="form-group full">
+                        <label>Email Address</label>
+                        <input type="email" id="cust-email" required placeholder="alex@example.com" />
+                    </div>
+                    <div class="form-group full">
+                        <label>Shipping Address</label>
+                        <input type="text" id="cust-address" required placeholder="742 Evergreen Terrace" />
+                    </div>
+                    <div class="form-group">
+                        <label>City</label>
+                        <input type="text" id="cust-city" required placeholder="Springfield" />
+                    </div>
+                    <div class="form-group">
+                        <label>Postal Code</label>
+                        <input type="text" id="cust-zip" required placeholder="97477" />
+                    </div>
+                    <div class="form-group full">
+                        <label>Payment Method</label>
+                        <div class="payment-options">
+                            <label class="payment-label">
+                                <input type="radio" name="pay-method" value="card" checked />
+                                <span>Credit / Debit Card</span>
+                            </label>
+                            <label class="payment-label">
+                                <input type="radio" name="pay-method" value="upi" />
+                                <span>Instant UPI / QR</span>
+                            </label>
+                            <label class="payment-label">
+                                <input type="radio" name="pay-method" value="cod" />
+                                <span>Cash on Delivery</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn-confirm-order">Confirm & Place Order (<span id="modal-order-total">$0.00</span>)</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Order Confirmed Modal -->
+    <div class="modal" id="success-modal">
+        <div class="modal-content success-box">
+            <div class="success-icon">✓</div>
+            <h2>Order Placed Successfully!</h2>
+            <p style="color: var(--text-muted);">Thank you for shopping with us. Your package is being prepped for shipment.</p>
+            <div style="background: rgba(30, 41, 69, 0.5); padding: 1rem; border-radius: 8px; width: 100%; border: 1px solid var(--border-glass);">
+                <div style="font-size: 0.85rem; color: var(--text-muted);">Order Tracking ID</div>
+                <div style="font-size: 1.2rem; font-weight: 800; color: #a5b4fc; margin-top: 0.25rem;" id="order-id-display">#ORD-89421</div>
+            </div>
+            <button class="btn-checkout" style="width: 100%;" onclick="closeSuccessModal()">Continue Shopping</button>
+        </div>
+    </div>
+
+    <!-- Floating Toast Notification -->
+    <div class="toast" id="toast-notify">✓ Item added to cart</div>
+
+    <footer>
+        <p>&copy; 2026 {title}. Powered by Chitti Autonomous Agent Studio. All rights reserved.</p>
+    </footer>
+
+    <!-- Store JavaScript Logic -->
+    <script>
+        // High-Resolution Inline Product SVG Icons
+        const ICONS = {{
+            headphones: `<svg viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>`,
+            watch: `<svg viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"></circle><polyline points="12 9 12 12 13.5 13.5"></polyline><path d="M16.51 17.35l-.85 3.22a2 2 0 0 1-1.93 1.43H10.27a2 2 0 0 1-1.93-1.43l-.85-3.22"></path><path d="M7.49 6.65l.85-3.22A2 2 0 0 1 10.27 2h3.46a2 2 0 0 1 1.93 1.43l.85 3.22"></path></svg>`,
+            keyboard: `<svg viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="6" y1="8" x2="6" y2="8.01"></line><line x1="10" y1="8" x2="10" y2="8.01"></line><line x1="14" y1="8" x2="14" y2="8.01"></line><line x1="18" y1="8" x2="18" y2="8.01"></line><line x1="6" y1="12" x2="6" y2="12.01"></line><line x1="10" y1="12" x2="10" y2="12.01"></line><line x1="14" y1="12" x2="14" y2="12.01"></line><line x1="18" y1="12" x2="18" y2="12.01"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>`,
+            mouse: `<svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="6"></rect><line x1="12" y1="7" x2="12" y2="11"></line></svg>`,
+            monitor: `<svg viewBox="0 0 24 24" fill="none" stroke="#f472b6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`,
+            mic: `<svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>`,
+            charger: `<svg viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`,
+            stand: `<svg viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="20" y2="21"></line><path d="M7 21l3-14h4l3 14"></path></svg>`
+        }};
+
+        // Curated Product Catalog
+        const PRODUCTS = [
+            {{ id: 1, name: "Ultra ANC Wireless Headphones", category: "Audio", price: 199.99, rating: 4.9, icon: "headphones", desc: "Studio-grade active noise cancellation with 40-hour battery life and spatial audio." }},
+            {{ id: 2, name: "Pro Titan Smartwatch v4", category: "Wearables", price: 149.50, rating: 4.8, icon: "watch", desc: "Sapphire glass, ECG biometric tracking, GPS, and water-resistance up to 50 meters." }},
+            {{ id: 3, name: "Mechanical RGB Gaming Keyboard", category: "Accessories", price: 89.00, rating: 4.7, icon: "keyboard", desc: "Hot-swappable linear switches, double-shot PBT keycaps, and customizable RGB." }},
+            {{ id: 4, name: "Precision Wireless Ergonomic Mouse", category: "Accessories", price: 45.00, rating: 4.6, icon: "mouse", desc: "Ultra-precise 4000 DPI sensor with silent magnetic clicks and dual connectivity." }},
+            {{ id: 5, name: "Quantum 4K Ultra-Wide Monitor", category: "Tech", price: 399.99, rating: 4.9, icon: "monitor", desc: "144Hz IPS display with 99% DCI-P3 color gamut and USB-C 90W power delivery." }},
+            {{ id: 6, name: "Studio USB-C Condenser Microphone", category: "Audio", price: 119.00, rating: 4.8, icon: "mic", desc: "Cardioid polar pattern with built-in pop filter and real-time zero-latency monitoring." }},
+            {{ id: 7, name: "MagSafe Fast Charging Station", category: "Tech", price: 39.99, rating: 4.7, icon: "charger", desc: "3-in-1 magnetic wireless charging dock for phone, watch, and wireless earbuds." }},
+            {{ id: 8, name: "Aerospace Aluminum Laptop Stand", category: "Accessories", price: 34.50, rating: 4.9, icon: "stand", desc: "Foldable ergonomic design with heat-dissipating ventilation and non-slip silicone pads." }}
+        ];
+
+        // State Management with LocalStorage
+        const STORAGE_KEY = "aura_ecommerce_cart";
+        let cart = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        let activeCategory = "All";
+        let activeDiscount = 0;
+
+        function saveCart() {{
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
+            updateCartBadge();
+            renderCart();
+        }}
+
+        function updateCartBadge() {{
+            const totalQty = cart.reduce((acc, item) => acc + item.quantity, 0);
+            document.getElementById("cart-badge").innerText = totalQty;
+            document.getElementById("cart-items-count").innerText = totalQty;
+        }}
+
+        function setCategory(cat, btn) {{
+            activeCategory = cat;
+            document.querySelectorAll(".cat-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            filterProducts();
+        }}
+
+        function filterProducts() {{
+            const query = (document.getElementById("search-input").value || "").toLowerCase().trim();
+            const grid = document.getElementById("products-grid");
+            grid.innerHTML = "";
+
+            const filtered = PRODUCTS.filter(p => {{
+                const matchesCat = activeCategory === "All" || p.category === activeCategory;
+                const matchesQuery = p.name.toLowerCase().includes(query) || p.desc.toLowerCase().includes(query);
+                return matchesCat && matchesQuery;
+            }});
+
+            if (filtered.length === 0) {{
+                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem;">No products found matching your search.</div>`;
+                return;
+            }}
+
+            filtered.forEach(p => {{
+                const card = document.createElement("div");
+                card.className = "product-card";
+                card.innerHTML = `
+                    <div class="product-thumb">
+                        <span class="tag-badge">In Stock</span>
+                        ${{ICONS[p.icon] || ICONS.headphones}}
+                    </div>
+                    <div class="product-body">
+                        <span class="product-category">${{p.category}}</span>
+                        <h3 class="product-title">${{p.name}}</h3>
+                        <div class="product-rating">★★★★★ <span>(${{p.rating}})</span></div>
+                        <p class="product-desc">${{p.desc}}</p>
+                        <div class="product-footer">
+                            <span class="product-price">$${{p.price.toFixed(2)}}</span>
+                            <button class="btn-add-cart" onclick="addToCart(${{p.id}})">+ Add to Cart</button>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            }});
+        }}
+
+        function addToCart(productId) {{
+            const item = PRODUCTS.find(p => p.id === productId);
+            if (!item) return;
+
+            const existing = cart.find(c => c.id === productId);
+            if (existing) {{
+                existing.quantity += 1;
+            }} else {{
+                cart.push({{ id: item.id, name: item.name, price: item.price, icon: item.icon, quantity: 1 }});
+            }}
+            saveCart();
+            showToast(`Added "${{item.name}}" to cart!`);
+        }}
+
+        function updateQuantity(productId, delta) {{
+            const item = cart.find(c => c.id === productId);
+            if (!item) return;
+
+            item.quantity += delta;
+            if (item.quantity <= 0) {{
+                cart = cart.filter(c => c.id !== productId);
+            }}
+            saveCart();
+        }}
+
+        function removeFromCart(productId) {{
+            cart = cart.filter(c => c.id !== productId);
+            saveCart();
+            showToast("Item removed from cart");
+        }}
+
+        function renderCart() {{
+            const container = document.getElementById("cart-items");
+            container.innerHTML = "";
+
+            if (cart.length === 0) {{
+                container.innerHTML = `
+                    <div style="text-align: center; color: var(--text-muted); padding: 4rem 1rem;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">🛒</div>
+                        <p>Your shopping cart is currently empty.</p>
+                    </div>
+                `;
+                updateSummary(0);
+                return;
+            }}
+
+            let subtotal = 0;
+            cart.forEach(item => {{
+                subtotal += item.price * item.quantity;
+                const div = document.createElement("div");
+                div.className = "cart-item";
+                div.innerHTML = `
+                    <div class="cart-item-icon">
+                        ${{ICONS[item.icon] || ICONS.headphones}}
+                    </div>
+                    <div class="cart-item-details">
+                        <div class="cart-item-title">${{item.name}}</div>
+                        <div class="cart-item-price">$${{item.price.toFixed(2)}}</div>
+                    </div>
+                    <div class="cart-qty-ctrls">
+                        <button class="qty-btn" onclick="updateQuantity(${{item.id}}, -1)">−</button>
+                        <span class="qty-num">${{item.quantity}}</span>
+                        <button class="qty-btn" onclick="updateQuantity(${{item.id}}, 1)">+</button>
+                    </div>
+                    <button class="btn-remove-item" onclick="removeFromCart(${{item.id}})">✕</button>
+                `;
+                container.appendChild(div);
+            }});
+
+            updateSummary(subtotal);
+        }}
+
+        function updateSummary(subtotal) {{
+            const discount = subtotal * activeDiscount;
+            const tax = (subtotal - discount) * 0.08;
+            const total = (subtotal - discount) + tax;
+
+            document.getElementById("summary-subtotal").innerText = `$${{subtotal.toFixed(2)}}`;
+            document.getElementById("summary-tax").innerText = `$${{tax.toFixed(2)}}`;
+            document.getElementById("summary-total").innerText = `$${{total.toFixed(2)}}`;
+            document.getElementById("modal-order-total").innerText = `$${{total.toFixed(2)}}`;
+
+            const discountRow = document.getElementById("discount-row");
+            if (activeDiscount > 0) {{
+                discountRow.style.display = "flex";
+                document.getElementById("summary-discount").innerText = `-$${{discount.toFixed(2)}}`;
+            }} else {{
+                discountRow.style.display = "none";
+            }}
+        }}
+
+        function applyCoupon() {{
+            const inp = document.getElementById("coupon-input").value.trim().toUpperCase();
+            if (inp === "CHITTI20") {{
+                activeDiscount = 0.20;
+                showToast("Coupon applied: 20% Discount!");
+                saveCart();
+            }} else if (inp) {{
+                showToast("Invalid promo code. Use CHITTI20");
+            }}
+        }}
+
+        function toggleCart() {{
+            const drawer = document.getElementById("cart-drawer");
+            const overlay = document.getElementById("cart-overlay");
+            drawer.classList.toggle("open");
+            overlay.classList.toggle("open");
+        }}
+
+        function openCheckoutModal() {{
+            if (cart.length === 0) {{
+                showToast("Your cart is empty! Add items first.");
+                return;
+            }}
+            toggleCart();
+            document.getElementById("checkout-modal").classList.add("open");
+        }}
+
+        function closeCheckoutModal() {{
+            document.getElementById("checkout-modal").classList.remove("open");
+        }}
+
+        function placeOrder() {{
+            const name = document.getElementById("cust-name").value;
+            const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
+
+            // Clear Cart and close modal
+            cart = [];
+            saveCart();
+            closeCheckoutModal();
+
+            // Show Success Modal
+            document.getElementById("order-id-display").innerText = "#" + orderId;
+            document.getElementById("success-modal").classList.add("open");
+            showToast(`Order #${{orderId}} confirmed!`);
+        }}
+
+        function closeSuccessModal() {{
+            document.getElementById("success-modal").classList.remove("open");
+        }}
+
+        function showToast(msg) {{
+            const t = document.getElementById("toast-notify");
+            t.innerText = msg;
+            t.classList.add("show");
+            setTimeout(() => {{
+                t.classList.remove("show");
+            }}, 2600);
+        }}
+
+        function renderProducts() {{
+            filterProducts();
+        }}
+
+        // Initialize Store on load
+        document.addEventListener("DOMContentLoaded", () => {{
+            renderProducts();
+            updateCartBadge();
+            renderCart();
+        }});
+    </script>
+</body>
+</html>"""
+
+        files = [
+            CodeFileSpec(
+                path=spec.filename,
+                content=html_code,
+                description=f"{title} Single Page Application",
+                expected_markers=markers,
+            )
+        ]
+        return html_code, markers, symbol, files
 
     @classmethod
     def _synthesize_calculator_web_app(

@@ -9,7 +9,7 @@ WshShell.Run "cmd /c tasklist /FI ""IMAGENAME eq ollama.exe"" 2>NUL | find /I /N
 
 ' 2. Launch Chitti Background Daemon
 WshShell.CurrentDirectory = projectDir
-WshShell.Run "python src\main.py --daemon", 0, False
+WshShell.Run "pythonw src\main.py --daemon", 0, False
 
 Set WshShell = Nothing
 Set fso = Nothing

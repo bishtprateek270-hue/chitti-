@@ -120,14 +120,17 @@ class NaturalIntentEngine:
                 confidence=1.0,
             )
         if ctrl.command == ControlCommand.WAKE:
-            return SemanticIntent(
-                intent=IntentType.WAKE,
-                goal="Wake assistant from sleep",
-                risk="low",
-                execution_path=ExecutionPath.PATH_A_SIMPLE,
-                parameters={"action": "wake"},
-                confidence=1.0,
-            )
+            # If there is no actionable task following the wake word, treat as standalone WAKE
+            has_actionable_task = bool(ctrl.extracted_tail) or bool(re.search(r"(?i)\b(?:open|kholo|play|baja|search|repo|repository|project|code|write|create|find|run|type|send|batao|tell|dikhao|chalao)\b", clean_lower))
+            if not has_actionable_task:
+                return SemanticIntent(
+                    intent=IntentType.WAKE,
+                    goal="Wake assistant from sleep",
+                    risk="low",
+                    execution_path=ExecutionPath.PATH_A_SIMPLE,
+                    parameters={"action": "wake"},
+                    confidence=1.0,
+                )
 
         # Fast simple commands (volume, mute, calculator, screenshot)
         if re.search(r"(?i)\b(?:volume\s+(?:kam|badhao|mute|up|down)|increase\s+volume|decrease\s+volume|mute\s+volume)\b", clean_lower) or re.search(r"(?:आवाज़\s*(?:कम|बढ़ाओ|म्यूट))", raw):
@@ -263,6 +266,44 @@ class NaturalIntentEngine:
                 parameters={"task": clean},
                 confidence=0.95,
             )
+
+        # -------------------------------------------------------------
+        # 1E. DIRECT PROJECT & REPOSITORY OPENING ("open project repo", "open 3D wallpaper project", "open repo")
+        # -------------------------------------------------------------
+        m_proj = re.search(r"(?i)\b(?:open|kholo|show|bring\s+up|load)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_\-\s]+?)(?:\s+(?:in\s+(?:browser|chrome|brave|edge|vs\s*code|vscode|editor)))?$", clean_lower)
+        if m_proj:
+            candidate_target = m_proj.group(1).strip()
+            from src.agent.projects import ProjectRegistry
+            reg = ProjectRegistry()
+            p_path = reg.get_project_path(candidate_target)
+            if p_path:
+                in_browser = bool(re.search(r"(?i)\b(?:browser|chrome|brave|edge|website|web)\b", clean_lower))
+                if in_browser or (candidate_target in ("repo", "repository", "github repo", "my github repo", "project repo", "project repository") and not re.search(r"(?i)\b(?:code|editor|folder|local|directory|desktop)\b", clean_lower)):
+                    from src.agent.registry import DEFAULT_URL_MAP
+                    repo_url = DEFAULT_URL_MAP.get(candidate_target, DEFAULT_URL_MAP.get("my repo", "https://github.com/bishtprateek270-hue?tab=repositories"))
+                    return SemanticIntent(
+                        intent=IntentType.OPEN_APPLICATION,
+                        goal=f"Open {candidate_target} in browser",
+                        target=candidate_target,
+                        risk="low",
+                        execution_path=ExecutionPath.PATH_C_COMPUTER,
+                        parameters={"url": repo_url, "target": candidate_target, "action": "open_url"},
+                        confidence=0.95,
+                    )
+                else:
+                    return SemanticIntent(
+                        intent=IntentType.OPEN_PROJECT,
+                        goal=f"Open {candidate_target} project in VS Code / Editor",
+                        target=candidate_target,
+                        risk="low",
+                        execution_path=ExecutionPath.PATH_C_COMPUTER,
+                        parameters={
+                            "project_name": candidate_target,
+                            "project_path": p_path,
+                            "action": "open_project",
+                        },
+                        confidence=0.95,
+                    )
 
         # -------------------------------------------------------------
         # 2. CONTEXTUAL PROJECT OPENING ("Yaar, kal jo Python project banaya tha, usko kholna")
