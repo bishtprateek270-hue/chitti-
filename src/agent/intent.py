@@ -807,6 +807,39 @@ class ActionIntentAnalyzer:
                     verification_required=True,
                 )
 
+            # Check if this target is explicitly a desktop browser application
+            browser_app_map = {
+                "brave": "Brave",
+                "brave browser": "Brave",
+                "chrome": "Google Chrome",
+                "google chrome": "Google Chrome",
+                "chrome browser": "Google Chrome",
+                "edge": "Microsoft Edge",
+                "microsoft edge": "Microsoft Edge",
+                "edge browser": "Microsoft Edge",
+                "msedge": "Microsoft Edge",
+                "firefox": "Firefox",
+                "mozilla firefox": "Firefox",
+                "firefox browser": "Firefox",
+                "opera": "Opera",
+                "opera browser": "Opera",
+                "vivaldi": "Vivaldi",
+            }
+            clean_tgt_lower = raw_target.lower().strip()
+            if clean_tgt_lower in browser_app_map:
+                app_title = browser_app_map[clean_tgt_lower]
+                return ActionIntent(
+                    intent=ActionIntentType.OPEN_APPLICATION,
+                    goal=f"Open {app_title}",
+                    channel="Desktop",
+                    application=app_title,
+                    target=app_title,
+                    destination=app_title,
+                    parameters={"application": app_title, "target": app_title},
+                    execution_required=True,
+                    verification_required=True,
+                )
+
             # Check if this target is a URL / Website / Web Service / Repo / Project link
             from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
             clean_target_lower = raw_target.lower()
@@ -817,10 +850,12 @@ class ActionIntentAnalyzer:
                     resolved_url = ResourceDiscovery.resolve_url(alt_target)
 
             is_web_or_repo = (
-                resolved_url is not None
-                or ResourceDiscovery.is_url(raw_target)
-                or clean_target_lower in DEFAULT_URL_MAP
-                or any(w in clean_lower for w in ["browser", "website", "site", "web", "repo", "repository", "github", "git", "portfolio", "link", "url", "demo", "live", "deployment", "ldeployment", "vercel"])
+                clean_target_lower not in browser_app_map and (
+                    resolved_url is not None
+                    or ResourceDiscovery.is_url(raw_target)
+                    or clean_target_lower in DEFAULT_URL_MAP
+                    or any(w in clean_lower for w in ["browser", "website", "site", "web", "repo", "repository", "github", "git", "portfolio", "link", "url", "demo", "live", "deployment", "ldeployment", "vercel"])
+                )
             )
             if is_web_or_repo:
                 target_url = resolved_url or ResourceDiscovery.to_url(raw_target)
@@ -855,19 +890,23 @@ class ActionIntentAnalyzer:
             app_title = raw_target.title()
             if raw_target.lower() in ("vs code", "vscode", "visual studio code"):
                 app_title = "Visual Studio Code"
-            elif raw_target.lower() in ("chrome", "google chrome"):
+            elif raw_target.lower() in ("chrome", "google chrome", "chrome browser"):
                 app_title = "Google Chrome"
-            elif raw_target.lower() in ("edge", "microsoft edge"):
+            elif raw_target.lower() in ("brave", "brave browser"):
+                app_title = "Brave"
+            elif raw_target.lower() in ("edge", "microsoft edge", "edge browser", "msedge"):
                 app_title = "Microsoft Edge"
+            elif raw_target.lower() in ("firefox", "mozilla firefox", "firefox browser"):
+                app_title = "Firefox"
 
             return ActionIntent(
                 intent=ActionIntentType.OPEN_APPLICATION,
                 goal=f"Open {app_title}",
                 channel="Desktop",
                 application=app_title,
-                target=raw_target,
-                destination=raw_target,
-                parameters={"application": raw_target, "target": raw_target},
+                target=app_title,
+                destination=app_title,
+                parameters={"application": app_title, "target": app_title},
                 execution_required=True,
                 verification_required=True,
             )

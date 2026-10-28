@@ -4,6 +4,7 @@ Discovers, launches, monitors, and terminates Windows desktop applications.
 """
 
 import os
+import platform
 import subprocess
 import time
 from dataclasses import dataclass
@@ -47,8 +48,35 @@ class AppController:
                 return False
 
         try:
+            # Special handling for Chromium browsers (e.g. Brave) on Windows:
+            # If orphan background processes are running without a visible window, clear them
+            # so the profile lock is released and an interactive window opens cleanly.
+            app_lower = app_name.lower().strip()
+            if "brave" in app_lower:
+                from src.agent.computer.controller import ComputerController
+                ctrl = ComputerController()
+                has_window = any("brave" in w.title.lower() for w in ctrl.list_windows())
+                if not has_window:
+                    for proc in psutil.process_iter(['name']):
+                        try:
+                            if (proc.info.get('name') or '').lower() == 'brave.exe':
+                                proc.kill()
+                        except Exception:
+                            pass
+                    time.sleep(0.3)
+
             cmd = [exe_path] + (args or [])
             is_shell = str(exe_path).lower().endswith((".cmd", ".bat"))
+
+            # Prefer os.startfile on Windows when no extra args are passed for seamless desktop integration
+            if not args and platform.system() == "Windows" and os.path.isabs(exe_path) and not is_shell:
+                try:
+                    os.startfile(exe_path)
+                    log_info(f"Launched application via os.startfile: {exe_path}")
+                    return True
+                except Exception as e:
+                    log_debug(f"os.startfile fallback to subprocess: {e}")
+
             subprocess.Popen(cmd, cwd=cwd, shell=is_shell)
             log_info(f"Launched application: {exe_path} with args: {args}")
             return True

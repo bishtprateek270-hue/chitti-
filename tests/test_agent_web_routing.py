@@ -145,3 +145,30 @@ def test_manager_opens_websites_on_browser_command(monkeypatch):
         assert any(expected_domain in u for u in opened_urls), f"Failed to open {expected_domain} for {cmd}"
 
 
+def test_open_browser_applications_routes_to_open_application():
+    """Verifies that queries asking to open desktop browser applications route to OPEN_APPLICATION, not OPEN_URL."""
+    from src.agent.intent import ActionIntentAnalyzer, ActionIntentType
+    from src.agent.parser import ActionParser
+
+    cases = [
+        ("open brave", "Brave"),
+        ("open brave browser", "Brave"),
+        ("open chrome", "Google Chrome"),
+        ("open chrome browser", "Google Chrome"),
+        ("open edge", "Microsoft Edge"),
+        ("open edge browser", "Microsoft Edge"),
+        ("open firefox", "Firefox"),
+        ("open firefox browser", "Firefox"),
+    ]
+
+    for query, expected_app in cases:
+        intent = ActionIntentAnalyzer.extract_intent(query)
+        assert intent.intent == ActionIntentType.OPEN_APPLICATION, f"Expected OPEN_APPLICATION for {query}, got {intent.intent}"
+        assert intent.application == expected_app, f"Expected {expected_app}, got {intent.application} for {query}"
+
+        act = ActionParser.parse_command(query)
+        assert act is not None
+        assert act.action == ActionType.OPEN_APPLICATION
+
+
+

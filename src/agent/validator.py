@@ -58,8 +58,11 @@ class ActionValidator:
 
                 # 2. Check if target is a web URL, website, project repo, or mapped web service
                 from src.agent.registry import ResourceDiscovery, DEFAULT_URL_MAP
+                browser_names = {"brave", "brave browser", "chrome", "google chrome", "chrome browser", "edge", "microsoft edge", "edge browser", "msedge", "firefox", "firefox browser"}
                 resolved_url = ResourceDiscovery.resolve_url(clean_target) or ResourceDiscovery.resolve_url(app_target)
-                if resolved_url or ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP or any(w in app_target.lower() for w in ["website", "site", "browser", "web", "http", ".com"]):
+                if clean_target.lower() not in browser_names and (
+                    resolved_url or ResourceDiscovery.is_url(clean_target) or clean_target.lower() in DEFAULT_URL_MAP or any(w in app_target.lower() for w in ["website", "site", "web", "http", ".com"]) or clean_target.lower() in ("browser", "the browser", "my browser")
+                ):
                     target_url = resolved_url or ResourceDiscovery.to_url(clean_target)
                     display_title = clean_target.title() if clean_target.lower() not in ("website", "the website", "browser", "the browser", "web") else "Browser"
                     log_chitti(f"[AGENT] Re-routing web target '{clean_target}' from OPEN_APPLICATION to OPEN_URL: {target_url}")
