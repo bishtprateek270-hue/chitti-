@@ -162,3 +162,22 @@ def test_07_unseen_task_pomodoro_timer(agent_mgr):
     assert f.exists()
     content = f.read_text(encoding="utf-8")
     assert "timer" in content.lower() or "pomodoro" in content.lower()
+
+
+def test_08_complex_ecommerce_web_app(agent_mgr):
+    """Task: 'creating an e commerece web for this product'"""
+    raw_prompt = "creating an e commerece web for this product and run it in browser"
+    spec = CodeGenerator.parse_programming_task(raw_prompt)
+    assert spec.ui_required is True
+    assert spec.filename == "commerce_website.html"
+    assert spec.project_type == "web_app"
+
+    handled, msg, result = agent_mgr.handle_command(raw_prompt, lang="en")
+    assert handled is True
+    assert result.success is True
+    f = Path(agent_mgr.workspace_dir) / spec.filename
+    assert f.exists()
+    content = f.read_text(encoding="utf-8")
+    assert "addToCart" in content
+    assert "checkout" in content
+

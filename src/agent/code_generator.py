@@ -175,14 +175,15 @@ class CodeGenerator:
             r"(?i)^(?:in\s+vs\s*code|vs\s*code\s+me|vs\s*code\s+mein)\s*(?:and|aur|,)?\s*",
             r"(?i)^(?:vs\s*code|vscode)\s+(?:open\s+kro|open\s+karo|kholo)\s*(?:aur|and|,)?\s*",
             r"(?i)^(?:open\s+vs\s*code|open\s+vscode)\s*(?:and|aur|,)?\s*",
-            r"(?i)^(?:write|wrote|create|created|make|made|build|built|generate|generated|implement|implemented|develop|developed|banao|likho)\s+(?:an|a|the|ek)?\s*",
+            r"(?i)^(?:write|wrote|writing|create|created|creating|make|made|making|build|built|building|generate|generated|generating|implement|implemented|implementing|develop|developed|developing|design|designed|designing|banao|likho)\s+(?:an|a|the|ek)?\s*",
             r"(?i)^(?:an|a|the|ek)\s+",
         ]
         for p in remove_patterns:
             clean_desc = re.sub(p, "", clean_desc).strip()
 
-        # Remove trailing execution/UI modifiers from problem title
+        # Remove trailing execution/UI/etc modifiers from problem title
         clean_desc = re.sub(r"(?i)\s*(?:aur|and|,)?\s*(?:run|execute|chalao|run\s+karo|execute\s+karo|chala\s+do|test\s+it|test\s+karo|open\s+it\s+in\s+(?:the\s+)?browser|open\s+it).*$", "", clean_desc).strip()
+        clean_desc = re.sub(r"(?i)\s*(?:aur|and|,)?\s*(?:etc|and\s+etc|and\s+all\s+that|so\s+on).*$", "", clean_desc).strip()
         clean_desc = re.sub(r"(?i)\s*(?:with\s+(?:a\s+)?(?:good|modern|responsive|simple|clean)?\s*ui|having\s+ui|jisme\s+achha\s+ui\s+ho).*$", "", clean_desc).strip()
         clean_desc = re.sub(r"(?i)\s+(?:kro|karo|banao|likho|do|kijiye)$", "", clean_desc).strip()
 
@@ -595,7 +596,16 @@ class CodeGenerator:
         cls, spec: ProgrammingTaskSpec
     ) -> Tuple[str, List[str], str, List[CodeFileSpec]]:
         """Generates a complete, production-grade, modern responsive E-Commerce Web Application."""
-        title = spec.problem_description.strip().title() or "Aura Luxe E-Commerce"
+        desc = spec.problem_description.strip()
+        # Clean generic wrapper words like 'ecommerce website for', 'store for', etc.
+        specific_subject = re.sub(r"(?i)\b(?:e[\s\-_]*commerce|shopping|store|shop|online|website|web|webpage|app|application|project|page)\b", "", desc).strip()
+        specific_subject = re.sub(r"(?i)^(?:for\s+|of\s+|about\s+)", "", specific_subject).strip()
+        specific_subject = re.sub(r"(?i)\s+(?:for\s+me|with\s+.*|in\s+.*|and\s+run.*)$", "", specific_subject).strip()
+
+        if specific_subject and specific_subject.lower() not in ("this product", "product", "items", "goods", "stuff", "it"):
+            title = f"{specific_subject.title()} Store"
+        else:
+            title = "Aura Luxe E-Commerce"
         symbol = "DOCTYPE"
         markers = [
             "<!DOCTYPE html>",

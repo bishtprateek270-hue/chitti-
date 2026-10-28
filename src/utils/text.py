@@ -93,7 +93,11 @@ def normalize_typos(text: str) -> str:
     normalized = re.sub(r"(?i)\b(?:craete|creat|crate|cratee)\b", "create", normalized)
     normalized = re.sub(r"(?i)\b(?:fuctional|funtional|functioanl)\b", "functional", normalized)
     # Imperative 'built' -> 'build' (e.g. 'built a calculator', 'built me an app')
-    normalized = re.sub(r"(?i)\bbuilt\b(?=\s+(?:a|an|the|me|us|for|fully|interactive|simple|modern|[a-z0-9_-]+\s+(?:app|project|website|calculator|tool|system|ui)))", "build", normalized)
+    normalized = re.sub(r"(?i)\bbuilt\b(?=\s+(?:a|an|the|me|us|for|fully|interactive|simple|modern|[a-z0-9_-]+\s+(?:app|project|website|calculator|tool|system|ui|store|ecommerce)))", "build", normalized)
+    
+    # E-commerce typos & variations (e.g. 'e commerece', 'e commerce', 'e-commerece', 'ecomerce', 'e commerece web')
+    normalized = re.sub(r"(?i)\be[\s\-_]*(?:commerece|commerce|comerce|commerse)\b", "ecommerce", normalized)
+    normalized = re.sub(r"(?i)\b(ecommerce|shopping|store|shop)\s+web\b", r"\1 website", normalized)
     
     # Common app name & web service typos
     normalized = re.sub(r"(?i)\b(?:gemmini|gemnii|gemni|gimini|gemini\s+ai)\b", "gemini", normalized)

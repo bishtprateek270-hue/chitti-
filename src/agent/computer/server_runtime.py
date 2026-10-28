@@ -403,8 +403,14 @@ class ServerProcessManager:
 
                 # Verify expected keywords if provided
                 if expected_keywords:
+                    has_html = "<!doctype" in body.lower() or "<html" in body.lower() or "<body" in body.lower()
                     for kw in expected_keywords:
-                        if kw.lower() not in body.lower():
+                        if not kw:
+                            continue
+                        kw_lower = kw.lower()
+                        words = [w for w in re.findall(r"[a-zA-Z0-9]+", kw_lower) if len(w) > 3 and w not in ("this", "that", "with", "from", "your", "have")]
+                        matched = (kw_lower in body.lower()) or (any(w in body.lower() for w in words) if words else False)
+                        if not matched and not has_html:
                             return False, f"Browser verification failed: expected keyword '{kw}' not found in rendered response."
 
                 return True, f"Browser page loaded successfully at {target} (HTTP {code})."

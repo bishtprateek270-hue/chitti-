@@ -620,10 +620,10 @@ class ActionIntentAnalyzer:
         # 6. PROJECT CREATION / CODING ACTIONS (Phase 6)
         # -------------------------------------------------------------
         is_coding = bool(
-            re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|created|build|built|make|made|develop|developed|implement|implemented|generate|generated|design|designed|write|wrote)\s+.*(?:app|application|project|website|calculator|tracker|system|dashboard|timer|todo|game|api|script|program|code)", clean) or
-            re.search(r"(?i)\b(?:python|cpp|c\+\+|java|react|html|css|flask|fastapi)\b.*(?:banao|create|created|build|built|make|made|write|wrote|implement|run)", clean) or
+            re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|created|creating|build|built|building|make|made|making|develop|developed|developing|implement|implemented|implementing|generate|generated|generating|design|designed|designing|write|wrote|writing)\s+.*(?:app|application|project|website|site|web|portal|store|shop|ecommerce|commerce|calculator|tracker|system|dashboard|timer|todo|game|api|script|program|code)", clean) or
+            re.search(r"(?i)\b(?:python|cpp|c\+\+|java|react|html|css|flask|fastapi)\b.*(?:banao|create|created|creating|build|built|make|made|write|wrote|implement|run)", clean) or
             re.search(r"(?i)\b(?:banao|bana\s+do|create\s+karo|develop\s+karo)\b", clean) or
-            re.search(r"(?i)\b(?:calculator|tracker|todo|dashboard|timer|system|game|app|project|website|api)\s+(?:with\s+.*ui|and\s+run|aur\s+run|banao|likho)\b", clean)
+            re.search(r"(?i)\b(?:calculator|tracker|todo|dashboard|timer|system|game|app|project|website|site|web|store|shop|ecommerce|api)\s+(?:with\s+.*ui|and\s+run|aur\s+run|banao|likho)\b", clean)
         )
         if is_coding:
             return ActionIntent(

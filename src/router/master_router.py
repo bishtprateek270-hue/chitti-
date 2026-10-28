@@ -113,12 +113,12 @@ class MasterRouter:
 
     # 4. Project Creation Patterns (Phase 6 Agent)
     PROJECT_CREATION_PATTERNS = [
-        # Explicit creation directives (including with VS Code prefix)
-        r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|created|build|built|make|made|develop|developed|implement|implemented|generate|generated|design|designed|write|wrote)\s+(?:a\s+|an\s+|the\s+)?(?:fully\s+functional\s+|complete\s+|simple\s+|interactive\s+|modern\s+|clean\s+ui\s+|good\s+ui\s+)?([a-zA-Z0-9_\-\s]+?)(?:\s+for\s+me|\s+with\s+.*|\s+in\s+[a-zA-Z0-9_\+\#]+|\s+using\s+.*|\s+and\s+run\s+it)?$",
+        # Explicit creation directives (including with VS Code prefix and complex modifiers)
+        r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|created|creating|build|built|building|make|made|making|develop|developed|developing|implement|implemented|implementing|generate|generated|generating|design|designed|designing|write|wrote|writing)\s+(?:a\s+|an\s+|the\s+)?(?:fully\s+functional\s+|complete\s+|simple\s+|interactive\s+|modern\s+|clean\s+ui\s+|good\s+ui\s+)?([a-zA-Z0-9_\-\s]+?)(?:\s+for\s+(?:me|this\s+product|[a-zA-Z0-9_\-\s]+)|\s+with\s+.*|\s+in\s+[a-zA-Z0-9_\+\#]+|\s+using\s+.*|\s+and\s+run\s+it|\s+and\s+etc)?$",
         # Desire-based project requests ("I want an app that...", "I need a project for...")
-        r"(?i)\b(?:i\s+want|i\s+need|can\s+you\s+(?:build|built|make|made|create|created|develop)|please\s+(?:build|built|make|create|develop))\s+(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9_\-\s]+?(?:application|app|project|website|dashboard|tracker|tool|system|calculator))\b",
+        r"(?i)\b(?:i\s+want|i\s+need|can\s+you\s+(?:build|built|make|made|create|created|develop)|please\s+(?:build|built|make|create|develop))\s+(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9_\-\s]+?(?:application|app|project|website|site|web|portal|store|shop|ecommerce|commerce|dashboard|tracker|tool|system|calculator))\b",
         # Multilingual Hindi / Hinglish project building
-        r"(?i)\b(?:mere\s+liye\s+)?(?:ek\s+)?([a-zA-Z0-9_\-\s]+?)\s+(?:app|project|system|tracker|dashboard|tool|website|calculator)?\s*(?:banao|bana\s+do|bana\s+ke\s+run\s+karo|bana\s+dijiye|create\s+karo|develop\s+karo)\b",
+        r"(?i)\b(?:mere\s+liye\s+)?(?:ek\s+)?([a-zA-Z0-9_\-\s]+?)\s+(?:app|project|system|tracker|dashboard|tool|website|site|web|store|shop|ecommerce|calculator)?\s*(?:banao|bana\s+do|bana\s+ke\s+run\s+karo|bana\s+dijiye|create\s+karo|develop\s+karo)\b",
     ]
 
     # 5. Project Modification / Debugging / Execution (Phase 5/6)
@@ -438,15 +438,15 @@ class MasterRouter:
         # Distinguish: "How do I create a todo list?" (Technical Knowledge) vs "Create a todo list for me" (Project Creation)
         is_informational = any(re.search(pat, clean) for pat in cls.TECHNICAL_KNOWLEDGE_PATTERNS)
         is_actionable_directive = bool(
-            re.search(r"(?i)\b(?:for\s+me|in\s+vs\s*code|and\s+run\s+it|aur\s+run\s+karo|on\s+my\s+computer|mere\s+liye|bana\s+do|banao)\b", clean)
+            re.search(r"(?i)\b(?:for\s+me|for\s+this\s+product|for\s+[a-zA-Z0-9_\-\s]+|in\s+vs\s*code|and\s+run\s+it|aur\s+run\s+karo|on\s+my\s+computer|mere\s+liye|bana\s+do|banao)\b", clean)
             or re.search(r"(?i)\b(?:interactive\s+ui|good\s+ui|fully\s+functional|run\s+it|open\s+in\s+browser)\b", clean)
         )
 
         # 6. Check for Project Creation (Phase 6 Agent)
         is_project_signal = (
             any(re.search(pat, clean) for pat in cls.PROJECT_CREATION_PATTERNS)
-            or bool(re.search(r"(?i)\b(?:create|created|build|built|make|made|develop|developed|implement|implemented|generate|generated|write|wrote)\s+(?:a\s+|an\s+)?(?:[a-zA-Z0-9_\-\s]+?\s+)?(?:app|project|application|tool|system|dashboard|tracker|website|api|game|interface|quiz|calculator|timer)\b", clean))
-            or bool(re.search(r"(?i)\b(?:python|cpp|c\+\+|java|javascript|typescript|rust|go|react|html|css|flask|fastapi|express|django|node)\b.*(?:banao|likho|create|created|write|wrote|implement|implemented|build|built|develop|developed|make|made|app|project|code|program|script|system|tracker|calculator|dashboard|api|website)", clean))
+            or bool(re.search(r"(?i)\b(?:create|created|creating|build|built|building|make|made|making|develop|developed|developing|implement|implemented|implementing|generate|generated|generating|write|wrote|writing|design|designed|designing)\s+(?:a\s+|an\s+)?(?:[a-zA-Z0-9_\-\s]+?\s+)?(?:app|project|application|tool|system|dashboard|tracker|website|site|web|portal|store|shop|ecommerce|commerce|api|game|interface|quiz|calculator|timer)\b", clean))
+            or bool(re.search(r"(?i)\b(?:python|cpp|c\+\+|java|javascript|typescript|rust|go|react|html|css|flask|fastapi|express|django|node)\b.*(?:banao|likho|create|created|creating|write|wrote|writing|implement|implemented|build|built|building|develop|developed|make|made|making|app|project|code|program|script|system|tracker|calculator|dashboard|api|website|site|web|store|shop|ecommerce)", clean))
         )
 
         if is_project_signal and not (is_informational and not is_actionable_directive):
