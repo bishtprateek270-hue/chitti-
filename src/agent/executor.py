@@ -9,6 +9,7 @@ import re
 import subprocess
 import webbrowser
 import platform
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -17,7 +18,7 @@ import psutil
 from PIL import ImageGrab
 
 from src.agent.actions import ActionType, StructuredAction, ActionResult
-from src.utils.logging import log_chitti, log_warning, log_error, log_debug
+from src.utils.logging import log_chitti, log_warning, log_warn, log_error, log_debug
 
 
 class ActionExecutor:
