@@ -4,6 +4,7 @@ Validates requested actions, parameter constraints, application availability,
 path safety, and risk/confirmation requirements prior to execution.
 """
 
+import os
 from pathlib import Path
 from typing import Tuple, Optional
 
