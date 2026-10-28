@@ -240,6 +240,29 @@ class CodeExecutionSandbox:
                 pass
             return run_res
 
+        # 5. HTML / Web Execution (launch in desktop browser)
+        elif lang in ("html", "htm") or p.suffix.lower() in (".html", ".htm"):
+            try:
+                from src.agent.computer.browser import BrowserController
+                BrowserController().open_url(f"file:///{p.as_posix()}", site_name=p.name)
+                return ExecutionResult(
+                    success=True,
+                    exit_code=0,
+                    stdout=f"Opened {p.name} in desktop browser.",
+                    stderr="",
+                    duration_ms=10.0,
+                    language="html",
+                )
+            except Exception as e:
+                return ExecutionResult(
+                    success=False,
+                    exit_code=-1,
+                    stdout="",
+                    stderr=f"Failed to open HTML in browser: {e}",
+                    duration_ms=0.0,
+                    language="html",
+                )
+
         # Fallback to direct Python runner
         cmd = [sys.executable, str(p)] + extra_args
         return cls.execute_command(cmd, cwd=effective_cwd, timeout=timeout, language=lang)

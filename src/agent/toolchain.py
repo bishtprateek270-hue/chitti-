@@ -93,6 +93,13 @@ class ToolchainManager:
             compile_template='csc "{file}" /out:"{out}"',
             run_template='"{out}"',
         ),
+        "html": ToolchainInfo(
+            language="html",
+            binaries=["cmd", "explorer"],
+            is_compiled=False,
+            default_extension=".html",
+            run_template='cmd /c start "" "{file}"',
+        ),
     }
 
     # Language name aliases mapping
@@ -176,6 +183,9 @@ class ToolchainManager:
         """
         lang = cls.normalize_language(language)
         p = Path(file_path).resolve()
+        if lang in ("html", "htm") or p.suffix.lower() in (".html", ".htm"):
+            return None, f'cmd /c start "" "{p}"'
+
         info = cls.TOOLCHAINS.get(lang)
         if not info:
             return None, f'python "{p}"'

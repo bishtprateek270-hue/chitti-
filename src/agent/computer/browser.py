@@ -71,27 +71,35 @@ class BrowserController:
                 return exe
 
         # 2. Check actively running browser processes to reuse the user's current session
+        # Collect all running browser processes first, then select in user priority order
+        # (Brave > Chrome > Firefox > Edge) to prevent background Edge WebViews from hijacking.
         browser_proc_names = {
             "brave.exe": "brave",
             "chrome.exe": "chrome",
-            "msedge.exe": "msedge",
             "firefox.exe": "firefox",
+            "msedge.exe": "msedge",
         }
+        running_browsers: Dict[str, str] = {}
         for proc in psutil.process_iter(["name", "exe"]):
             try:
                 pname = (proc.info["name"] or "").lower()
-                if pname in browser_proc_names:
+                if pname in browser_proc_names and pname not in running_browsers:
                     pexe = proc.info.get("exe")
                     if pexe and os.path.exists(pexe):
-                        return pexe
-                    resolved = AppDiscovery.resolve_app(browser_proc_names[pname])
-                    if resolved and os.path.exists(resolved):
-                        return resolved
+                        running_browsers[pname] = pexe
+                    else:
+                        resolved = AppDiscovery.resolve_app(browser_proc_names[pname])
+                        if resolved and os.path.exists(resolved):
+                            running_browsers[pname] = resolved
             except Exception:
                 continue
 
+        for pref in ("brave.exe", "chrome.exe", "firefox.exe", "msedge.exe"):
+            if pref in running_browsers:
+                return running_browsers[pref]
+
         # 3. Check installed browsers in order of preference
-        for b_name in ("brave", "chrome", "msedge", "edge", "firefox"):
+        for b_name in ("brave", "chrome", "firefox", "msedge", "edge"):
             exe = AppDiscovery.resolve_app(b_name)
             if exe and os.path.exists(exe):
                 return exe
@@ -285,4 +293,31 @@ class BrowserController:
     def get_browser_state(self) -> BrowserState:
         """Returns the current state of the browser controller."""
         return self.state
+
+    def pause_playback(self) -> bool:
+        """Pauses any active YouTube or media playback in the browser using standard hotkeys and media keys."""
+        try:
+            from src.agent.computer.controller import ComputerController
+            ctrl = ComputerController()
+            # 1. Focus YouTube or active browser window and send 'k' / spacebar
+            focused = (
+                ctrl.focus_window("YouTube")
+                or ctrl.focus_window("Brave")
+                or ctrl.focus_window("Chrome")
+                or ctrl.focus_window("Firefox")
+                or ctrl.focus_window("Edge")
+            )
+            if focused:
+                time.sleep(0.15)
+                ctrl.press_key("k")
+                time.sleep(0.05)
+                ctrl.press_key("space")
+            # 2. Also send global playpause media key
+            ctrl.press_key("playpause")
+            self.state.playback_verified = False
+            log_info("[BROWSER] Media playback pause sent.")
+            return True
+        except Exception as e:
+            log_warn(f"[BROWSER] Failed to pause playback: {e}")
+            return False
 

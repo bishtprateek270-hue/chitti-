@@ -607,6 +607,24 @@ class ChittiController:
             if self.hud:
                 self.hud.set_response(resp)
                 self.hud.set_mode(HUDMode.IDLE)
+        # 1.62. Media Playback Control (Stop/Pause song/music/video)
+        media_stop_cmds = (
+            "stop the song", "stop song", "pause the song", "pause song",
+            "stop the music", "stop music", "pause the music", "pause music",
+            "stop the video", "stop video", "pause the video", "pause video",
+            "stop playback", "pause playback", "stop youtube", "pause youtube",
+            "gaana band karo", "gaana roko", "video band karo", "music band karo"
+        )
+        if any(m in lower_input for m in media_stop_cmds):
+            from src.agent.computer.browser import BrowserController
+            BrowserController().pause_playback()
+            resp = "Media playback paused." if active_lang == "en" else "गाना रोक दिया गया है।"
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
             return
 
         # Start tracking current execution episode in RL
@@ -721,20 +739,21 @@ class ChittiController:
                     agent_result = self.agent.handle_command(parsed_intent.normalized_text, lang=active_lang)
                 metrics.mark_stage(request_id, "tool_execution_completed")
 
-                if agent_result is not None and agent_result[0]:
+                if agent_result is not None:
                     success, resp_msg, act_res = agent_result
-                    self.history.add_user_message(user_text)
-                    self.history.add_assistant_message(resp_msg)
+                    if resp_msg and resp_msg.strip():
+                        self.history.add_user_message(user_text)
+                        self.history.add_assistant_message(resp_msg)
 
-                    log_state("CHITTI")
-                    print(resp_msg)
-                    metrics.mark_stage(request_id, "first_audio_played")
-                    self.safe_speak(resp_msg, request_id=request_id)
-                    metrics.finish_request(request_id, success=success)
-                    if self.hud:
-                        self.hud.set_response(resp_msg)
-                        self.hud.set_mode(HUDMode.IDLE)
-                    return
+                        log_state("CHITTI")
+                        print(resp_msg)
+                        metrics.mark_stage(request_id, "first_audio_played")
+                        self.safe_speak(resp_msg, request_id=request_id)
+                        metrics.finish_request(request_id, success=success)
+                        if self.hud:
+                            self.hud.set_response(resp_msg)
+                            self.hud.set_mode(HUDMode.IDLE)
+                        return
             except Exception as e:
                 log_warning(f"Laptop agent command execution notice: {e}")
 

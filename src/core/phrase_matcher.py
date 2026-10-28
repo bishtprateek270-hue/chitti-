@@ -360,21 +360,29 @@ class PhraseMatcher:
             phrase = stop_match.group(0).lower()
             # Verify it's not a negated query like "don't stop"
             if not re.search(r"\b(?:don'?t|do\s+not|never|mat)\s+" + re.escape(phrase), cleaned):
-                # If phrase does not mention Chitti, require that it is a direct command (not buried in an ambient sentence)
-                is_addressed = any(name in cleaned for name in ("chitti", "chitthi", "chiti", "chitii", "चिट्टी"))
-                word_count = len(cleaned.split())
-                is_standalone = (cleaned == phrase) or (word_count <= 3) or cleaned.startswith(phrase) or cleaned.endswith(phrase)
-                if is_addressed or is_standalone:
-                    conf = 1.0 if cleaned == phrase else 0.95
-                    log_debug(f"[CONTROL] Match STOP: '{phrase}' in '{cleaned}' (Priority 1)")
-                    return MatchResult(
-                        command=ControlCommand.STOP,
-                        priority=CommandPriority.PRIORITY_1_INTERRUPT.value,
-                        matched_phrase=phrase,
-                        confidence=conf,
-                        original_text=raw_text,
-                        cleaned_text=cleaned,
-                    )
+                # Critical Guard: commands with specific media or task objects
+                # (e.g. "stop the song", "stop music", "stop video", "stop youtube", "stop watching", "stop timer")
+                # are media/application playback actions, NOT emergency system shutdown!
+                media_or_app_target = bool(re.search(
+                    r"\b(?:song|songs|music|video|videos|audio|track|tracks|gaana|youtube|yt|browser|tab|tabs|calculator|app|application|timer|alarm|watching|vision|camera|game|playback)\b",
+                    cleaned,
+                ))
+                if not media_or_app_target:
+                    # If phrase does not mention Chitti, require that it is a direct command (not buried in an ambient sentence)
+                    is_addressed = any(name in cleaned for name in ("chitti", "chitthi", "chiti", "chitii", "चिट्टी"))
+                    word_count = len(cleaned.split())
+                    is_standalone = (cleaned == phrase) or (word_count <= 2) or (word_count <= 3 and (cleaned.startswith(phrase) or cleaned.endswith(phrase)))
+                    if is_addressed or is_standalone:
+                        conf = 1.0 if cleaned == phrase else 0.95
+                        log_debug(f"[CONTROL] Match STOP: '{phrase}' in '{cleaned}' (Priority 1)")
+                        return MatchResult(
+                            command=ControlCommand.STOP,
+                            priority=CommandPriority.PRIORITY_1_INTERRUPT.value,
+                            matched_phrase=phrase,
+                            confidence=conf,
+                            original_text=raw_text,
+                            cleaned_text=cleaned,
+                        )
 
         # ---------------- PRIORITY 2: SLEEP ----------------
         if sleep_match:
