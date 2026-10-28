@@ -318,7 +318,47 @@ class WhisperSTT(STTEngine):
             log_info(f"[WHISPER] Transcribed text: '{text}'")
             return text
         except Exception as e:
-            log_warning(f"Whisper transcription encountered an issue: {e}")
+            err_msg = str(e).lower()
+            is_cuda_err = (
+                self.device == "cuda"
+                and (
+                    "cuda" in err_msg
+                    or "illegal memory access" in err_msg
+                    or "device-side assertion" in err_msg
+                    or "out of memory" in err_msg
+                    or isinstance(e, RuntimeError)
+                )
+            )
+            if is_cuda_err:
+                log_warn(f"[WHISPER] Critical CUDA/GPU error encountered during transcription ({e}). Switching Whisper permanently to CPU fallback...")
+                self.device = "cpu"
+                self._model = None
+                if HAS_TORCH and torch:
+                    try:
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+                try:
+                    import whisper
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        self._model = whisper.load_model(self.model_name, device="cpu")
+                    log_chitti("[WHISPER] Speech recognition successfully recovered on CPU.")
+                    # Retry transcribing the current audio on CPU so user command is not lost
+                    options["fp16"] = False
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        if HAS_TORCH and torch:
+                            with torch.no_grad():
+                                result = self._model.transcribe(audio, **options)
+                        else:
+                            result = self._model.transcribe(audio, **options)
+                    text = result.get("text", "").strip()
+                    if not self.is_hallucination(text):
+                        log_info(f"[WHISPER (CPU Recovered)] Transcribed text: '{text}'")
+                        return text
+                except Exception as cpu_err:
+                    log_warn(f"[WHISPER] CPU fallback reload/transcribe notice: {cpu_err}")
+            else:
+                log_warning(f"Whisper transcription encountered an issue: {e}")
             return ""
 
 

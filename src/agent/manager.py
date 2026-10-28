@@ -384,6 +384,7 @@ class LaptopAgentManager:
         has_sent_message = any(a in ("SEND_MESSAGE", "VERIFY_MESSAGE_SENT") for a in step_actions)
         has_sent_email = any(a in ("SEND_EMAIL", "VERIFY_EMAIL_SENT") for a in step_actions)
         has_played_media = any(a in ("PLAY_YOUTUBE", "VERIFY_PLAYBACK") for a in step_actions)
+        has_created_file = any(a == "CREATE_FILE" for a in step_actions)
         has_created_folder = any(a == "CREATE_DIRECTORY" for a in step_actions)
         has_opened_folder = any(a == "OPEN_FOLDER" for a in step_actions)
         has_opened_app = any(a == "OPEN_APPLICATION" for a in step_actions)
@@ -451,7 +452,35 @@ class LaptopAgentManager:
                 return f"YouTube open karke {norm_artist} ka song play kar diya hai aur playback start ho gaya hai."
             return f"Done. I opened YouTube, selected a {norm_artist} song, and verified playback started."
 
-        # 4. Pure Browser URL / Web Service opening (e.g. "open whatsapp", "open gmail", "open telegram")
+        # 4. VS Code / Programming & Project Creation Tasks
+        elif has_created_file or "vs code" in lower or "vscode" in lower or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho", "implement", "tracker", "scraper", "calculator", "app", "project", "build", "built", "website", "dashboard", "timer", "tool"]):
+            spec = CodeGenerator.parse_programming_task(raw_input)
+            topic_title = spec.problem_description.title() or "Application"
+            lang_name = spec.language.upper()
+            executed = task_state.get_flag(ExecutionFlag.CODE_EXECUTED) and task_state.get_flag(ExecutionFlag.EXECUTION_VERIFIED)
+            server_url = task_state.context.active_server_url
+
+            if server_url:
+                if lang == "hi":
+                    return f"{topic_title} का कोड VS Code में बना दिया गया है और इसे आपके ब्राउज़र में {server_url} पर लाइव चला दिया गया है।"
+                elif lang in ("hinglish", "mixed"):
+                    return f"{topic_title} ka code VS Code mein create kar diya hai aur browser mein {server_url} par live launch kar diya hai."
+                return f"I have built the {topic_title} application with a modern interactive UI and launched it live in your browser at {server_url}. The source code is open in VS Code."
+
+            if executed:
+                if lang == "hi":
+                    return f"VS Code खोल दिया गया है, {topic_title} का {lang_name} कोड ({spec.filename}) बनाकर सुरक्षित, सत्यापित और निष्पादित कर दिया गया है।"
+                elif lang in ("hinglish", "mixed"):
+                    return f"VS Code open kar diya hai, {spec.filename} create karke {topic_title} ka {lang_name} code save, verify aur execute kar diya hai."
+                return f"VS Code is open and the {topic_title} {lang_name} code ({spec.filename}) has been created, verified, saved, and executed."
+            else:
+                if lang == "hi":
+                    return f"VS Code खोल दिया गया है और {spec.filename} में {topic_title} का {lang_name} कोड लिखकर सुरक्षित और सत्यापित कर दिया गया है।"
+                elif lang in ("hinglish", "mixed"):
+                    return f"VS Code open hai aur {spec.filename} mein {topic_title} {lang_name} code likhkar save aur verify kar diya hai."
+                return f"VS Code is open, and {spec.filename} has been created with the {topic_title} {lang_name} solution, verified in the editor, and saved."
+
+        # 5. Pure Browser URL / Web Service opening (e.g. "open whatsapp", "open gmail", "open telegram")
         elif has_opened_url:
             site_target = ""
             for step in task_state.steps:
@@ -483,26 +512,6 @@ class LaptopAgentManager:
             elif lang in ("hinglish", "mixed"):
                 return f"Browser mein {site_target} open kar diya hai."
             return f"Opened {site_target} in your browser."
-
-        # 5. VS Code / Programming Tasks
-        elif "vs code" in lower or "vscode" in lower or any(kw in lower for kw in ["code", "program", "file", "banao", "create", "likho", "implement", "tracker", "scraper"]):
-            spec = CodeGenerator.parse_programming_task(raw_input)
-            topic_title = spec.problem_description.title()
-            lang_name = spec.language.upper()
-            executed = task_state.get_flag(ExecutionFlag.CODE_EXECUTED) and task_state.get_flag(ExecutionFlag.EXECUTION_VERIFIED)
-
-            if executed:
-                if lang == "hi":
-                    return f"VS Code खोल दिया गया है, {topic_title} का {lang_name} कोड ({spec.filename}) बनाकर सुरक्षित, सत्यापित और निष्पादित कर दिया गया है।"
-                elif lang in ("hinglish", "mixed"):
-                    return f"VS Code open kar diya hai, {spec.filename} create karke {topic_title} ka {lang_name} code save, verify aur execute kar diya hai."
-                return f"VS Code is open and the {topic_title} {lang_name} code ({spec.filename}) has been created, verified, saved, and executed."
-            else:
-                if lang == "hi":
-                    return f"VS Code खोल दिया गया है और {spec.filename} में {topic_title} का {lang_name} कोड लिखकर सुरक्षित और सत्यापित कर दिया गया है।"
-                elif lang in ("hinglish", "mixed"):
-                    return f"VS Code open hai aur {spec.filename} mein {topic_title} {lang_name} code likhkar save aur verify kar diya hai."
-                return f"VS Code is open, and {spec.filename} has been created with the {topic_title} {lang_name} solution, verified in the editor, and saved."
 
         # 6. Notepad with text typing
         elif "notepad" in lower:

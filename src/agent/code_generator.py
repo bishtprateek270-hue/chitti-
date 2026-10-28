@@ -175,7 +175,7 @@ class CodeGenerator:
             r"(?i)^(?:in\s+vs\s*code|vs\s*code\s+me|vs\s*code\s+mein)\s*(?:and|aur|,)?\s*",
             r"(?i)^(?:vs\s*code|vscode)\s+(?:open\s+kro|open\s+karo|kholo)\s*(?:aur|and|,)?\s*",
             r"(?i)^(?:open\s+vs\s*code|open\s+vscode)\s*(?:and|aur|,)?\s*",
-            r"(?i)^(?:write|create|make|build|generate|implement|develop|banao|likho)\s+(?:an|a|the|ek)?\s*",
+            r"(?i)^(?:write|wrote|create|created|make|made|build|built|generate|generated|implement|implemented|develop|developed|banao|likho)\s+(?:an|a|the|ek)?\s*",
             r"(?i)^(?:an|a|the|ek)\s+",
         ]
         for p in remove_patterns:

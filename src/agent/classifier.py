@@ -197,13 +197,13 @@ class TaskClassifier:
         # OR Desires (I want an application that..., I need a tool that..., can you build me...)
         is_creation_request = (
             # Optional VS Code prefix + Action verb + target / intent
-            bool(re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|build|make|develop|implement|generate|design|write)\s+(?:me\s+|us\s+|for\s+me\s+)?(?:an?|the|some|ek)?\s*(?:fully\s+functional\s+|interactive\s+|simple\s+|modern\s+|clean\s+|complete\s+)?(?:[a-zA-Z0-9_\-\s]+)", raw)) or
+            bool(re.search(r"(?i)\b(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)?(?:create|created|build|built|make|made|develop|developed|implement|implemented|generate|generated|design|designed|write|wrote)\s+(?:me\s+|us\s+|for\s+me\s+)?(?:an?|the|some|ek)?\s*(?:fully\s+functional\s+|interactive\s+|simple\s+|modern\s+|clean\s+|complete\s+)?(?:[a-zA-Z0-9_\-\s]+)", raw)) or
             # Desire structure: "I want an app...", "I need a system...", "can you make..."
-            bool(re.search(r"(?i)\b(?:i\s+want|i\s+need|can\s+you\s+(?:build|create|make|develop)|please\s+(?:build|create|make|develop))\s+(?:an?|the|some)?\s*(?:application|app|project|website|system|tool|dashboard|tracker|script|solution|software|service|game|interface|api|program)\b", raw)) or
+            bool(re.search(r"(?i)\b(?:i\s+want|i\s+need|can\s+you\s+(?:build|built|create|created|make|made|develop)|please\s+(?:build|built|create|make|develop))\s+(?:an?|the|some)?\s*(?:application|app|project|website|system|tool|dashboard|tracker|script|solution|software|service|game|interface|api|program|calculator)\b", raw)) or
             # Hinglish: "X banao", "X likho", "X create karo"
             bool(re.search(r"(?i)\b(?:banao|bana\s+do|likho|create\s+karo|develop\s+karo|build\s+karo|bana\s+kro)\b", raw)) or
             # Direct programming language + task
-            bool(re.search(r"(?i)\b(?:python|cpp|c\+\+|java|javascript|typescript|rust|golang|go|c\#|csharp|react|html|css|flask|fastapi|express|django|node)\b.*(?:banao|likho|create|write|implement|build|develop|app|project|code|program|script|system|tracker|calculator|dashboard|api|website)", raw))
+            bool(re.search(r"(?i)\b(?:python|cpp|c\+\+|java|javascript|typescript|rust|golang|go|c\#|csharp|react|html|css|flask|fastapi|express|django|node)\b.*(?:banao|likho|create|created|write|wrote|implement|implemented|build|built|develop|developed|make|made|app|project|code|program|script|system|tracker|calculator|dashboard|api|website)", raw))
         )
 
         if is_creation_request:
@@ -220,7 +220,7 @@ class TaskClassifier:
             clean_proj = raw
             clean_proj = re.sub(r"(?i)^(?:chitti,?\s*|hey\s+chitti,?\s*|please\s+|can\s+you\s+|i\s+want\s+(?:an?|the)?\s*|i\s+need\s+(?:an?|the)?\s*)", "", clean_proj).strip()
             clean_proj = re.sub(r"(?i)^(?:open\s+(?:vs\s*code|vscode|ide)\s*(?:and|aur|,)?\s*)", "", clean_proj).strip()
-            clean_proj = re.sub(r"(?i)^(?:create|build|make|develop|implement|generate|design|write)\s+(?:me\s+|us\s+|for\s+me\s+)?(?:an?|the|some|ek)?\s*(?:fully\s+functional\s+|interactive\s+|simple\s+|modern\s+|clean\s+|complete\s+)?", "", clean_proj).strip()
+            clean_proj = re.sub(r"(?i)^(?:create|created|build|built|make|made|develop|developed|implement|implemented|generate|generated|design|designed|write|wrote)\s+(?:me\s+|us\s+|for\s+me\s+)?(?:an?|the|some|ek)?\s*(?:fully\s+functional\s+|interactive\s+|simple\s+|modern\s+|clean\s+|complete\s+)?", "", clean_proj).strip()
             clean_proj = re.sub(r"(?i)\s*(?:with\s+(?:an?\s+)?(?:interactive|good|modern|responsive|clean)?\s*ui|for\s+me|and\s+run\s+it|aur\s+run\s+karo|in\s+vs\s*code|in\s+python|in\s+react|in\s+c\+\+|in\s+java).*$", "", clean_proj).strip()
             clean_proj = re.sub(r"(?i)\s+(?:banao|likho|create\s+karo|develop\s+karo|kro|karo|do)$", "", clean_proj).strip()
             slug_type = re.sub(r"[^a-zA-Z0-9_\s]", "", clean_proj).strip().replace(" ", "_").lower() or "application"

@@ -93,19 +93,26 @@ class ProjectRegistry:
                 stripped = mapped.lower()
                 break
 
+        # Never match pronouns or meaningless words as projects
+        if clean_name in ("it", "this", "that", "them", "me", "him", "her", "us", "file", "folder", "app", "window"):
+            return None
+
         # Check stripped against registry
-        if stripped in self.projects:
+        if stripped and stripped in self.projects:
             return self.projects[stripped]
 
-        # Substring match in registry
+        # Substring match in registry (only for queries >= 4 chars to avoid false positives like "it" matching "chitti")
         for key, p in self.projects.items():
-            if (stripped and (stripped in key or key in stripped)) or clean_name in key or key in clean_name:
+            if stripped and len(stripped) >= 4 and (stripped in key or key in stripped):
+                return p
+            if len(clean_name) >= 4 and (clean_name in key or key in clean_name):
                 return p
 
         # Difflib close match in registered projects
-        matches = difflib.get_close_matches(stripped or clean_name, list(self.projects.keys()), n=1, cutoff=0.6)
-        if matches:
-            return self.projects[matches[0]]
+        if len(stripped or clean_name) >= 4:
+            matches = difflib.get_close_matches(stripped or clean_name, list(self.projects.keys()), n=1, cutoff=0.6)
+            if matches:
+                return self.projects[matches[0]]
 
         # Search bases
         user_home = Path.home()

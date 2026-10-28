@@ -270,13 +270,17 @@ class NaturalIntentEngine:
         # -------------------------------------------------------------
         # 1E. DIRECT PROJECT & REPOSITORY OPENING ("open project repo", "open 3D wallpaper project", "open repo")
         # -------------------------------------------------------------
-        m_proj = re.search(r"(?i)\b(?:open|kholo|show|bring\s+up|load)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_\-\s]+?)(?:\s+(?:in\s+(?:browser|chrome|brave|edge|vs\s*code|vscode|editor)))?$", clean_lower)
+        is_creation_query = bool(re.search(r"(?i)\b(?:create|created|build|built|make|made|develop|developed|implement|implemented|generate|generated|write|wrote)\b", clean_lower))
+        m_proj = None if is_creation_query else re.search(r"(?i)\b(?:open|kholo|show|bring\s+up|load)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_\-\s]+?)(?:\s+(?:in\s+(?:browser|chrome|brave|edge|vs\s*code|vscode|editor)))?$", clean_lower)
         if m_proj:
             candidate_target = m_proj.group(1).strip()
-            from src.agent.projects import ProjectRegistry
-            reg = ProjectRegistry()
-            p_path = reg.get_project_path(candidate_target)
-            if p_path:
+            if candidate_target.lower() in ("it", "this", "that", "them", "file", "the file", "app", "window"):
+                candidate_target = ""
+            if candidate_target:
+                from src.agent.projects import ProjectRegistry
+                reg = ProjectRegistry()
+                p_path = reg.get_project_path(candidate_target)
+                if p_path:
                 in_browser = bool(re.search(r"(?i)\b(?:browser|chrome|brave|edge|website|web)\b", clean_lower))
                 if in_browser or (candidate_target in ("repo", "repository", "github repo", "my github repo", "project repo", "project repository") and not re.search(r"(?i)\b(?:code|editor|folder|local|directory|desktop)\b", clean_lower)):
                     from src.agent.registry import DEFAULT_URL_MAP
@@ -443,14 +447,14 @@ class NaturalIntentEngine:
         # 5. NATURAL PROJECT CREATION ("Can you make a simple website for my project?")
         # -------------------------------------------------------------
         is_create_project = (
-            bool(re.search(r"(?i)\b(?:make|create|build|develop|generate)\s+(?:a\s+|an\s+)?(?:simple\s+|modern\s+|interactive\s+|quick\s+)?([a-zA-Z0-9_\-\s]+?\s+)?(?:website|site|app|application|project|dashboard|portfolio|tracker|tool|system|game)\b", clean_lower))
-            or bool(re.search(r"(?i)\b(?:mere\s+liye\s+)?(?:ek\s+)?([a-zA-Z0-9_\-\s]+?)\s+(?:website|site|app|project|dashboard)\s*(?:banao|bana\s+do|bana\s+dijiye|create\s+karo)\b", clean_lower))
+            bool(re.search(r"(?i)\b(?:make|made|create|created|build|built|develop|developed|generate|generated|implement|implemented|write|wrote)\s+(?:a\s+|an\s+)?(?:simple\s+|modern\s+|interactive\s+|quick\s+|small\s+|fully\s+functional\s+)?([a-zA-Z0-9_\-\s]+?\s+)?(?:website|site|app|application|project|dashboard|portfolio|tracker|tool|system|game|calculator|program|script)\b", clean_lower))
+            or bool(re.search(r"(?i)\b(?:mere\s+liye\s+)?(?:ek\s+)?([a-zA-Z0-9_\-\s]+?)\s+(?:website|site|app|project|dashboard|calculator)\s*(?:banao|bana\s+do|bana\s+dijiye|create\s+karo)\b", clean_lower))
         )
         # Guard: Check that it is not an inquiry / conversational question ("How do I create...", "Why create...")
         is_pure_question = bool(re.search(r"(?i)^(?:how\s+(?:do\s+i|can\s+i|to)|why\s+would|what\s+is\s+a)\b", clean_lower))
 
         if is_create_project and not is_pure_question:
-            m_target = re.search(r"(?i)\b(?:make|create|build|banao|bana\s+do)\s+(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9_\-\s]+)", clean)
+            m_target = re.search(r"(?i)\b(?:make|made|create|created|build|built|develop|developed|implement|implemented|write|wrote|banao|bana\s+do)\s+(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9_\-\s]+)", clean)
             target_str = m_target.group(1).strip() if m_target else "website"
             target_str = re.sub(r"(?i)\s+(?:for\s+my\s+project|for\s+me|using\s+.*)$", "", target_str).strip()
 

@@ -328,10 +328,10 @@ class AgentPlanner:
             intent.intent == ActionIntentType.CREATE_PROJECT
             or task_class.intent in (TaskIntent.CREATE_PROJECT, TaskIntent.MODIFY_PROJECT, TaskIntent.BUILD_PROJECT)
             or (task_class.is_actionable_task and task_class.intent not in (TaskIntent.COMPUTER_TASK, TaskIntent.BROWSER_TASK, TaskIntent.FILE_OPERATION))
-            or bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|write|build|make|develop|likho|implement|class|api|app|algorithm|calculator|bana|karo)", clean))
-            or bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql|flask|fastapi|express|django|node)\b.*(?:code|program|script|file|banao|kro|create|write|build|make|develop|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
-            or bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|write|build|make|develop|likho|implement|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
-            or bool(re.search(r"(?i)\b(?:write|create|make|build|generate|implement|develop)\s+.*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper|dashboard|calculator|timer|file|solution|todo|system|website|portal|bot|crawler|interface|game)", clean))
+            or bool(re.search(r"(?i)\b(?:vs\s*code|vscode)\b.*(?:code|program|script|file|banao|kro|create|created|write|wrote|build|built|make|made|develop|developed|likho|implement|implemented|class|api|app|algorithm|calculator|bana|karo)", clean))
+            or bool(re.search(r"(?i)\b(?:python|cpp|c|java|javascript|typescript|rust|go|golang|csharp|react|html|css|sql|flask|fastapi|express|django|node)\b.*(?:code|program|script|file|banao|kro|create|created|write|wrote|build|built|make|made|develop|developed|likho|implement|implemented|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
+            or bool(re.search(r"(?i)(?:c\+\+|c\#).*(?:code|program|script|file|banao|kro|create|created|write|wrote|build|built|make|made|develop|developed|likho|implement|implemented|class|api|app|algorithm|calculator|search|sort|list|tree|reader|analyzer|finder|page|checker|tracker|scraper|dashboard|timer|todo|system)", clean))
+            or bool(re.search(r"(?i)\b(?:write|wrote|create|created|make|made|build|built|generate|generated|implement|implemented|develop|developed)\s+.*(?:program|code|script|algorithm|class|api|model|page|app|project|tracker|scraper|dashboard|calculator|timer|file|solution|todo|system|website|portal|bot|crawler|interface|game)", clean))
             or bool(re.search(r"(?i)\b(?:code|program|script|calculator|api|app|algorithm|project|tracker|scraper|dashboard|timer|todo|system|website)\s+(?:likho|banao|bana\s+do|create\s+karo)\b", clean))
         )
 
@@ -465,13 +465,10 @@ class AgentPlanner:
                     or bool(spec.framework and spec.framework.lower() in ("flask", "fastapi", "express", "node", "vite", "next", "django", "react"))
                 )
 
-                requires_server = (
-                    bool(spec.framework and spec.framework.lower() not in ("vanilla_js", "static_html", "static"))
-                    or (spec.language in ("python", "javascript", "typescript") and any(d in (spec.dependencies or []) for d in ("flask", "fastapi", "express", "vite", "next", "uvicorn", "django")))
-                    or spec.project_type == "rest_api"
-                    or (spec.language == "python" and ("flask" in main_code.lower() or "fastapi" in main_code.lower() or "http.server" in main_code.lower()))
-                    or (spec.language in ("javascript", "typescript") and ("express" in main_code.lower() or "http.createserver" in main_code.lower()))
-                )
+                # For all web projects (HTML, React, Vite, Express, Flask, etc.),
+                # launch via local web server so they run in the browser with full web APIs
+                # and do not depend on VS Code Live Server or external extensions.
+                requires_server = is_web_project
 
                 if is_web_project:
                     if requires_server:
