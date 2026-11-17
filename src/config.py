@@ -264,7 +264,7 @@ class SystemControlConfig:
         default_factory=lambda: os.getenv("WAKE_WORD_MODE", "true").lower() in ("true", "1", "yes")
     )
     wake_phrase: str = field(
-        default_factory=lambda: os.getenv("WAKE_PHRASE", "chitti")
+        default_factory=lambda: os.getenv("WAKE_PHRASE", "hello chitti")
     )
     enable_hindi_commands: bool = field(
         default_factory=lambda: os.getenv("ENABLE_HINDI_COMMANDS", "true").lower() in ("true", "1", "yes")

@@ -119,7 +119,14 @@ class BrowserController:
         clean = re.sub(r"\s+", " ", clean).strip()
 
         # If user simply requested "a song" or generic music, default to Trending Songs
-        generic_terms = {"", "a", "an", "the", "song", "songs", "music", "track", "gaana", "top", "trending", "some", "any"}
+        generic_terms = {
+            "", "a", "an", "the", "song", "songs", "music", "track", "gaana",
+            "top", "trending", "some", "any", "another", "other", "different",
+            "some other artist", "another artist", "other artist", "new artist",
+            "some other song", "another song", "other song", "new song",
+            "some other artist song", "another artist song",
+            "kuch aur", "koi aur", "koi aur gaana"
+        }
         if clean.lower() in generic_terms:
             return "Trending Songs"
 
@@ -246,6 +253,13 @@ class BrowserController:
         artist = self.normalize_artist_query(query)
         log_info(f"[BROWSER] Resolving YouTube video for artist/query: '{artist}'")
 
+        # Cleanly stop/close any previously active YouTube/media tab so audio does not overlap
+        try:
+            self.pause_playback(close_tab=True)
+            time.sleep(0.35)
+        except Exception:
+            pass
+
         # 1. Attempt to fetch top video ID for direct playback with autoplay
         video_id = self.fetch_top_youtube_video_id(artist)
         if video_id:
@@ -294,30 +308,53 @@ class BrowserController:
         """Returns the current state of the browser controller."""
         return self.state
 
-    def pause_playback(self) -> bool:
-        """Pauses any active YouTube or media playback in the browser using standard hotkeys and media keys."""
+    def pause_playback(self, close_tab: bool = False) -> bool:
+        """Pauses or stops any active YouTube or media playback in the browser."""
         try:
             from src.agent.computer.controller import ComputerController
             ctrl = ComputerController()
-            # 1. Focus YouTube or active browser window and send 'k' / spacebar
-            focused = (
+            handled = False
+
+            # 1. Target window explicitly containing YouTube in title first
+            yt_win = ctrl.find_window("YouTube")
+            if yt_win:
                 ctrl.focus_window("YouTube")
-                or ctrl.focus_window("Brave")
-                or ctrl.focus_window("Chrome")
-                or ctrl.focus_window("Firefox")
-                or ctrl.focus_window("Edge")
-            )
-            if focused:
                 time.sleep(0.15)
-                ctrl.press_key("k")
-                time.sleep(0.05)
-                ctrl.press_key("space")
-            # 2. Also send global playpause media key
-            ctrl.press_key("playpause")
+                if close_tab:
+                    ctrl.hotkey("ctrl", "w")
+                    log_info("[BROWSER] Closed active YouTube tab via Ctrl+W.")
+                else:
+                    ctrl.press_key("k")
+                    log_info("[BROWSER] Paused YouTube playback via 'k'.")
+                handled = True
+
+            # 2. Check active browser windows (Brave, Chrome, Firefox, Edge)
+            if not handled:
+                for b_name in ("Brave", "Chrome", "Firefox", "Edge", "Microsoft Edge"):
+                    if ctrl.find_window(b_name):
+                        ctrl.focus_window(b_name)
+                        time.sleep(0.15)
+                        if close_tab:
+                            ctrl.hotkey("ctrl", "w")
+                            log_info(f"[BROWSER] Closed tab in {b_name} via Ctrl+W.")
+                        else:
+                            ctrl.press_key("k")
+                            log_info(f"[BROWSER] Sent pause key 'k' to {b_name}.")
+                        handled = True
+                        break
+
+            # 3. If not close_tab and not handled directly, send global media key
+            if not close_tab and not handled:
+                ctrl.press_key("playpause")
+                log_info("[BROWSER] Media playback pause sent via global media key.")
+
             self.state.playback_verified = False
-            log_info("[BROWSER] Media playback pause sent.")
             return True
         except Exception as e:
             log_warn(f"[BROWSER] Failed to pause playback: {e}")
             return False
+
+    def stop_playback(self) -> bool:
+        """Stops active media playback by closing the playing tab or stopping media."""
+        return self.pause_playback(close_tab=True)
 

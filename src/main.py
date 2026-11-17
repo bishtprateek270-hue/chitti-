@@ -293,7 +293,7 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Autonomous perception initialization notice: {e}")
 
-        log_chitti("System initialization complete. Ready for interaction! (Say 'Hey Chitti' or press Alt+Space)\n")
+        log_chitti("System initialization complete. Ready for interaction! (Say 'Hello Chitti' or press Alt+Space)\n")
 
     def _on_person_recognized_proactive(self, person_name: str, is_known: bool, greeting: str):
         """Triggered autonomously when a human appears and is recognized by the camera."""
@@ -403,7 +403,7 @@ class ChittiController:
                 self.hud.set_mode(HUDMode.IDLE)
                 self.hud.set_progress("")
                 self.hud.hide()
-            print("\nChitti: [Stopped & Silent Standby - Say 'Hey Chitti' to wake]")
+            print("\nChitti: [Stopped & Silent Standby - Say 'Hello Chitti' to wake]")
             return
 
         # ---------------- PRIORITY 1B: CAMERA RELEASE COMMAND ----------------
@@ -470,7 +470,7 @@ class ChittiController:
                 self.hud.set_mode(HUDMode.IDLE)
                 self.hud.set_progress("")
                 self.hud.hide()
-            print("\nChitti: [Silent Standby - Say 'Hey Chitti' to wake]")
+            print("\nChitti: [Silent Standby - Say 'Hello Chitti' to wake]")
             return
 
         # ---------------- PRIORITY 3: WAKE COMMAND ----------------
@@ -572,9 +572,9 @@ class ChittiController:
                 self.ambient_listener.go_to_sleep()
             metrics.finish_request(request_id, success=True)
             if self.hud:
-                self.hud.set_response("Sleeping (Say 'Hey Chitti' to wake)")
+                self.hud.set_response("Sleeping (Say 'Hello Chitti' to wake)")
                 self.hud.set_mode(HUDMode.IDLE)
-            print("\nChitti: [Silent Standby - Say 'Hey Chitti' to wake]")
+            print("\nChitti: [Silent Standby - Say 'Hello Chitti' to wake]")
             return
 
         # 1.61. Autonomous Room Observation & Privacy Mode Interceptor
@@ -607,7 +607,7 @@ class ChittiController:
             if self.hud:
                 self.hud.set_response(resp)
                 self.hud.set_mode(HUDMode.IDLE)
-        # 1.62. Media Playback Control (Stop/Pause song/music/video)
+        # 1.62. Media Playback Control (Stop/Pause/Switch song/music/video)
         media_stop_cmds = (
             "stop the song", "stop song", "pause the song", "pause song",
             "stop the music", "stop music", "pause the music", "pause music",
@@ -615,10 +615,22 @@ class ChittiController:
             "stop playback", "pause playback", "stop youtube", "pause youtube",
             "gaana band karo", "gaana roko", "video band karo", "music band karo"
         )
-        if any(m in lower_input for m in media_stop_cmds):
+        compound_switch_match = re.search(
+            r"(?i)\b(?:stop|band\s+karo|band|pause|roko|change|switch)\b.*?\b(?:and|aur|then|ke\s+baad|to)\s+(?:play\s+|chalao\s+|lagao\s+|baja\s+do\s+|sunao\s+)?(.*)",
+            lower_input
+        )
+        if compound_switch_match and compound_switch_match.group(1).strip():
+            # User wants to stop the current song AND play a new artist/song
             from src.agent.computer.browser import BrowserController
-            BrowserController().pause_playback()
-            resp = "Media playback paused." if active_lang == "en" else "गाना रोक दिया गया है।"
+            BrowserController().pause_playback(close_tab=True)
+            new_target = compound_switch_match.group(1).strip()
+            user_text = f"play {new_target} on youtube"
+            lower_input = user_text.lower()
+            is_computer_action = True
+        elif any(m in lower_input for m in media_stop_cmds):
+            from src.agent.computer.browser import BrowserController
+            BrowserController().pause_playback(close_tab=True)
+            resp = "Media playback stopped." if active_lang == "en" else "गाना बंद कर दिया गया है।"
             self.history.add_user_message(user_text)
             self.history.add_assistant_message(resp)
             self.speak(resp)
@@ -1165,7 +1177,7 @@ class ChittiController:
 
         # If running in background/daemon mode (e.g. Windows autostart without console or with <nul)
         if not sys.stdin or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty() or "--daemon" in sys.argv or "-d" in sys.argv:
-            log_chitti("[CHITTI] 24/7 Background Desktop Mode Active. 'Hey Chitti' and Alt+Space HUD are ready.")
+            log_chitti("[CHITTI] 24/7 Background Desktop Mode Active. 'Hello Chitti' and Alt+Space HUD are ready.")
             try:
                 while True:
                     time.sleep(1)
@@ -1198,7 +1210,7 @@ class ChittiController:
 
         is_daemon = "--daemon" in sys.argv or sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty()
         if is_daemon:
-            log_chitti("Chitti is active in 24/7 background mode. Say 'Hey Chitti' or press Alt+Space to interact.")
+            log_chitti("Chitti is active in 24/7 background mode. Say 'Hello Chitti' or press Alt+Space to interact.")
             try:
                 while True:
                     time.sleep(1)
@@ -1217,7 +1229,7 @@ class ChittiController:
             try:
                 try:
                     prompt_label = (
-                        "\n[Ready] Say 'Hey Chitti' or Alt+Space (or type command / ENTER to talk / Q=quit): "
+                        "\n[Ready] Say 'Hello Chitti' or Alt+Space (or type command / ENTER to talk / Q=quit): "
                         if self.ambient_listener
                         else "\n[Ready] Press ENTER to talk (or T=type, V=vision, O=observe, R=register, L=list, M=memory, C=clear, Q=quit): "
                     )
@@ -1295,7 +1307,7 @@ class ChittiController:
 
                 # Default: Push-to-talk capture (user pressed ENTER on empty prompt)
                 if self.ambient_listener:
-                    log_chitti("Push-to-talk active. Say your command (or say 'Hey Chitti')...")
+                    log_chitti("Push-to-talk active. Say your command (or say 'Hello Chitti')...")
                     self.ambient_listener.trigger_manual_listen()
                 else:
                     voice_text = self.listen_and_transcribe()
@@ -1384,7 +1396,7 @@ Chitti AI Companion - Usage:
             mutex = kernel32.CreateMutexW(None, False, "Local\\Chitti_AI_Companion_Mutex")
             if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
                 print("\n[INFO] Chitti is already running in the background.")
-                print("Press Alt+Space or say 'Hey Chitti' to interact.")
+                print("Press Alt+Space or say 'Hello Chitti' to interact.")
                 print("Hint: To terminate the background instance and run here in the console, run:")
                 print("      python -m src.main --restart\n")
                 if mutex:

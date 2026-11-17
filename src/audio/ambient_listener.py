@@ -92,7 +92,7 @@ class AmbientVoiceListener:
         if self.hud:
             self.hud.set_mode(HUDMode.IDLE)
 
-        mode_desc = "Wake-Word Mode (Say 'Hey Chitti' to interact)" if self.state_mgr.operating_mode == "wake_word" else "Continuous Assistant Mode"
+        mode_desc = "Wake-Word Mode (Say 'Hello Chitti' to interact)" if self.state_mgr.operating_mode == "wake_word" else "Continuous Assistant Mode"
         log_chitti(f"[AMBIENT] 🎙️ Ambient hands-free voice mode active: {mode_desc}.")
 
     def stop(self):
@@ -606,7 +606,7 @@ class AmbientVoiceListener:
 
     def go_to_sleep(self):
         """Immediately stops ongoing speech and puts ambient listener in quiet standby."""
-        log_chitti("[AMBIENT] 😴 Entering quiet standby mode. Say 'Hey Chitti' or press Alt+Space to wake.")
+        log_chitti("[AMBIENT] 😴 Entering quiet standby mode. Say 'Hello Chitti' or press Alt+Space to wake.")
         self.state_mgr.end_conversation_session()
         self.state_mgr.sleep()
         if self.tts and hasattr(self.tts, "stop"):

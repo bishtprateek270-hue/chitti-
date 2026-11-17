@@ -49,7 +49,7 @@ class WakeWordDetector:
 
     DEFAULT_KEYWORDS = [
         # English wake words
-        "chitti", "hey chitti", "hello chitti", "ok chitti", "hi chitti",
+        "hello chitti", "chitti", "hey chitti", "ok chitti", "hi chitti",
         "wake up chitti", "chitti wake up", "chitti are you there",
         # Phonetic & Accent variations (explicitly handling chitthi, chitii, chiti, chitty)
         "chitthi", "he chitthi", "hey chitthi", "hello chitthi", "hi chitthi", "ok chitthi", "wake up chitthi", "chitthi wake up",
@@ -276,7 +276,7 @@ class WakeWordDetector:
             return None
 
         matched = False
-        matched_kw = "Hey Chitti"
+        matched_kw = "Hello Chitti"
         extracted_command = None
         confidence = float(acoustic_score)
 
@@ -354,7 +354,7 @@ class WakeWordDetector:
         if self.stt_engine is None and not matched and acoustic_score >= 0.70 and is_speech:
             matched = True
             confidence = float(acoustic_score)
-            matched_kw = "Hey Chitti" if acoustic_score > 0.80 else "Chitti"
+            matched_kw = "Hello Chitti" if acoustic_score > 0.80 else "Chitti"
 
         if not matched:
             return None

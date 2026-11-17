@@ -133,7 +133,7 @@ class ActionIntentAnalyzer:
         lower = normalized.lower()
 
         # Clean conversational prefixes and trailing fillers
-        clean = re.sub(r"^(?:chitti\b,?\s*|hey chitti\b,?\s*|hd\b,?\s*|h\.d\.\s*|ac\b,?\s*|a\.c\.\s*|hey d\b,?\s*|hey dee\b,?\s*|bhai\b,?\s*|bro\b,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti\b,?\s*|hello chitti\b,?\s*|hey chitti\b,?\s*|hd\b,?\s*|h\.d\.\s*|ac\b,?\s*|a\.c\.\s*|hey d\b,?\s*|hey dee\b,?\s*|bhai\b,?\s*|bro\b,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
         clean = re.sub(r"(?i)^(?:browser\s+(?:me|mein|par|pe)\s+|(?:in|on)\s+(?:the\s+|my\s+)?browser\s+)", "", clean).strip()
         clean = re.sub(r"(?i)\s+(?:for\s+me|(?:in|on)\s+(?:any\s+|my\s+|the\s+)?(?:browser|chrome|edge)|browser\s+(?:me|mein|par|pe)|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean_lower = clean.lower()
@@ -380,11 +380,19 @@ class ActionIntentAnalyzer:
             (bool(re.search(r"(?i)\byt\b", lower)) and any(w in lower for w in ["play", "song", "gaana", "music"]))
         )
         if is_media:
-            m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+(?:youtube|yt)\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+(?:youtube|yt)|(?:youtube|yt)\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|search\s+(?:youtube|yt)\s+for\s+(.*)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
-            if m_yt:
-                query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or m_yt.group(6) or "").strip()
+            # Check for compound switch command ("stop ... and play X", "change ... to play X")
+            m_compound = re.search(
+                r"(?i)\b(?:stop|band|pause|roko|change|switch)\b.*?\b(?:and|aur|then|ke\s+baad|to)\s+(?:play\s+|chalao\s+|lagao\s+|baja\s+do\s+|sunao\s+)?(.*)",
+                clean
+            )
+            if m_compound and m_compound.group(1).strip():
+                query = m_compound.group(1).strip()
             else:
-                query = re.sub(r"(?i)\b(?:youtube|yt|play|song|music|gaana|search|for|chalao|karo)\b", "", clean).strip()
+                m_yt = re.search(r"(?i)\b(?:play\s+(?:a\s+)?(.*)\s+(?:song|music|track)|go\s+to\s+(?:youtube|yt)\s+and\s+(?:play|search(?:\s+for)?)\s+(.*)|(?:search\s+for\s+|play\s+)?(.*)\s+on\s+(?:youtube|yt)|(?:youtube|yt)\s+(?:pe\s+|par\s+)(.*)\s+(?:chalao|play\s+karo|search\s+karo)|search\s+(?:youtube|yt)\s+for\s+(.*)|(.*)\s+(?:ka\s+gaana|song)\s+(?:chalao|play\s+karo))\b", clean)
+                if m_yt:
+                    query = (m_yt.group(1) or m_yt.group(2) or m_yt.group(3) or m_yt.group(4) or m_yt.group(5) or m_yt.group(6) or "").strip()
+                else:
+                    query = re.sub(r"(?i)\b(?:youtube|yt|play|song|music|gaana|search|for|chalao|karo)\b", "", clean).strip()
 
             if not query or query.lower() in ("a", "an", "the", "some", "any", "top", "trending", "song", "songs", "gaana", "music"):
                 query = "Trending Songs"

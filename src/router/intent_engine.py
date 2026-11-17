@@ -90,7 +90,7 @@ class NaturalIntentEngine:
         lower = normalized.lower()
 
         # Clean invocation prefix & trailing filler
-        clean = re.sub(r"^(?:chitti,?\s*|hey chitti,?\s*|bhai,?\s*|yaar,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(?:chitti,?\s*|hello chitti,?\s*|hey chitti,?\s*|bhai,?\s*|yaar,?\s*|please\s+|can\s+you\s+)", "", normalized, flags=re.IGNORECASE).strip()
         clean = re.sub(r"(?i)\s+(?:for\s+me|in\s+(?:any\s+|my\s+)?browser|browser\s+me(?:in)?|on\s+(?:my\s+)?computer)$", "", clean).strip()
         clean = clean.rstrip(".!?,")
         clean_lower = clean.lower()
@@ -281,33 +281,33 @@ class NaturalIntentEngine:
                 reg = ProjectRegistry()
                 p_path = reg.get_project_path(candidate_target)
                 if p_path:
-                in_browser = bool(re.search(r"(?i)\b(?:browser|chrome|brave|edge|website|web)\b", clean_lower))
-                if in_browser or (candidate_target in ("repo", "repository", "github repo", "my github repo", "project repo", "project repository") and not re.search(r"(?i)\b(?:code|editor|folder|local|directory|desktop)\b", clean_lower)):
-                    from src.agent.registry import DEFAULT_URL_MAP
-                    repo_url = DEFAULT_URL_MAP.get(candidate_target, DEFAULT_URL_MAP.get("my repo", "https://github.com/bishtprateek270-hue?tab=repositories"))
-                    return SemanticIntent(
-                        intent=IntentType.OPEN_APPLICATION,
-                        goal=f"Open {candidate_target} in browser",
-                        target=candidate_target,
-                        risk="low",
-                        execution_path=ExecutionPath.PATH_C_COMPUTER,
-                        parameters={"url": repo_url, "target": candidate_target, "action": "open_url"},
-                        confidence=0.95,
-                    )
-                else:
-                    return SemanticIntent(
-                        intent=IntentType.OPEN_PROJECT,
-                        goal=f"Open {candidate_target} project in VS Code / Editor",
-                        target=candidate_target,
-                        risk="low",
-                        execution_path=ExecutionPath.PATH_C_COMPUTER,
-                        parameters={
-                            "project_name": candidate_target,
-                            "project_path": p_path,
-                            "action": "open_project",
-                        },
-                        confidence=0.95,
-                    )
+                    in_browser = bool(re.search(r"(?i)\b(?:browser|chrome|brave|edge|website|web)\b", clean_lower))
+                    if in_browser or (candidate_target in ("repo", "repository", "github repo", "my github repo", "project repo", "project repository") and not re.search(r"(?i)\b(?:code|editor|folder|local|directory|desktop)\b", clean_lower)):
+                        from src.agent.registry import DEFAULT_URL_MAP
+                        repo_url = DEFAULT_URL_MAP.get(candidate_target, DEFAULT_URL_MAP.get("my repo", "https://github.com/bishtprateek270-hue?tab=repositories"))
+                        return SemanticIntent(
+                            intent=IntentType.OPEN_APPLICATION,
+                            goal=f"Open {candidate_target} in browser",
+                            target=candidate_target,
+                            risk="low",
+                            execution_path=ExecutionPath.PATH_C_COMPUTER,
+                            parameters={"url": repo_url, "target": candidate_target, "action": "open_url"},
+                            confidence=0.95,
+                        )
+                    else:
+                        return SemanticIntent(
+                            intent=IntentType.OPEN_PROJECT,
+                            goal=f"Open {candidate_target} project in VS Code / Editor",
+                            target=candidate_target,
+                            risk="low",
+                            execution_path=ExecutionPath.PATH_C_COMPUTER,
+                            parameters={
+                                "project_name": candidate_target,
+                                "project_path": p_path,
+                                "action": "open_project",
+                            },
+                            confidence=0.95,
+                        )
 
         # -------------------------------------------------------------
         # 2. CONTEXTUAL PROJECT OPENING ("Yaar, kal jo Python project banaya tha, usko kholna")
