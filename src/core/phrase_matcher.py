@@ -344,16 +344,22 @@ class PhraseMatcher:
         # (e.g. "chitti chup ho ja" [sleep] vs "chup ho ja" [stop]), honor the explicit sleep command
         if sleep_match and (not stop_match or len(sleep_match.group(0)) > len(stop_match.group(0))):
             phrase = sleep_match.group(0).lower()
-            conf = 1.0 if cleaned == phrase else 0.90
-            log_debug(f"[CONTROL] Match SLEEP: '{phrase}' in '{cleaned}' (Priority 2)")
-            return MatchResult(
-                command=ControlCommand.SLEEP,
-                priority=CommandPriority.PRIORITY_2_SLEEP.value,
-                matched_phrase=phrase,
-                confidence=conf,
-                original_text=raw_text,
-                cleaned_text=cleaned,
-            )
+            # If phrase does not mention Chitti, require that it is a direct command (not buried in conversational speech)
+            phrase_words = len(phrase.split())
+            is_addressed = any(name in cleaned for name in ("chitti", "chitthi", "chiti", "chitii", "चिट्टी"))
+            word_count = len(cleaned.split())
+            is_standalone = (cleaned == phrase) or (word_count <= phrase_words + 1 and (cleaned.startswith(phrase) or cleaned.endswith(phrase)))
+            if is_addressed or is_standalone:
+                conf = 1.0 if cleaned == phrase else 0.90
+                log_debug(f"[CONTROL] Match SLEEP: '{phrase}' in '{cleaned}' (Priority 2)")
+                return MatchResult(
+                    command=ControlCommand.SLEEP,
+                    priority=CommandPriority.PRIORITY_2_SLEEP.value,
+                    matched_phrase=phrase,
+                    confidence=conf,
+                    original_text=raw_text,
+                    cleaned_text=cleaned,
+                )
 
         # ---------------- PRIORITY 1: EMERGENCY STOP ----------------
         if stop_match:
@@ -369,9 +375,10 @@ class PhraseMatcher:
                 ))
                 if not media_or_app_target:
                     # If phrase does not mention Chitti, require that it is a direct command (not buried in an ambient sentence)
+                    phrase_words = len(phrase.split())
                     is_addressed = any(name in cleaned for name in ("chitti", "chitthi", "chiti", "chitii", "चिट्टी"))
                     word_count = len(cleaned.split())
-                    is_standalone = (cleaned == phrase) or (word_count <= 2) or (word_count <= 3 and (cleaned.startswith(phrase) or cleaned.endswith(phrase)))
+                    is_standalone = (cleaned == phrase) or (word_count <= phrase_words + 1 and (cleaned.startswith(phrase) or cleaned.endswith(phrase)))
                     if is_addressed or is_standalone:
                         conf = 1.0 if cleaned == phrase else 0.95
                         log_debug(f"[CONTROL] Match STOP: '{phrase}' in '{cleaned}' (Priority 1)")
@@ -387,16 +394,21 @@ class PhraseMatcher:
         # ---------------- PRIORITY 2: SLEEP ----------------
         if sleep_match:
             phrase = sleep_match.group(0).lower()
-            conf = 1.0 if cleaned == phrase else 0.90
-            log_debug(f"[CONTROL] Match SLEEP: '{phrase}' in '{cleaned}' (Priority 2)")
-            return MatchResult(
-                command=ControlCommand.SLEEP,
-                priority=CommandPriority.PRIORITY_2_SLEEP.value,
-                matched_phrase=phrase,
-                confidence=conf,
-                original_text=raw_text,
-                cleaned_text=cleaned,
-            )
+            phrase_words = len(phrase.split())
+            is_addressed = any(name in cleaned for name in ("chitti", "chitthi", "chiti", "chitii", "चिट्टी"))
+            word_count = len(cleaned.split())
+            is_standalone = (cleaned == phrase) or (word_count <= phrase_words + 1 and (cleaned.startswith(phrase) or cleaned.endswith(phrase)))
+            if is_addressed or is_standalone:
+                conf = 1.0 if cleaned == phrase else 0.90
+                log_debug(f"[CONTROL] Match SLEEP: '{phrase}' in '{cleaned}' (Priority 2)")
+                return MatchResult(
+                    command=ControlCommand.SLEEP,
+                    priority=CommandPriority.PRIORITY_2_SLEEP.value,
+                    matched_phrase=phrase,
+                    confidence=conf,
+                    original_text=raw_text,
+                    cleaned_text=cleaned,
+                )
 
         # ---------------- PRIORITY 3: WAKE ----------------
         wake_match = self._wake_regex.search(cleaned)
