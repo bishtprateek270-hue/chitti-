@@ -125,7 +125,9 @@ class ActionExecutor:
             try:
                 cmd = [resolved] + (args or [])
                 is_shell = str(resolved).lower().endswith((".cmd", ".bat"))
-                subprocess.Popen(cmd, shell=is_shell)
+                clean_env = os.environ.copy()
+                clean_env.pop("ELECTRON_RUN_AS_NODE", None)
+                subprocess.Popen(cmd, shell=is_shell, env=clean_env)
                 time.sleep(0.4)
 
                 # Bring window to foreground
@@ -257,7 +259,9 @@ class ActionExecutor:
         msg = f"Opened the {clean_display_target} folder."
         try:
             if open_in_vscode:
-                subprocess.Popen(["code", str(resolved_path)], shell=True)
+                clean_env = os.environ.copy()
+                clean_env.pop("ELECTRON_RUN_AS_NODE", None)
+                subprocess.Popen(["code", str(resolved_path)], shell=True, env=clean_env)
                 msg = f"Opened {clean_display_target} folder in VS Code."
             elif platform.system() == "Windows":
                 os.startfile(str(resolved_path))

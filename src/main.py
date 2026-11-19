@@ -19,6 +19,9 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
 os.environ.setdefault("KMP_BLOCKTIME", "1")
 os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
 
+# Clear any IDE/Electron sandbox flags so child GUI apps (like VS Code, Brave, Chrome) run as full GUI apps
+os.environ.pop("ELECTRON_RUN_AS_NODE", None)
+
 try:
     import torch
     torch.set_num_threads(2)

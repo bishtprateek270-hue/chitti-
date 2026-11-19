@@ -68,6 +68,11 @@ class AppController:
             cmd = [exe_path] + (args or [])
             is_shell = str(exe_path).lower().endswith((".cmd", ".bat"))
 
+            # Clean environment for child desktop applications
+            # (Remove ELECTRON_RUN_AS_NODE and similar flags inherited from IDE/sandbox)
+            clean_env = os.environ.copy()
+            clean_env.pop("ELECTRON_RUN_AS_NODE", None)
+
             # Prefer os.startfile on Windows when no extra args are passed for seamless desktop integration
             if not args and platform.system() == "Windows" and os.path.isabs(exe_path) and not is_shell:
                 try:
@@ -77,7 +82,7 @@ class AppController:
                 except Exception as e:
                     log_debug(f"os.startfile fallback to subprocess: {e}")
 
-            subprocess.Popen(cmd, cwd=cwd, shell=is_shell)
+            subprocess.Popen(cmd, cwd=cwd, shell=is_shell, env=clean_env)
             log_info(f"Launched application: {exe_path} with args: {args}")
             return True
         except Exception as e:

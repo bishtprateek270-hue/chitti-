@@ -87,83 +87,91 @@ class ScreenAnalyzer:
     }
 
 
-    def verify_window(self, title_query: str) -> VerificationResult:
+    def verify_window(self, title_query: str, timeout_sec: float = 2.5) -> VerificationResult:
         """
         Explicitly verifies whether a window or process matching title_query exists.
+        Polls for up to timeout_sec to allow newly launched desktop apps to initialize.
         Returns a VerificationResult with success boolean and evidence.
         """
         query = title_query.lower().strip()
-        visible = self.controller.list_windows()
         tokens = [t for t in re.split(r"[\s\/\-_]+", query) if len(t) > 2 and t not in ("web", "app", "window", "application")]
-
-        # 1. Check visible window titles
-        for w in visible:
-            w_title = w.title.lower()
-            if query in w_title or (tokens and any(t in w_title for t in tokens)):
-                log_info(f"[VERIFY] Window '{w.title}' detected matching query '{title_query}'")
-                return VerificationResult(
-                    success=True,
-                    evidence=f"Window '{w.title}' is visible on screen.",
-                    target=title_query,
-                )
-            # Check aliases against window title
-            aliases = self.APP_PROCESS_ALIASES.get(query, [])
-            if any(alias in w_title for alias in aliases):
-                log_info(f"[VERIFY] Window '{w.title}' detected matching alias for '{title_query}'")
-                return VerificationResult(
-                    success=True,
-                    evidence=f"Window '{w.title}' is visible on screen.",
-                    target=title_query,
-                )
-
-        # 2. For website targets (e.g. YouTube), verify via browser controller state and running browser
-        if query in ("youtube", "whatsapp web", "gmail", "gmail / webmail", "webmail"):
-            from src.agent.computer.browser import BrowserController
-            b_state = BrowserController().get_browser_state()
-            site_key = "youtube" if query == "youtube" else ("whatsapp" if "whatsapp" in query else "google.com")
-            if b_state.is_open and b_state.current_url and site_key in b_state.current_url.lower():
-                has_browser_proc = False
-                try:
-                    for proc in psutil.process_iter(['name']):
-                        p_name = (proc.info.get('name') or '').lower()
-                        if any(b == p_name for b in ('brave.exe', 'chrome.exe', 'msedge.exe', 'firefox.exe')):
-                            has_browser_proc = True
-                            break
-                except Exception:
-                    has_browser_proc = True
-
-                if has_browser_proc:
-                    log_info(f"[VERIFY] Active browser state verified for '{title_query}': {b_state.current_url}")
-                    return VerificationResult(
-                        success=True,
-                        evidence=f"Browser tab actively open at '{b_state.current_url}'.",
-                        target=title_query,
-                    )
-            return VerificationResult(
-                success=False,
-                evidence=f"No active browser window or tab for '{title_query}' was found.",
-                target=title_query,
-            )
-
-        # 3. Check running processes as secondary verification for native desktop apps (strict exact matching)
         expected_aliases = self.APP_PROCESS_ALIASES.get(query, [query])
-        for proc in psutil.process_iter(['name']):
-            try:
-                pname = (proc.info['name'] or "").lower()
-                is_match = (
-                    pname in expected_aliases
-                    or any(pname == alias or pname == f"{alias}.exe" for alias in expected_aliases)
-                    or (pname.endswith(".exe") and pname[:-4] in expected_aliases)
-                )
-                if is_match:
-                    log_info(f"[VERIFY] Running process '{pname}' detected matching '{title_query}'")
+
+        start_time = time.time()
+        while True:
+            visible = self.controller.list_windows()
+
+            # 1. Check visible window titles
+            for w in visible:
+                w_title = w.title.lower()
+                if query in w_title or (tokens and any(t in w_title for t in tokens)):
+                    log_info(f"[VERIFY] Window '{w.title}' detected matching query '{title_query}'")
                     return VerificationResult(
                         success=True,
-                        evidence=f"Application process '{pname}' is actively running.",
+                        evidence=f"Window '{w.title}' is visible on screen.",
                         target=title_query,
                     )
-            except Exception:
-                continue
+                # Check aliases against window title
+                aliases = self.APP_PROCESS_ALIASES.get(query, [])
+                if any(alias in w_title for alias in aliases):
+                    log_info(f"[VERIFY] Window '{w.title}' detected matching alias for '{title_query}'")
+                    return VerificationResult(
+                        success=True,
+                        evidence=f"Window '{w.title}' is visible on screen.",
+                        target=title_query,
+                    )
+
+            # 2. For website targets (e.g. YouTube), verify via browser controller state and running browser
+            if query in ("youtube", "whatsapp web", "gmail", "gmail / webmail", "webmail"):
+                from src.agent.computer.browser import BrowserController
+                b_state = BrowserController().get_browser_state()
+                site_key = "youtube" if query == "youtube" else ("whatsapp" if "whatsapp" in query else "google.com")
+                if b_state.is_open and b_state.current_url and site_key in b_state.current_url.lower():
+                    has_browser_proc = False
+                    try:
+                        for proc in psutil.process_iter(['name']):
+                            p_name = (proc.info.get('name') or '').lower()
+                            if any(b == p_name for b in ('brave.exe', 'chrome.exe', 'msedge.exe', 'firefox.exe')):
+                                has_browser_proc = True
+                                break
+                    except Exception:
+                        has_browser_proc = True
+
+                    if has_browser_proc:
+                        log_info(f"[VERIFY] Active browser state verified for '{title_query}': {b_state.current_url}")
+                        return VerificationResult(
+                            success=True,
+                            evidence=f"Browser tab actively open at '{b_state.current_url}'.",
+                            target=title_query,
+                        )
+                return VerificationResult(
+                    success=False,
+                    evidence=f"No active browser window or tab for '{title_query}' was found.",
+                    target=title_query,
+                )
+
+            # 3. Check running processes as secondary verification for native desktop apps (strict exact matching)
+            for proc in psutil.process_iter(['name']):
+                try:
+                    pname = (proc.info['name'] or "").lower()
+                    is_match = (
+                        pname in expected_aliases
+                        or any(pname == alias or pname == f"{alias}.exe" for alias in expected_aliases)
+                        or (pname.endswith(".exe") and pname[:-4] in expected_aliases)
+                    )
+                    if is_match:
+                        log_info(f"[VERIFY] Running process '{pname}' detected matching '{title_query}'")
+                        return VerificationResult(
+                            success=True,
+                            evidence=f"Application process '{pname}' is actively running.",
+                            target=title_query,
+                        )
+                except Exception:
+                    continue
+
+            if time.time() - start_time >= timeout_sec:
+                break
+            time.sleep(0.4)
 
         log_warn(f"[VERIFY] Verification FAILED: No window or process matching '{title_query}' found.")
         return VerificationResult(
