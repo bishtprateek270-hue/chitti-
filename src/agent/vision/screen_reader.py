@@ -231,18 +231,74 @@ class ScreenReader:
             is_active=True,
         )
 
+    def find_window_by_keywords(self, keywords: List[str]) -> Optional[WindowRect]:
+        """
+        Finds a visible window whose title or process matches any of the given keywords
+        (e.g., ['gmail', 'mail.google.com', 'inbox', 'email']).
+        """
+        if HAS_WIN32 and win32gui:
+            try:
+                user32 = ctypes.windll.user32
+                hwnd = user32.GetTopWindow(0)
+                GW_HWNDNEXT = 2
+                while hwnd:
+                    try:
+                        if user32.IsWindowVisible(hwnd):
+                            length = user32.GetWindowTextLengthW(hwnd)
+                            if length > 0:
+                                buff = ctypes.create_unicode_buffer(length + 1)
+                                user32.GetWindowTextW(hwnd, buff, length + 1)
+                                title = buff.value.strip()
+                                title_low = title.lower()
+                                if any(k.lower() in title_low for k in keywords):
+                                    rect = win32gui.GetWindowRect(hwnd)
+                                    w = max(0, rect[2] - rect[0])
+                                    h = max(0, rect[3] - rect[1])
+                                    if w > 200 and h > 200:
+                                        pname = ""
+                                        if psutil and win32process:
+                                            try:
+                                                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                                                pname = psutil.Process(pid).name()
+                                            except Exception:
+                                                pname = ""
+                                        return WindowRect(
+                                            title=title,
+                                            handle=hwnd,
+                                            left=rect[0],
+                                            top=rect[1],
+                                            width=w,
+                                            height=h,
+                                            process_name=pname,
+                                            is_active=False,
+                                        )
+                    except Exception:
+                        pass
+                    hwnd = user32.GetWindow(hwnd, GW_HWNDNEXT)
+            except Exception as e:
+                log_debug(f"[VISION] Keyword window search error: {e}")
+        return None
+
     def capture_active_window(
         self,
         output_path: Optional[str] = None,
         exclude_internal: bool = True,
+        target_keywords: Optional[List[str]] = None,
     ) -> Tuple[str, Optional[WindowRect]]:
         """
-        Captures the target active window or the full multi-screen desktop if the user
-        is running in terminal/IDE mode.
+        Captures the target active window (or background window matching keywords)
+        or the full multi-screen desktop if the user is running in terminal/IDE mode.
         Returns the saved screenshot path and the WindowRect metadata.
         """
         import uuid
-        active_win = self.get_target_user_window(exclude_internal=exclude_internal)
+        active_win = None
+        if target_keywords:
+            active_win = self.find_window_by_keywords(target_keywords)
+            if active_win:
+                log_info(f"[VISION] Located background window matching {target_keywords}: '{active_win.title}'")
+
+        if not active_win:
+            active_win = self.get_target_user_window(exclude_internal=exclude_internal)
         if not output_path:
             filename = f"screen_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.png"
             target = self.output_dir / filename

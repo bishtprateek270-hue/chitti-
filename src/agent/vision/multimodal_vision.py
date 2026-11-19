@@ -206,13 +206,16 @@ class VisionGroundingEngine:
         Extracts, structures, and generates a concise intelligent summary of the document,
         PDF, article, or code file currently displayed in the foreground window.
         """
+        is_email = bool(re.search(r"(?i)\b(?:email|emails|mail|gmail|inbox)\b", query))
+        email_keywords = ["gmail", "mail.google.com", "inbox", "email"] if is_email else None
+
         active_rect: Optional[WindowRect] = None
         if not screenshot_path:
-            screenshot_path, active_rect = self.screen_reader.capture_active_window()
+            screenshot_path, active_rect = self.screen_reader.capture_active_window(target_keywords=email_keywords)
         else:
             active_rect = self.screen_reader.get_active_window()
 
-        active_title = active_rect.title if active_rect else "Active Document"
+        active_title = active_rect.title if active_rect else ("Gmail / Email" if is_email else "Active Document")
         active_proc = active_rect.process_name if active_rect else "Viewer"
 
         # 1. Extract raw text & document structure
@@ -220,7 +223,7 @@ class VisionGroundingEngine:
         doc_struct = self.ocr_analyzer.extract_document_structure(ocr_text, window_title=active_title)
 
         doc_title = doc_struct["title"]
-        doc_type = doc_struct["document_type"]
+        doc_type = "Email" if is_email else doc_struct["document_type"]
         headings = doc_struct["headings"]
         bullet_points = doc_struct["bullet_points"]
         clean_text = doc_struct["clean_text"]
@@ -231,18 +234,29 @@ class VisionGroundingEngine:
         key_points: List[str] = list(bullet_points[:5]) if bullet_points else []
         action_items: List[str] = []
 
-        if self.llm and len(clean_text) > 30:
+        if self.llm and len(clean_text) > 20:
             try:
-                prompt = (
-                    f"You are Chitti's Document Grounding Engine. Analyze and summarize this document open on the user's screen.\n"
-                    f"Document Title: {doc_title}\n"
-                    f"Document Format: {doc_type}\n"
-                    f"Extracted Document Text:\n{clean_text[:2000]}\n\n"
-                    f"Please provide a structured summary:\n"
-                    f"1. A 2-sentence Overview of the document's core purpose.\n"
-                    f"2. 3 to 5 Key Points (bulleted).\n"
-                    f"3. Any Action Items or Next Steps (if applicable)."
-                )
+                if is_email:
+                    prompt = (
+                        f"You are Chitti's Email Executive Assistant. An email or inbox is open on the user's screen or in the background.\n"
+                        f"Extracted Email / Window Text:\n{clean_text[:2500]}\n\n"
+                        f"Please provide an executive email summary:\n"
+                        f"1. **Sender**: Who sent it (if visible, else 'Unknown / Inbox Overview').\n"
+                        f"2. **Subject**: What the email is about.\n"
+                        f"3. **Summary**: 2 to 3 concise bullet points summarizing the core message.\n"
+                        f"4. **Action Items / Next Steps**: Any required reply or deadline."
+                    )
+                else:
+                    prompt = (
+                        f"You are Chitti's Document Grounding Engine. Analyze and summarize this document open on the user's screen.\n"
+                        f"Document Title: {doc_title}\n"
+                        f"Document Format: {doc_type}\n"
+                        f"Extracted Document Text:\n{clean_text[:2000]}\n\n"
+                        f"Please provide a structured summary:\n"
+                        f"1. A 2-sentence Overview of the document's core purpose.\n"
+                        f"2. 3 to 5 Key Points (bulleted).\n"
+                        f"3. Any Action Items or Next Steps (if applicable)."
+                    )
                 llm_resp = self.llm.generate_response([{"role": "user", "content": prompt}])
                 if llm_resp and len(llm_resp.strip()) > 20:
                     overview = llm_resp.strip()

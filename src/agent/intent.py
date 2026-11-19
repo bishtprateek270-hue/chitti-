@@ -231,7 +231,8 @@ class ActionIntentAnalyzer:
             )
 
         # 1B. Actionable Email Sending ("send email to...", "email <msg> to <recipient>...", "mail this to...")
-        if email_addr_match or bool(re.search(r"(?i)\b(?:send\s+(?:an?\s+)?email|email\s+(?:this|the|a)?|mail\s+(?:this|the|a)?)\b", clean)):
+        is_read_email_intent = bool(re.search(r"(?i)\b(?:read|check|summarize|summary|padh|padho|batao|kya\s+hai|open|kholo)\b", clean))
+        if not is_read_email_intent and (email_addr_match or bool(re.search(r"(?i)\b(?:send\s+(?:an?\s+)?(?:email|mail)|email\s+(?:this|to)\b|mail\s+(?:this|to)\b)\b", clean))):
             recipient = email_addr_match.group(1) if email_addr_match else ""
             if not recipient:
                 m_rec = re.search(r"(?i)\b(?:to|ko)\s+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|[a-zA-Z0-9_\-]+)", clean)
@@ -464,21 +465,23 @@ class ActionIntentAnalyzer:
                     verification_required=True,
                 )
 
-        # 4C. Document Summarization on Screen ("summarize document", "summarize open file", "document ke main points")
+        # 4C. Document & Email Summarization on Screen ("summarize document", "read the email in bg", "email summarize karo")
         is_document_summary = bool(
-            re.search(r"(?i)\b(?:summarize\s+(?:the\s+|this\s+)?(?:open\s+)?(?:document|doc|pdf|file|page|article|notes|code|readme|roadmap)|document\s+summary|summarize\s+what\s+is\s+written)\b", clean) or
-            re.search(r"(?i)\b(?:document|doc|pdf|file|page|notes|roadmap)\b.*?\b(?:summarize|summary|main\s+points|batao|samjhao|explain)\b", clean) or
-            re.search(r"(?i)\b(?:summary|main\s+points)\b.*?\b(?:document|doc|pdf|file|page|screen)\b", clean) or
-            re.search(r"(?i)\b(?:screen\s+pe\s+(?:jo\s+)?(?:document|file|pdf|page)\s+hai|is\s+document\s+k[eo]|document\s+k[eo]\s+main\s+points)\b", clean)
+            re.search(r"(?i)\b(?:summarize\s+(?:the\s+|this\s+|my\s+)?(?:open\s+)?(?:document|doc|pdf|file|page|article|notes|code|readme|roadmap|email|emails|mail|gmail|inbox)|document\s+summary|email\s+summary|summarize\s+what\s+is\s+written)\b", clean) or
+            re.search(r"(?i)\b(?:document|doc|pdf|file|page|notes|roadmap|email|emails|mail|gmail)\b.*?\b(?:summarize|summary|main\s+points|batao|samjhao|explain|padh|padho)\b", clean) or
+            re.search(r"(?i)\b(?:summary|main\s+points)\b.*?\b(?:document|doc|pdf|file|page|screen|email|emails|mail|gmail)\b", clean) or
+            re.search(r"(?i)\b(?:screen\s+pe\s+(?:jo\s+)?(?:document|file|pdf|page|email|mail)\s+hai|is\s+document\s+k[eo]|document\s+k[eo]\s+main\s+points|email\s+k[eo]\s+main\s+points)\b", clean) or
+            re.search(r"(?i)\b(?:read\s+(?:the\s+|my\s+)?(?:email|emails|mail|gmail)(?:\s+in\s+(?:bg|background))?|(?:email|mail)\s+(?:in\s+)?(?:bg|background)\s+(?:me\s+)?(?:read|summarize|padho))\b", clean)
         )
         if is_document_summary:
+            is_email = bool(re.search(r"(?i)\b(?:email|emails|mail|gmail|inbox)\b", clean))
             return ActionIntent(
                 intent=ActionIntentType.SUMMARIZE_DOCUMENT,
-                goal="Read, analyze, and summarize the open document on screen",
+                goal="Read, analyze, and summarize the email or document on screen or in background",
                 channel="Vision Grounding",
-                application="Document Grounding",
-                target="Open Document",
-                parameters={"query": clean},
+                application="Email/Document Grounding" if is_email else "Document Grounding",
+                target="Open Email" if is_email else "Open Document",
+                parameters={"query": clean, "is_email": is_email},
                 execution_required=True,
                 verification_required=True,
             )

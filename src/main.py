@@ -713,7 +713,8 @@ class ChittiController:
         is_screen_query = (
             bool(re.search(r"(?i)\b(?:look\s+at\s+(?:my\s+)?screen|what\s+is\s+on\s+(?:my\s+)?screen|summarize\s+(?:what\s+is\s+on\s+)?(?:my\s+)?screen|explain\s+(?:the\s+)?error\s+on\s+screen|screen\s+info|diagnose\s+screen|read\s+my\s+screen)\b", user_text))
             or bool(re.search(r"(?i)\b(?:screen\s+(?:pe|p|par)?\s*(?:kya|dekho|error)|meri\s+screen\s+dekho)\b", user_text))
-            or bool(re.search(r"(?i)\b(?:summarize\s+(?:this|the|open)\s+(?:document|doc|pdf|notes|paper|readme|roadmap))\b", user_text))
+            or bool(re.search(r"(?i)\b(?:summarize\s+(?:this|the|open|my)?\s*(?:document|doc|pdf|notes|paper|readme|roadmap|email|emails|mail|gmail))\b", user_text))
+            or bool(re.search(r"(?i)\b(?:read\s+(?:the\s+|my\s+)?(?:email|emails|mail|gmail)|(?:email|mail)\s+(?:in\s+)?(?:bg|background)\s+(?:me\s+)?(?:read|summarize|padho)|background\s+m[ei]n?\s+(?:email|mail)\s+(?:padho|summarize))\b", user_text))
             or (master_decision.route == MasterRoute.VISION_TASK and not is_camera_query)
         ) and not is_camera_query and not is_computer_action
 
@@ -723,7 +724,7 @@ class ChittiController:
                 if bool(re.search(r"(?i)\b(?:error|fail|bug|traceback|gadbad|issue|problem)\b", user_text)):
                     diag = self.vision_grounding.diagnose_screen_error(query=user_text)
                     resp_msg = diag.description
-                elif bool(re.search(r"(?i)\b(?:document|doc|pdf|notes|article|paper|readme|roadmap|summarize\s+what\s+is\s+written|main\s+points)\b", user_text)):
+                elif bool(re.search(r"(?i)\b(?:document|doc|pdf|notes|article|paper|readme|roadmap|summarize\s+what\s+is\s+written|main\s+points|email|emails|mail|gmail|inbox)\b", user_text)):
                     doc_res = self.vision_grounding.summarize_open_document(query=user_text)
                     resp_msg = doc_res.full_summary
                 else:
