@@ -577,6 +577,49 @@ class AmbientVoiceListener:
         if final:
             self.conclude_speech(request_id=request_id)
 
+    def synthesize_to_file(self, text: str) -> Optional[str]:
+        """Pre-synthesizes text using active TTS engine if available."""
+        if hasattr(self.tts, "synthesize_to_file"):
+            return self.tts.synthesize_to_file(text)
+        return None
+
+    def play_synthesized_file(self, file_path: str, request_id: Optional[int] = None) -> bool:
+        """Plays a pre-synthesized audio file through TTS with barge-in support."""
+        state_mgr = get_state_manager()
+        if not state_mgr.can_speak(request_id):
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+            return False
+
+        state_mgr.begin_speaking(request_id)
+        self.wake_detector.pause()
+        with self._lock:
+            self.state = AmbientState.SPEAKING
+        if self.hud:
+            self.hud.set_mode(HUDMode.SPEAKING)
+
+        was_interrupted = False
+        def interrupt_callback(inter_audio=None):
+            nonlocal was_interrupted
+            log_chitti("[AMBIENT] ✋ Speech interrupted by user barge-in!")
+            was_interrupted = True
+            self.state_mgr.interrupt(reason="barge_in")
+            if hasattr(self.tts, "stop"):
+                self.tts.stop()
+
+        if self.barge_in_enabled:
+            self.barge_in.start_monitoring(on_interrupt=interrupt_callback)
+        try:
+            if hasattr(self.tts, "play_synthesized_file"):
+                return self.tts.play_synthesized_file(file_path, request_id=request_id)
+            return False
+        finally:
+            if self.barge_in_enabled:
+                self.barge_in.stop_monitoring()
+
     def conclude_speech(self, request_id: Optional[int] = None):
         """Finalizes the speech turn, flushes audio buffers, and transitions to follow-up turn or standby."""
         with self._lock:

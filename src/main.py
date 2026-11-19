@@ -943,7 +943,7 @@ class ChittiController:
 
         self.history.set_relevant_memories(relevant_memories)
 
-        # 8. Configure Response Language Guidance for LLM
+        # 8. Configure Response Language Guidance & Contextual Tone for LLM
         lang_name_map = {
             "en": "English",
             "hi": "Hindi (Devanagari script)",
@@ -951,15 +951,58 @@ class ChittiController:
         }
         lang_target_name = lang_name_map.get(active_lang, "English")
 
+        # Contextual Tone & Style Adaptation based on user topic
+        user_lower = user_text.lower().strip()
+        study_keywords = (
+            "explain", "samjhao", "kya hota", "how does", "what is", "kaise kaam", "algorithm",
+            "code", "programming", "python", "study", "exam", "math", "science", "physics",
+            "chemistry", "biology", "history of", "concept", "architecture", "database",
+            "neural", "deep learning", "machine learning", "notes", "quiz", "data structure",
+            "pointers", "recursion", "dijkstra", "transformer", "attention mechanism", "sql"
+        )
+        gk_keywords = (
+            "capital of", "who is", "who was", "where is", "when did", "president", "prime minister",
+            "currency of", "largest", "smallest", "highest", "country", "news", "current affairs",
+            "chandrayaan", "isro", "nasa", "nobel prize", "world war", "constitution", "independence"
+        )
+        casual_banter_keywords = (
+            "kya chal raha", "kaise ho", "kya haal", "bore", "bhai", "yaar", "chai",
+            "coffee", "mood", "joke", "masti", "sup", "what's up", "how are you",
+            "baat karo", "dost", "friend", "khana", "dinner", "lunch", "kuch sunao",
+            "maza", "kya kar rahe", "hello", "hi", "hey", "aur bata"
+        )
+
+        if any(w in user_lower for w in study_keywords):
+            tone_directive = (
+                "\n[TONE & TOPIC DIRECTIVE: Educational Tutor Mode. Explain clearly, intuitively, and comprehensively "
+                "with an easy analogy and key breakdown. Avoid rushing or blunt one-liners so the user learns effectively.]"
+            )
+        elif any(w in user_lower for w in gk_keywords):
+            tone_directive = (
+                "\n[TONE & TOPIC DIRECTIVE: Knowledge Guide Mode. Provide sharp, articulate, accurate facts and "
+                "engaging context clearly and confidently.]"
+            )
+        elif any(w in user_lower for w in casual_banter_keywords) or len(user_lower.split()) <= 4:
+            tone_directive = (
+                "\n[TONE & TOPIC DIRECTIVE: Chill Companion / Friendly Banter Mode. Be warm, witty, humorous, "
+                "and companionable. Talk like a real, loyal buddy in natural spoken rhythm, not like a formal AI.]"
+            )
+        else:
+            tone_directive = (
+                "\n[TONE & TOPIC DIRECTIVE: Balanced Companion. Adapt naturally to the conversation: warm if friendly, "
+                "clear and helpful if asking for information.]"
+            )
+
         lang_guidance = (
             f"\n\n[RESPONSE LANGUAGE DIRECTIVE: Respond naturally in {lang_target_name}. "
             f"Keep programming code, technical terms (e.g. Python, GPU, RAM, Docker, VS Code), "
             f"file paths, and proper names in English/Roman text. Never translate technical terms awkwardly. "
             f"Never output placeholders like [Creator's Name]. If you don't know something, admit it directly.]"
+            f"{tone_directive}"
         )
         self.history.set_language_instruction(lang_guidance)
 
-        # 9. Generate LLM response with sentence-level streaming TTS
+        # 9. Generate LLM response with sentence-level streaming TTS & zero-pause prefetching
         log_state("THINKING")
         messages = self.history.get_messages_for_llm()
         full_response_parts = []
@@ -980,9 +1023,14 @@ class ChittiController:
 
         try:
             if use_stream:
+                from src.audio.tts import StreamingSpeechPipeline
+                active_tts_target = self.ambient_listener or self.tts
+                pipeline = StreamingSpeechPipeline(active_tts_target, request_id=request_id, hud=self.hud)
+
                 for chunk in self.llm.generate_response_stream(messages, request_id=request_id):
                     if not self.state_manager.is_generation_valid(request_id):
                         log_debug(f"[CHITTI] Invalidation during streaming for request #{request_id}")
+                        pipeline.cancel()
                         break
 
                     full_response_parts.append(chunk)
@@ -1007,7 +1055,7 @@ class ChittiController:
                                 metrics.mark_stage(request_id, "first_audio_played")
                                 if self.hud:
                                     self.hud.set_mode(HUDMode.SPEAKING)
-                            self.safe_speak(sanitized_chunk, request_id=request_id, final=False)
+                            pipeline.push_sentence(sanitized_chunk)
 
                 # Process any trailing sentence fragment
                 if sentence_buffer.strip() and self.state_manager.can_speak(request_id):
@@ -1020,10 +1068,13 @@ class ChittiController:
                     if not first_audio_played:
                         first_audio_played = True
                         metrics.mark_stage(request_id, "first_audio_played")
-                    self.safe_speak(sanitized_tail, request_id=request_id, final=True)
-                else:
-                    if self.ambient_listener:
-                        self.ambient_listener.conclude_speech(request_id=request_id)
+                    pipeline.push_sentence(sanitized_tail)
+
+                # Wait for prefetched playback to conclude without stalling the generator
+                pipeline.finish(timeout=45.0)
+
+                if self.ambient_listener:
+                    self.ambient_listener.conclude_speech(request_id=request_id)
 
                 response_text = "".join(full_response_parts).strip()
             else:

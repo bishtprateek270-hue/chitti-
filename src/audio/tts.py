@@ -677,6 +677,18 @@ class SpeechController:
             log_info(f"[CHITTI][TTS] Discarded {cleared} pending utterances from speech queue.")
         return cleared
 
+    def synthesize_to_file(self, text: str) -> Optional[str]:
+        """Pre-synthesizes text using active engine if available."""
+        if hasattr(self.engine, "synthesize_to_file"):
+            return self.engine.synthesize_to_file(text)
+        return None
+
+    def play_synthesized_file(self, file_path: str, request_id: Optional[int] = None) -> bool:
+        """Plays a pre-synthesized audio file through active engine."""
+        if hasattr(self.engine, "play_synthesized_file"):
+            return self.engine.play_synthesized_file(file_path, request_id=request_id)
+        return False
+
     def is_speaking(self) -> bool:
         """Returns True if the engine is speaking or queue is non-empty."""
         return self.engine.is_speaking() or not self._queue.empty()
@@ -738,3 +750,137 @@ def get_speech_controller(config: Optional[TTSConfig] = None) -> SpeechControlle
             if _SPEECH_CONTROLLER is None:
                 _SPEECH_CONTROLLER = SpeechController(config=config)
     return _SPEECH_CONTROLLER
+
+
+class StreamingSpeechPipeline:
+    """
+    Ultra-low latency streaming speech pipeline with proactive background prefetching.
+    Eliminates the awkward multi-second pause between spoken sentences by pre-synthesizing
+    subsequent sentences concurrently while the current sentence is actively playing.
+    """
+
+    def __init__(self, tts_engine: Any, request_id: Optional[int] = None, hud: Optional[Any] = None):
+        self.tts = tts_engine
+        self.request_id = request_id
+        self.hud = hud
+        self._sentence_queue: queue.Queue = queue.Queue()
+        self._audio_queue: queue.Queue = queue.Queue()
+        self._is_active = True
+        self._first_audio_played = False
+
+        self._prefetch_thread = threading.Thread(
+            target=self._prefetch_worker,
+            daemon=True,
+            name=f"TTS-Prefetch-{request_id}",
+        )
+        self._prefetch_thread.start()
+
+        self._playback_thread = threading.Thread(
+            target=self._playback_worker,
+            daemon=True,
+            name=f"TTS-Playback-{request_id}",
+        )
+        self._playback_thread.start()
+
+    def push_sentence(self, sentence: str):
+        if not self._is_active or not sentence or not sentence.strip():
+            return
+        self._sentence_queue.put(sentence.strip())
+
+    def finish(self, timeout: float = 60.0):
+        """Signals end of sentence stream and waits for all audio playback to complete."""
+        self._sentence_queue.put(None)
+        if self._playback_thread.is_alive():
+            self._playback_thread.join(timeout=timeout)
+
+    def cancel(self):
+        """Immediately halts prefetching and playback."""
+        self._is_active = False
+        self._sentence_queue.put(None)
+        self._audio_queue.put(None)
+        if hasattr(self.tts, "stop"):
+            try:
+                self.tts.stop()
+            except Exception:
+                pass
+
+    def _prefetch_worker(self):
+        while self._is_active:
+            try:
+                sentence = self._sentence_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if sentence is None:
+                self._audio_queue.put(None)
+                break
+
+            state_mgr = get_state_manager()
+            if not state_mgr.can_speak(self.request_id) or not self._is_active:
+                self._audio_queue.put(None)
+                break
+
+            # Synthesize sentence to MP3 file in background
+            audio_file = None
+            try:
+                if hasattr(self.tts, "synthesize_to_file"):
+                    audio_file = self.tts.synthesize_to_file(sentence)
+                elif hasattr(getattr(self.tts, "tts", None), "synthesize_to_file"):
+                    audio_file = self.tts.tts.synthesize_to_file(sentence)
+                elif hasattr(getattr(self.tts, "engine", None), "synthesize_to_file"):
+                    audio_file = self.tts.engine.synthesize_to_file(sentence)
+            except Exception as e:
+                log_debug(f"[PIPELINE] Prefetch error: {e}")
+
+            self._audio_queue.put((sentence, audio_file))
+
+    def _playback_worker(self):
+        while self._is_active:
+            try:
+                item = self._audio_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if item is None:
+                break
+
+            sentence, audio_file = item
+            state_mgr = get_state_manager()
+            if not state_mgr.can_speak(self.request_id) or not self._is_active:
+                if audio_file and os.path.exists(audio_file):
+                    try:
+                        os.remove(audio_file)
+                    except Exception:
+                        pass
+                break
+
+            if not self._first_audio_played:
+                self._first_audio_played = True
+                if self.hud:
+                    from src.ui.visualizer import HUDMode
+                    self.hud.set_mode(HUDMode.SPEAKING)
+
+            if audio_file and os.path.exists(audio_file):
+                played = False
+                try:
+                    if hasattr(self.tts, "play_synthesized_file"):
+                        played = self.tts.play_synthesized_file(audio_file, request_id=self.request_id)
+                    elif hasattr(getattr(self.tts, "tts", None), "play_synthesized_file"):
+                        played = self.tts.tts.play_synthesized_file(audio_file, request_id=self.request_id)
+                    elif hasattr(getattr(self.tts, "engine", None), "play_synthesized_file"):
+                        played = self.tts.engine.play_synthesized_file(audio_file, request_id=self.request_id)
+                except Exception as e:
+                    log_debug(f"[PIPELINE] Playback error: {e}")
+
+                if not played and hasattr(self.tts, "speak"):
+                    try:
+                        self.tts.speak(sentence, wait=True, request_id=self.request_id)
+                    except TypeError:
+                        self.tts.speak(sentence, wait=True)
+            else:
+                # Fallback direct speak
+                if hasattr(self.tts, "speak"):
+                    try:
+                        self.tts.speak(sentence, wait=True, request_id=self.request_id)
+                    except TypeError:
+                        self.tts.speak(sentence, wait=True)

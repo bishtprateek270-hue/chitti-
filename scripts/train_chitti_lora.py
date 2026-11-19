@@ -126,7 +126,7 @@ def main():
         quantization_config=bnb_config,
         device_map="auto" if torch.cuda.is_available() else None,
         trust_remote_code=True,
-        dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
     )
 
     if bnb_config:
@@ -206,6 +206,9 @@ def main():
     # 8. Post-training interactive test
     print("\n[TEST] Verifying Personality & Grounding on Trained Adapter...")
     test_prompts = [
+        "aur bata kya scene hai?",
+        "gradient descent simple shabdon me samjhao",
+        "isro ke chandrayaan 3 mission ke bare me batao",
         "Who created you?",
         "what is my email id?",
         "open 3d ulpin repo",
