@@ -290,6 +290,28 @@ class SystemControlConfig:
 
 
 @dataclass
+class N8NConfig:
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("N8N_ENABLED", "true").lower() in ("true", "1", "yes")
+    )
+    base_url: str = field(
+        default_factory=lambda: os.getenv("N8N_BASE_URL", "http://localhost:5678").rstrip("/")
+    )
+    webhook_prefix: str = field(
+        default_factory=lambda: os.getenv("N8N_WEBHOOK_PREFIX", "http://localhost:5678/webhook").rstrip("/")
+    )
+    api_key: Optional[str] = field(
+        default_factory=lambda: os.getenv("N8N_API_KEY", "").strip() or None
+    )
+    inbound_port: int = field(
+        default_factory=lambda: int(os.getenv("CHITTI_INBOUND_PORT", "8765"))
+    )
+    auto_start_listener: bool = field(
+        default_factory=lambda: os.getenv("N8N_AUTO_START_LISTENER", "true").lower() in ("true", "1", "yes")
+    )
+
+
+@dataclass
 class AppConfig:
     log_level: str = field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper()
@@ -304,6 +326,7 @@ class AppConfig:
     language: LanguageConfig = field(default_factory=LanguageConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     system_control: SystemControlConfig = field(default_factory=SystemControlConfig)
+    n8n: N8NConfig = field(default_factory=N8NConfig)
 
 
 # Global singleton instance

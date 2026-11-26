@@ -296,7 +296,58 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Autonomous perception initialization notice: {e}")
 
+        # 12. Initialize n8n Workflow Automation (Client & Inbound Webhook Listener)
+        self.n8n_client = None
+        self.n8n_server = None
+        try:
+            from src.agent.n8n_client import N8NClient
+            from src.agent.n8n_server import N8NInboundServer
+            self.n8n_client = N8NClient(
+                base_url=self.config.n8n.base_url,
+                webhook_prefix=self.config.n8n.webhook_prefix,
+                api_key=self.config.n8n.api_key,
+            )
+            if self.config.n8n.enabled and self.config.n8n.auto_start_listener:
+                self.n8n_server = N8NInboundServer(
+                    port=self.config.n8n.inbound_port,
+                    notification_callback=self._on_n8n_notification,
+                    command_callback=self._on_n8n_remote_command,
+                    memory_callback=self._on_n8n_memory_save,
+                )
+                self.n8n_server.start()
+        except Exception as e:
+            log_warning(f"n8n integration initialization notice: {e}")
+
         log_chitti("System initialization complete. Ready for interaction! (Say 'Hello Chitti' or press Alt+Space)\n")
+
+    def _on_n8n_notification(self, data: Dict[str, Any]):
+        """Handles proactive alerts and notifications sent from n8n workflows."""
+        title = data.get("title", "n8n Alert")
+        message = data.get("message", "")
+        speak = data.get("speak", True)
+        show_hud = data.get("show_hud", True)
+
+        log_chitti(f"[n8n] 🔔 Inbound Notification [{title}]: {message}")
+
+        if show_hud and self.hud:
+            self.hud.show()
+            self.hud.set_mode(HUDMode.SPEAKING if speak else HUDMode.IDLE, message[:50])
+            self.hud.set_response(f"[{title}] {message}")
+
+        if speak and message:
+            spoken_alert = f"Notification from {title}: {message}" if title not in ("n8n", "n8n Alert") else message
+            self.safe_speak(spoken_alert)
+
+    def _on_n8n_remote_command(self, command: str):
+        """Executes a command triggered remotely by an n8n workflow."""
+        log_chitti(f"[n8n] ⚡ Executing remote command: '{command}'")
+        self.process_user_input(command)
+
+    def _on_n8n_memory_save(self, memory_text: str):
+        """Saves a fact extracted by an n8n workflow into long-term memory."""
+        if self.memory:
+            self.memory.add_fact(memory_text)
+            log_chitti(f"[n8n] 🧠 Saved fact to memory: '{memory_text}'")
 
     def _on_person_recognized_proactive(self, person_name: str, is_known: bool, greeting: str):
         """Triggered autonomously when a human appears and is recognized by the camera."""
@@ -634,6 +685,42 @@ class ChittiController:
             from src.agent.computer.browser import BrowserController
             BrowserController().pause_playback(close_tab=True)
             resp = "Media playback stopped." if active_lang == "en" else "गाना बंद कर दिया गया है।"
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
+        # 1.63. n8n Workflow Automation Commands
+        n8n_status_cmds = ("n8n status", "check n8n", "is n8n running", "n8n health", "check n8n status")
+        if any(cmd in lower_input for cmd in n8n_status_cmds) or lower_input == "n8n":
+            health = self.n8n_client.check_health() if self.n8n_client else {"status": "offline", "message": "n8n client not initialized"}
+            if health.get("reachable"):
+                resp = f"n8n automation engine is online and connected at {self.n8n_client.base_url}. Inbound listener is ready on port {self.config.n8n.inbound_port}."
+            else:
+                resp = f"n8n is currently offline. You can start it using scripts/run_n8n.bat or 'npx n8n'."
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
+        m_n8n_trigger = re.search(r"(?i)\b(?:trigger|run|execute)\s+n8n\s+(?:workflow\s+)?([a-zA-Z0-9_\-]+)\b", user_text)
+        if m_n8n_trigger:
+            slug = m_n8n_trigger.group(1).strip()
+            log_chitti(f"[n8n] Triggering workflow slug: '{slug}'")
+            if self.n8n_client:
+                res = self.n8n_client.trigger_webhook(slug, payload={"user_query": user_text, "source": "voice_command"})
+                if res.get("success"):
+                    resp = f"n8n workflow '{slug}' has been triggered successfully."
+                else:
+                    resp = f"Failed to trigger n8n workflow '{slug}': {res.get('message')}"
+            else:
+                resp = "n8n client is not enabled in configuration."
             self.history.add_user_message(user_text)
             self.history.add_assistant_message(resp)
             self.speak(resp)

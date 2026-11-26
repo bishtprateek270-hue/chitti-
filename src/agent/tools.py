@@ -311,6 +311,30 @@ class ToolEngine:
             self._tool_diagnose_code_error,
         )
 
+        # 12. N8N WORKFLOW AUTOMATION TOOLS
+        self._register(
+            "n8n_trigger_webhook",
+            "Triggers an n8n webhook workflow by endpoint slug or full URL with a JSON payload.",
+            {
+                "endpoint": {"type": "string", "description": "Webhook slug (e.g. 'chitti-task') or full URL"},
+                "payload": {"type": "object", "description": "JSON dictionary to send to n8n", "optional": True},
+                "method": {"type": "string", "description": "HTTP method (POST/GET)", "optional": True},
+            },
+            self._tool_n8n_trigger_webhook,
+        )
+        self._register(
+            "n8n_check_health",
+            "Checks if the local or remote n8n workflow server is running and reachable.",
+            {},
+            self._tool_n8n_check_health,
+        )
+        self._register(
+            "n8n_list_workflows",
+            "Lists active n8n workflows via n8n REST API (requires N8N_API_KEY).",
+            {},
+            self._tool_n8n_list_workflows,
+        )
+
         # 4. MOUSE & KEYBOARD TOOLS
         self._register(
             "type_text",
@@ -1060,6 +1084,30 @@ class ToolEngine:
             "suggested_fix": err_info.suggested_fix_summary,
             "summary": err_info.summary(),
         }
+
+    # ---------------------------------------------------------
+    # N8N WORKFLOW AUTOMATION HANDLERS
+    # ---------------------------------------------------------
+
+    def _tool_n8n_trigger_webhook(
+        self,
+        endpoint: str,
+        payload: Optional[Dict[str, Any]] = None,
+        method: str = "POST",
+    ) -> Dict[str, Any]:
+        from src.agent.n8n_client import N8NClient
+        client = N8NClient()
+        return client.trigger_webhook(endpoint_or_slug=endpoint, payload=payload, method=method)
+
+    def _tool_n8n_check_health(self) -> Dict[str, Any]:
+        from src.agent.n8n_client import N8NClient
+        client = N8NClient()
+        return client.check_health()
+
+    def _tool_n8n_list_workflows(self) -> Dict[str, Any]:
+        from src.agent.n8n_client import N8NClient
+        client = N8NClient()
+        return client.list_workflows()
 
     # ---------------------------------------------------------
     # DISPATCHER
