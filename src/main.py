@@ -770,6 +770,48 @@ class ChittiController:
                 self.hud.set_mode(HUDMode.IDLE)
             return
 
+        # 1.65. GitHub Repository & PR Commands
+        m_gh_repos = re.search(r"(?i)\b(?:check|list|show|fetch|get)\s+(?:my\s+)?github\s+(?:repositories|repos)\b", user_text)
+        if m_gh_repos:
+            from src.agent.github_service import GitHubService
+            gh = GitHubService()
+            repos = gh.list_repositories(limit=5)
+            if repos:
+                repo_names = [r["name"] for r in repos]
+                resp = f"Aapke latest GitHub repositories hain: {', '.join(repo_names[:5])}." if active_lang in ("hi", "hinglish") else f"Your latest GitHub repositories are: {', '.join(repo_names[:5])}."
+            else:
+                resp = "GitHub repositories fetch nahi ho paaye. Please check your GitHub token." if active_lang in ("hi", "hinglish") else "Could not fetch GitHub repositories. Please check your token."
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            log_state("CHITTI")
+            print(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
+        m_gh_prs = re.search(r"(?i)\b(?:check|show|list)\s+(?:pull\s+requests|prs)\s+(?:on|for|in)\s+([a-zA-Z0-9_\-]+)\b", user_text)
+        if m_gh_prs:
+            target_repo = m_gh_prs.group(1).strip()
+            from src.agent.github_service import GitHubService
+            gh = GitHubService()
+            prs = gh.get_repo_pull_requests(target_repo)
+            if prs:
+                pr_titles = [f"#{p['number']} {p['title']}" for p in prs[:3]]
+                resp = f"{target_repo} me {len(prs)} open pull request(s) hain: {'; '.join(pr_titles)}." if active_lang in ("hi", "hinglish") else f"Found {len(prs)} open pull request(s) on {target_repo}: {'; '.join(pr_titles)}."
+            else:
+                resp = f"{target_repo} me koi open pull request nahi hai." if active_lang in ("hi", "hinglish") else f"There are no open pull requests on {target_repo}."
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            log_state("CHITTI")
+            print(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
         # Start tracking current execution episode in RL
         self.rl_policy.start_episode(task_description=user_text, domain=master_decision.route.value)
         policy_guidance = self.rl_policy.get_policy_guidance(user_text, domain=master_decision.route.value)

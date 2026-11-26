@@ -346,6 +346,33 @@ class ToolEngine:
             self._tool_news_get_headlines,
         )
 
+        # 14. GITHUB TOOLS
+        self._register(
+            "github_list_repos",
+            "Lists repositories belonging to the authenticated GitHub user.",
+            {"limit": {"type": "integer", "description": "Max repositories to return (default 5)", "optional": True}},
+            self._tool_github_list_repos,
+        )
+        self._register(
+            "github_get_prs",
+            "Fetches open or closed pull requests for a specific repository.",
+            {
+                "repo_name": {"type": "string", "description": "Repository name (e.g. 'ShikshaSetu' or 'owner/repo')"},
+                "state": {"type": "string", "description": "PR state ('open' or 'closed')", "optional": True},
+            },
+            self._tool_github_get_prs,
+        )
+        self._register(
+            "github_create_issue",
+            "Creates an issue on a GitHub repository.",
+            {
+                "repo_name": {"type": "string", "description": "Repository name"},
+                "title": {"type": "string", "description": "Issue title"},
+                "body": {"type": "string", "description": "Issue description / body", "optional": True},
+            },
+            self._tool_github_create_issue,
+        )
+
         # 4. MOUSE & KEYBOARD TOOLS
         self._register(
             "type_text",
@@ -1136,6 +1163,38 @@ class ToolEngine:
             "headlines": headlines,
             "spoken_summary": summary,
         }
+
+    # ---------------------------------------------------------
+    # GITHUB HANDLERS
+    # ---------------------------------------------------------
+
+    def _tool_github_list_repos(self, limit: int = 5) -> Dict[str, Any]:
+        from src.agent.github_service import GitHubService
+        gh = GitHubService()
+        repos = gh.list_repositories(limit=limit)
+        return {
+            "success": bool(repos),
+            "count": len(repos),
+            "repositories": repos,
+            "message": f"Found {len(repos)} GitHub repositories.",
+        }
+
+    def _tool_github_get_prs(self, repo_name: str, state: str = "open") -> Dict[str, Any]:
+        from src.agent.github_service import GitHubService
+        gh = GitHubService()
+        prs = gh.get_repo_pull_requests(repo_name=repo_name, state=state)
+        return {
+            "success": True,
+            "repo": repo_name,
+            "count": len(prs),
+            "pull_requests": prs,
+            "message": f"Found {len(prs)} {state} pull requests in {repo_name}.",
+        }
+
+    def _tool_github_create_issue(self, repo_name: str, title: str, body: str = "") -> Dict[str, Any]:
+        from src.agent.github_service import GitHubService
+        gh = GitHubService()
+        return gh.create_issue(repo_name=repo_name, title=title, body=body)
 
     # ---------------------------------------------------------
     # DISPATCHER
