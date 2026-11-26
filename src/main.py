@@ -296,12 +296,15 @@ class ChittiController:
             except Exception as e:
                 log_warning(f"Autonomous perception initialization notice: {e}")
 
-        # 12. Initialize n8n Workflow Automation (Client & Inbound Webhook Listener)
+        # 12. Initialize n8n Workflow Automation (Client, Inbound Server & 24/7 Watchdog Daemon)
         self.n8n_client = None
         self.n8n_server = None
+        self.n8n_daemon = None
         try:
             from src.agent.n8n_client import N8NClient
             from src.agent.n8n_server import N8NInboundServer
+            from src.agent.n8n_daemon import N8NDaemonManager
+
             self.n8n_client = N8NClient(
                 base_url=self.config.n8n.base_url,
                 webhook_prefix=self.config.n8n.webhook_prefix,
@@ -315,6 +318,10 @@ class ChittiController:
                     memory_callback=self._on_n8n_memory_save,
                 )
                 self.n8n_server.start()
+
+            if self.config.n8n.enabled and getattr(self.config.n8n, "auto_start_n8n", True):
+                self.n8n_daemon = N8NDaemonManager(base_url=self.config.n8n.base_url)
+                self.n8n_daemon.ensure_running_async()
         except Exception as e:
             log_warning(f"n8n integration initialization notice: {e}")
 

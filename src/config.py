@@ -309,6 +309,9 @@ class N8NConfig:
     auto_start_listener: bool = field(
         default_factory=lambda: os.getenv("N8N_AUTO_START_LISTENER", "true").lower() in ("true", "1", "yes")
     )
+    auto_start_n8n: bool = field(
+        default_factory=lambda: os.getenv("N8N_AUTO_START_N8N", "true").lower() in ("true", "1", "yes")
+    )
 
 
 @dataclass
