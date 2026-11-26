@@ -729,6 +729,40 @@ class ChittiController:
                 self.hud.set_mode(HUDMode.IDLE)
             return
 
+        # 1.64. Real-Time News & Headlines Handler
+        news_triggers = (
+            "what's the news", "tell me the news", "tech news", "technology news",
+            "latest news", "top headlines", "news update", "aaj ki news", "aaj ki taaza khabar",
+            "news kya hai", "aaj ki khabar", "business news", "science news", "kya khabar hai"
+        )
+        if any(trig in lower_input for trig in news_triggers):
+            cat = "technology"
+            if "business" in lower_input:
+                cat = "business"
+            elif "science" in lower_input:
+                cat = "science"
+            elif "sports" in lower_input:
+                cat = "sports"
+            elif "india" in lower_input:
+                cat = "india"
+            elif "world" in lower_input:
+                cat = "world"
+
+            from src.agent.news_service import NewsService
+            news_svc = NewsService()
+            headlines = news_svc.fetch_headlines(category=cat, limit=4)
+            resp = news_svc.format_spoken_summary(headlines, category=cat, lang=active_lang)
+
+            self.history.add_user_message(user_text)
+            self.history.add_assistant_message(resp)
+            log_state("CHITTI")
+            print(resp)
+            self.speak(resp)
+            if self.hud:
+                self.hud.set_response(resp)
+                self.hud.set_mode(HUDMode.IDLE)
+            return
+
         # Start tracking current execution episode in RL
         self.rl_policy.start_episode(task_description=user_text, domain=master_decision.route.value)
         policy_guidance = self.rl_policy.get_policy_guidance(user_text, domain=master_decision.route.value)

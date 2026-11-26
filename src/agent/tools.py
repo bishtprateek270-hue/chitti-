@@ -335,6 +335,17 @@ class ToolEngine:
             self._tool_n8n_list_workflows,
         )
 
+        # 13. NEWS & CURRENT AFFAIRS TOOLS
+        self._register(
+            "news_get_headlines",
+            "Fetches latest news headlines and spoken summaries for technology, business, science, sports, India, or world.",
+            {
+                "category": {"type": "string", "description": "News category (technology/business/science/sports/india/world)", "optional": True},
+                "limit": {"type": "integer", "description": "Number of headlines to return (default 4)", "optional": True},
+            },
+            self._tool_news_get_headlines,
+        )
+
         # 4. MOUSE & KEYBOARD TOOLS
         self._register(
             "type_text",
@@ -1108,6 +1119,23 @@ class ToolEngine:
         from src.agent.n8n_client import N8NClient
         client = N8NClient()
         return client.list_workflows()
+
+    def _tool_news_get_headlines(
+        self,
+        category: str = "technology",
+        limit: int = 4,
+    ) -> Dict[str, Any]:
+        from src.agent.news_service import NewsService
+        svc = NewsService()
+        headlines = svc.fetch_headlines(category=category, limit=limit)
+        summary = svc.format_spoken_summary(headlines, category=category)
+        return {
+            "success": bool(headlines),
+            "category": category,
+            "count": len(headlines),
+            "headlines": headlines,
+            "spoken_summary": summary,
+        }
 
     # ---------------------------------------------------------
     # DISPATCHER
