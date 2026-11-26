@@ -71,29 +71,35 @@ class NewsService:
     def _fetch_newsapi(self, category: str, limit: int) -> List[Dict[str, str]]:
         """Fetches from newsapi.org."""
         cat = category if category in ("business", "entertainment", "general", "health", "science", "sports", "technology") else "technology"
-        url = f"https://newsapi.org/v2/top-headlines?country=in&category={cat}&pageSize={limit}&apiKey={self.api_key}"
+        endpoints = [
+            f"https://newsapi.org/v2/top-headlines?country=in&category={cat}&pageSize={limit}&apiKey={self.api_key}",
+            f"https://newsapi.org/v2/top-headlines?category={cat}&pageSize={limit}&apiKey={self.api_key}",
+            f"https://newsapi.org/v2/everything?q={cat}&sortBy=publishedAt&pageSize={limit}&apiKey={self.api_key}",
+        ]
 
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Chitti-AI/1.0"})
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if data.get("status") == "ok":
-                    articles = data.get("articles", [])
-                    out = []
-                    for art in articles[:limit]:
-                        title = art.get("title") or ""
-                        # Strip trailing source e.g. "Headline - Source Name"
-                        clean_title = re.sub(r"\s+-\s+[^-]+$", "", title).strip()
-                        source = (art.get("source") or {}).get("name") or "News"
-                        if clean_title:
-                            out.append({
-                                "title": clean_title,
-                                "source": source,
-                                "link": art.get("url") or "",
-                            })
-                    return out
-        except Exception as e:
-            log_debug(f"[NewsService] NewsAPI fetch error, falling back to RSS: {e}")
+        for url in endpoints:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Chitti-AI/1.0"})
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if data.get("status") == "ok":
+                        articles = data.get("articles", [])
+                        out = []
+                        for art in articles[:limit]:
+                            title = art.get("title") or ""
+                            # Strip trailing source e.g. "Headline - Source Name"
+                            clean_title = re.sub(r"\s+-\s+[^-]+$", "", title).strip()
+                            source = (art.get("source") or {}).get("name") or "News"
+                            if clean_title and clean_title != "[Removed]":
+                                out.append({
+                                    "title": clean_title,
+                                    "source": source,
+                                    "link": art.get("url") or "",
+                                })
+                        if out:
+                            return out
+            except Exception as e:
+                log_debug(f"[NewsService] NewsAPI endpoint {url} notice: {e}")
 
         return []
 
