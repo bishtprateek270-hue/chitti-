@@ -1,0 +1,97 @@
+{
+  "name": "Chitti - Morning News Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-1",
+      "name": "Every Morning at 8:30 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-IN&gl=IN&ceid=IN:en",
+        "options": {}
+      },
+      "id": "http-fetch-news",
+      "name": "Fetch Google News RSS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const xml = $input.first().json.data || $input.first().json;\n// Regex extraction for XML items\nconst titleMatches = [...xml.matchAll(/<item>[\\s\\S]*?<title>(.*?)<\\/title>/g)];\nconst headlines = titleMatches.slice(0, 3).map((m, idx) => {\n  const clean = m[1].replace(/\\s+-\\s+[^-]+$/, '').trim();\n  const ords = ['First', 'Second', 'Third'];\n  return `${ords[idx]}: ${clean}.`;\n});\n\nconst message = `Good morning Prateek! Here are today's top tech headlines: ${headlines.join(' ')}`;\n\nreturn [{\n  json: {\n    title: 'Morning Tech Briefing',\n    message: message,\n    speak: true,\n    show_hud: true\n  }\n}];"
+      },
+      "id": "format-news-summary",
+      "name": "Format Spoken Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8765/chitti/notify",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-chitti",
+      "name": "Send Alert to Chitti",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "Every Morning at 8:30 AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Google News RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Google News RSS": {
+      "main": [
+        [
+          {
+            "node": "Format Spoken Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Spoken Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Alert to Chitti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "name": "Chitti - GitHub Alerts & CI-CD Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-webhook",
+        "options": {}
+      },
+      "id": "github-webhook-trigger",
+      "name": "GitHub Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst event = $input.first().json.headers ? $input.first().json.headers['x-github-event'] : 'event';\n\nlet message = '';\nlet title = 'GitHub';\n\nif (event === 'pull_request') {\n  const action = body.action;\n  const pr = body.pull_request || {};\n  const repo = body.repository ? body.repository.name : 'your repo';\n  if (action === 'closed' && pr.merged) {\n    message = `Prateek, Pull request #${pr.number} was successfully merged into ${repo}!`;\n  } else {\n    message = `Pull request #${pr.number} in ${repo} was ${action}.`;\n  }\n} else if (event === 'push') {\n  const pusher = body.pusher ? body.pusher.name : 'Developer';\n  const repo = body.repository ? body.repository.name : 'repository';\n  message = `${pusher} pushed new commits to ${repo}.`;\n} else {\n  message = `New GitHub activity recorded on your repository.`;\n}\n\nreturn [{\n  json: {\n    title: title,\n    message: message,\n    speak: true,\n    show_hud: true\n  }\n}];"
+      },
+      "id": "format-github-message",
+      "name": "Format GitHub Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8765/chitti/notify",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-chitti-gh",
+      "name": "Send Alert to Chitti",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    }
+  ],
+  "connections": {
+    "GitHub Webhook": {
+      "main": [
+        [
+          {
+            "node": "Format GitHub Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format GitHub Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Alert to Chitti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

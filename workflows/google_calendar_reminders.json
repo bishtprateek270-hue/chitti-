@@ -1,0 +1,78 @@
+{
+  "name": "Chitti - Google Calendar 15-Min Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "eventTime",
+        "options": {
+          "timeBefore": 15
+        }
+      },
+      "id": "calendar-trigger",
+      "name": "Calendar Trigger (15m Before)",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $input.first().json;\nconst summary = event.summary || 'Upcoming Meeting';\nconst message = `Prateek, your event '${summary}' starts in 15 minutes.`;\n\nreturn [{\n  json: {\n    title: 'Calendar Reminder',\n    message: message,\n    speak: true,\n    show_hud: true\n  }\n}];"
+      },
+      "id": "format-calendar-msg",
+      "name": "Format Calendar Reminder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8765/chitti/notify",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-chitti-calendar",
+      "name": "Send Alert to Chitti",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    }
+  ],
+  "connections": {
+    "Calendar Trigger (15m Before)": {
+      "main": [
+        [
+          {
+            "node": "Format Calendar Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Calendar Reminder": {
+      "main": [
+        [
+          {
+            "node": "Send Alert to Chitti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

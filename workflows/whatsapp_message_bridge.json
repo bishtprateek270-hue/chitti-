@@ -1,0 +1,70 @@
+{
+  "name": "Chitti - WhatsApp Dispatch & Notification Bridge",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-send",
+        "options": {}
+      },
+      "id": "webhook-whatsapp-send",
+      "name": "Chitti Voice Dispatch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst to = body.recipient || body.phone || '919876543210';\nconst message = body.message || body.user_query || 'Hello from Chitti!';\n\nreturn [{\n  json: {\n    recipient: to,\n    message: message,\n    source: 'chitti_voice'\n  }\n}];"
+      },
+      "id": "prepare-whatsapp-payload",
+      "name": "Prepare Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8765/chitti/notify",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"title\": \"WhatsApp\",\n  \"message\": \"WhatsApp message sent successfully to \" + $json.recipient,\n  \"speak\": true,\n  \"show_hud\": true\n}",
+        "options": {}
+      },
+      "id": "notify-chitti-wa-success",
+      "name": "Acknowledge to Chitti",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    }
+  ],
+  "connections": {
+    "Chitti Voice Dispatch": {
+      "main": [
+        [
+          {
+            "node": "Prepare Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Payload": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge to Chitti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

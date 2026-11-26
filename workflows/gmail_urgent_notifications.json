@@ -1,0 +1,78 @@
+{
+  "name": "Chitti - Gmail Urgent Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "readStatus": "unread"
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger (Unread)",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst from = item.from ? item.from.replace(/<.*?>/, '').trim() : 'Someone';\nconst subject = item.subject || 'No Subject';\n\nconst message = `Prateek, you received an unread email from ${from} with subject: ${subject}.`;\n\nreturn [{\n  json: {\n    title: 'Gmail Alert',\n    message: message,\n    speak: true,\n    show_hud: true\n  }\n}];"
+      },
+      "id": "format-gmail-msg",
+      "name": "Format Gmail Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8765/chitti/notify",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-chitti-gmail",
+      "name": "Send Alert to Chitti",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger (Unread)": {
+      "main": [
+        [
+          {
+            "node": "Format Gmail Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Gmail Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Alert to Chitti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
