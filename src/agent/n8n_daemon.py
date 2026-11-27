@@ -32,6 +32,11 @@ class N8NDaemonManager:
         self._watchdog_thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.Lock()
+        self._last_start_time: float = 0.0
+        self._retry_count: int = 0
+        self._max_retries: int = 3
+        self._cooldown_seconds: float = 60.0
+        self._backoff_seconds: float = 300.0
 
     def is_healthy(self) -> bool:
         """Checks if n8n is currently responding to HTTP requests."""
@@ -72,8 +77,32 @@ class N8NDaemonManager:
     def start_n8n(self) -> bool:
         """Spawns n8n in an independent background process."""
         if self.is_healthy():
+            self._retry_count = 0
             log_chitti(f"[n8n-daemon] 🌐 n8n is already active and healthy on {self.base_url}")
             return True
+
+        # If a previously spawned process is still running, let it warm up
+        if self._process is not None and self._process.poll() is None:
+            log_debug("[n8n-daemon] n8n process is already active and warming up.")
+            return True
+
+        now = time.time()
+        # Cooldown & retry rate limiting
+        if self._retry_count >= self._max_retries:
+            if (now - self._last_start_time) < self._backoff_seconds:
+                log_debug(
+                    f"[n8n-daemon] Max retries reached ({self._max_retries}). Backing off for "
+                    f"{int(self._backoff_seconds - (now - self._last_start_time))}s..."
+                )
+                return False
+            self._retry_count = 0
+
+        if (now - self._last_start_time) < self._cooldown_seconds:
+            log_debug(
+                f"[n8n-daemon] Cooldown active ({int(self._cooldown_seconds - (now - self._last_start_time))}s remaining). "
+                "Skipping duplicate spawn."
+            )
+            return False
 
         cmd = self._find_n8n_command()
         if not cmd:
@@ -83,9 +112,16 @@ class N8NDaemonManager:
         log_chitti(f"[n8n-daemon] 🚀 Launching 24/7 n8n server via: {' '.join(cmd)}")
 
         creationflags = 0
+        startupinfo = None
         if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
             # DETACHED_PROCESS + CREATE_NO_WINDOW ensures no black cmd window pops up
             creationflags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+
+        self._last_start_time = now
+        self._retry_count += 1
 
         try:
             # We run via cmd /c on Windows to properly resolve batch/npm shims
@@ -99,6 +135,7 @@ class N8NDaemonManager:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
+                startupinfo=startupinfo,
                 creationflags=creationflags,
                 shell=False,
             )
@@ -126,7 +163,6 @@ class N8NDaemonManager:
                     break
 
                 if self.auto_restart and not self.is_healthy():
-                    log_chitti("[n8n-daemon] ⚠️ n8n stopped responding. Watchdog auto-restarting...")
                     self.start_n8n()
 
         self._watchdog_thread = threading.Thread(

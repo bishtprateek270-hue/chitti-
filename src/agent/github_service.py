@@ -19,7 +19,10 @@ class GitHubService:
     """GitHub client for managing repositories, PRs, issues, and workflow runs."""
 
     def __init__(self, token: Optional[str] = None, username: Optional[str] = None):
-        self.token = token or os.getenv("GITHUB_TOKEN", "").strip() or None
+        if token is not None:
+            self.token = token.strip() or None
+        else:
+            self.token = os.getenv("GITHUB_TOKEN", "").strip() or None
         self.username = username or os.getenv("GITHUB_USERNAME", "bishtprateek270-hue").strip()
         self.base_url = "https://api.github.com"
 
